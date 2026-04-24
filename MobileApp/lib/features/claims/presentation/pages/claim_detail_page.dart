@@ -63,7 +63,13 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
         .showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  bool _isEditable() {
+    final claim = context.read<ClaimsCubit>().state.selectedClaim;
+    return claim?.status == ClaimStatus.pending;
+  }
+
   Future<void> _pickAndUploadPhoto(String category) async {
+    if (!_isEditable()) return;
     if (_busyCategories.contains(category)) return;
 
     final source = await showModalBottomSheet<ImageSource>(
@@ -122,6 +128,7 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
   }
 
   Future<void> _pickAndUploadDocument(String category) async {
+    if (!_isEditable()) return;
     if (_busyCategories.contains(category)) return;
 
     final result = await FilePicker.platform.pickFiles(
@@ -172,6 +179,7 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
   }
 
   Future<void> _deleteDoc(String id) async {
+    if (!_isEditable()) return;
     if (id.isEmpty || _deletingIds.contains(id)) return;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -333,15 +341,23 @@ class _PolicyDetailsCard extends StatelessWidget {
                 ? '—'
                 : (claim.identityVerified! ? 'Yes' : 'No'),
             highlight: claim.identityVerified == true,
+            isLast: true,
           ),
         ],
       ),
     );
   }
 
-  Widget _kv(String k, String v, {bool highlight = false}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7),
+  Widget _kv(String k, String v, {bool highlight = false, bool isLast = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      decoration: BoxDecoration(
+        border: isLast
+            ? null
+            : const Border(
+                bottom: BorderSide(color: AppColors.border, width: 1),
+              ),
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -404,29 +420,37 @@ class _AccidentInfoCard extends StatelessWidget {
                   ),
                 ),
               ),
-              Icon(Icons.edit_outlined,
-                  size: 18, color: Colors.grey.shade600),
+              if (claim.status == ClaimStatus.pending)
+                Icon(Icons.edit_outlined,
+                    size: 18, color: Colors.grey.shade600),
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
           _row('Date & Time', dateText),
           _row('Location', claim.incidentLocation ?? '—'),
-          const SizedBox(height: AppSpacing.sm),
-          const Text(
-            'Description:',
-            style: TextStyle(
-              fontSize: 13,
-              color: AppColors.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            claim.incidentDescription ?? claim.description ?? '—',
-            style: const TextStyle(
-              fontSize: 14,
-              color: AppColors.textPrimary,
-              fontWeight: FontWeight.w500,
-              height: 1.5,
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 9),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Description:',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  claim.incidentDescription ?? claim.description ?? '—',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w500,
+                    height: 1.5,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -435,8 +459,13 @@ class _AccidentInfoCard extends StatelessWidget {
   }
 
   Widget _row(String k, String v) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      decoration: const BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: AppColors.border, width: 1),
+        ),
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -493,6 +522,7 @@ class _DocumentsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final canEdit = claim.status == ClaimStatus.pending;
     final vehiclePhotos = _ofCategory('VehiclePhoto');
     final damagePhotos = _ofCategory('DamagePhoto');
     final licensePhotos = _ofCategory('DriverLicense');
@@ -524,7 +554,6 @@ class _DocumentsCard extends StatelessWidget {
           else ...[
             _PhotoSection(
               title: 'VEHICLE PHOTOS',
-              trailing: 'See sample',
               photos: vehiclePhotos,
               quota: claim.vehiclePhotosCount == 0
                   ? 4
@@ -532,6 +561,7 @@ class _DocumentsCard extends StatelessWidget {
               category: 'VehiclePhoto',
               busy: busyCategories.contains('VehiclePhoto'),
               deletingIds: deletingIds,
+              canEdit: canEdit,
               onUpload: onUploadPhoto,
               onDelete: onDeleteDoc,
             ),
@@ -545,6 +575,7 @@ class _DocumentsCard extends StatelessWidget {
               category: 'DamagePhoto',
               busy: busyCategories.contains('DamagePhoto'),
               deletingIds: deletingIds,
+              canEdit: canEdit,
               onUpload: onUploadPhoto,
               onDelete: onDeleteDoc,
             ),
@@ -556,6 +587,7 @@ class _DocumentsCard extends StatelessWidget {
               category: 'BillInvoice',
               busy: busyCategories.contains('BillInvoice'),
               deletingIds: deletingIds,
+              canEdit: canEdit,
               onUpload: onUploadDocument,
               onDelete: onDeleteDoc,
             ),
@@ -569,6 +601,7 @@ class _DocumentsCard extends StatelessWidget {
               category: 'DriverLicense',
               busy: busyCategories.contains('DriverLicense'),
               deletingIds: deletingIds,
+              canEdit: canEdit,
               onUpload: onUploadPhoto,
               onDelete: onDeleteDoc,
             ),
@@ -580,6 +613,7 @@ class _DocumentsCard extends StatelessWidget {
               category: 'SupportingDocument',
               busy: busyCategories.contains('SupportingDocument'),
               deletingIds: deletingIds,
+              canEdit: canEdit,
               onUpload: onUploadDocument,
               onDelete: onDeleteDoc,
             ),
@@ -598,18 +632,17 @@ class _DocumentsCard extends StatelessWidget {
 
 class _PhotoSection extends StatelessWidget {
   final String title;
-  final String? trailing;
   final List<Map<String, dynamic>> photos;
   final int quota;
   final String category;
   final bool busy;
   final Set<String> deletingIds;
+  final bool canEdit;
   final Future<void> Function(String category) onUpload;
   final Future<void> Function(String id) onDelete;
 
   const _PhotoSection({
     required this.title,
-    this.trailing,
     required this.photos,
     required this.quota,
     required this.category,
@@ -617,37 +650,23 @@ class _PhotoSection extends StatelessWidget {
     required this.deletingIds,
     required this.onUpload,
     required this.onDelete,
+    this.canEdit = true,
   });
 
   @override
   Widget build(BuildContext context) {
-    final canUpload = photos.length < quota;
+    final canUpload = canEdit && photos.length < quota;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
-                  letterSpacing: 0.6,
-                ),
-              ),
-            ),
-            if (trailing != null)
-              Text(
-                '($trailing)',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.primary,
-                ),
-              ),
-          ],
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
+            letterSpacing: 0.6,
+          ),
         ),
         const SizedBox(height: AppSpacing.sm),
         if (photos.isEmpty)
@@ -666,7 +685,9 @@ class _PhotoSection extends StatelessWidget {
                 return _PhotoThumb(
                   url: url,
                   deleting: deletingIds.contains(id),
-                  onDelete: id.isEmpty ? null : () => onDelete(id),
+                  onDelete: (!canEdit || id.isEmpty)
+                      ? null
+                      : () => onDelete(id),
                 );
               },
             ),
@@ -680,37 +701,39 @@ class _PhotoSection extends StatelessWidget {
             fontWeight: FontWeight.w500,
           ),
         ),
-        const SizedBox(height: AppSpacing.sm),
-        Row(
-          children: [
-            Expanded(
-              child: _TagButton(
-                icon: Icons.camera_alt_outlined,
-                label: 'FRONT',
-                busy: busy,
-                onTap: canUpload && !busy ? () => onUpload(category) : null,
+        if (canEdit) ...[
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              Expanded(
+                child: _TagButton(
+                  icon: Icons.camera_alt_outlined,
+                  label: 'FRONT',
+                  busy: busy,
+                  onTap: canUpload && !busy ? () => onUpload(category) : null,
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _TagButton(
-                icon: Icons.camera_alt_outlined,
-                label: 'SIDE',
-                busy: busy,
-                onTap: canUpload && !busy ? () => onUpload(category) : null,
+              const SizedBox(width: 8),
+              Expanded(
+                child: _TagButton(
+                  icon: Icons.camera_alt_outlined,
+                  label: 'SIDE',
+                  busy: busy,
+                  onTap: canUpload && !busy ? () => onUpload(category) : null,
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _TagButton(
-                icon: Icons.camera_alt_outlined,
-                label: 'CLOSE UP',
-                busy: busy,
-                onTap: canUpload && !busy ? () => onUpload(category) : null,
+              const SizedBox(width: 8),
+              Expanded(
+                child: _TagButton(
+                  icon: Icons.camera_alt_outlined,
+                  label: 'CLOSE UP',
+                  busy: busy,
+                  onTap: canUpload && !busy ? () => onUpload(category) : null,
+                ),
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
+        ],
       ],
     );
   }
@@ -723,6 +746,7 @@ class _FilesSection extends StatelessWidget {
   final String category;
   final bool busy;
   final Set<String> deletingIds;
+  final bool canEdit;
   final Future<void> Function(String category) onUpload;
   final Future<void> Function(String id) onDelete;
 
@@ -735,11 +759,12 @@ class _FilesSection extends StatelessWidget {
     required this.deletingIds,
     required this.onUpload,
     required this.onDelete,
+    this.canEdit = true,
   });
 
   @override
   Widget build(BuildContext context) {
-    final canUpload = docs.length < quota;
+    final canUpload = canEdit && docs.length < quota;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -762,7 +787,9 @@ class _FilesSection extends StatelessWidget {
               name: (d['fileName'] ?? 'file').toString(),
               sizeBytes: (d['fileSize'] as num?)?.toInt() ?? 0,
               deleting: deletingIds.contains(id),
-              onDelete: id.isEmpty ? null : () => onDelete(id),
+              onDelete: (!canEdit || id.isEmpty)
+                  ? null
+                  : () => onDelete(id),
             );
           }),
         const SizedBox(height: AppSpacing.sm),
@@ -774,11 +801,13 @@ class _FilesSection extends StatelessWidget {
             fontWeight: FontWeight.w500,
           ),
         ),
-        const SizedBox(height: AppSpacing.sm),
-        _UploadButton(
-          busy: busy,
-          onTap: canUpload && !busy ? () => onUpload(category) : null,
-        ),
+        if (canEdit) ...[
+          const SizedBox(height: AppSpacing.sm),
+          _UploadButton(
+            busy: busy,
+            onTap: canUpload && !busy ? () => onUpload(category) : null,
+          ),
+        ],
       ],
     );
   }
