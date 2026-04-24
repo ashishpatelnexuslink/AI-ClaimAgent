@@ -34,7 +34,7 @@ class ClaimsState extends Equatable {
     int? currentPage,
     bool? hasMore,
     String? searchQuery,
-    String? selectedStatus,
+    Object? selectedStatus = _unset,
     bool clearSelectedClaim = false,
     bool clearError = false,
   }) {
@@ -47,9 +47,13 @@ class ClaimsState extends Equatable {
       currentPage: currentPage ?? this.currentPage,
       hasMore: hasMore ?? this.hasMore,
       searchQuery: searchQuery ?? this.searchQuery,
-      selectedStatus: selectedStatus ?? this.selectedStatus,
+      selectedStatus: identical(selectedStatus, _unset)
+          ? this.selectedStatus
+          : selectedStatus as String?,
     );
   }
+
+  static const Object _unset = Object();
 
   @override
   List<Object?> get props => [

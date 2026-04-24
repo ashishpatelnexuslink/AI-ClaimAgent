@@ -87,6 +87,5 @@ class ClaimsCubit extends Cubit<ClaimsState> {
 
   void onFilterByStatus(String? status) {
     emit(state.copyWith(selectedStatus: status));
-    fetchClaims(refresh: true);
   }
 }
