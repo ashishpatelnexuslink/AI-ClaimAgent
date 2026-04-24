@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ClaimAI.API/ClaimAI.API.csproj" />
+    <Project Path="src/ClaimAI.Application/ClaimAI.Application.csproj" />
+    <Project Path="src/ClaimAI.Domain/ClaimAI.Domain.csproj" />
+    <Project Path="src/ClaimAI.Infrastructure/ClaimAI.Infrastructure.csproj" />
+  </Folder>
+</Solution>

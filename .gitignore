@@ -1,0 +1,201 @@
+# ===========================================
+# OS / Editor / IDE
+# ===========================================
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+
+# VS Code (keep shared configs if needed, ignore user-specific)
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# JetBrains / Rider / IntelliJ / Android Studio
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.rsuser
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# ===========================================
+# Backend — .NET / C#
+# ===========================================
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+[Ll]og/
+[Ll]ogs/
+*.log
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]uild/
+build/
+**/build/
+artifacts/
+
+# Roslyn cache / msbuild
+*.binlog
+*.VisualState.xml
+*.nvuser
+*.MigrationBackup/
+
+# NuGet
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nuget.props
+*.nuget.targets
+
+# EF Core / DB
+*.mdf
+*.ldf
+*.ndf
+
+# Backend secrets
+Backend/src/ClaimAI.API/appsettings.json
+Backend/src/ClaimAI.API/appsettings.Development.json
+Backend/src/ClaimAI.API/appsettings.*.Local.json
+Backend/src/**/secrets.json
+**/appsettings.Local.json
+
+# ===========================================
+# MobileApp — Flutter / Dart
+# ===========================================
+MobileApp/.dart_tool/
+MobileApp/.flutter-plugins
+MobileApp/.flutter-plugins-dependencies
+MobileApp/.packages
+MobileApp/.pub-cache/
+MobileApp/.pub/
+MobileApp/build/
+MobileApp/.metadata
+MobileApp/coverage/
+MobileApp/doc/api/
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+**/generated_plugin_registrant.*
+
+# Flutter platform-specific build artifacts
+MobileApp/android/.gradle/
+MobileApp/android/captures/
+MobileApp/android/gradlew
+MobileApp/android/gradlew.bat
+MobileApp/android/local.properties
+MobileApp/android/**/GeneratedPluginRegistrant.java
+MobileApp/android/key.properties
+MobileApp/android/**/*.keystore
+MobileApp/android/**/*.jks
+MobileApp/android/app/release/
+MobileApp/android/app/debug/
+MobileApp/android/app/profile/
+MobileApp/android/app/build/
+MobileApp/android/build/
+
+MobileApp/ios/Pods/
+MobileApp/ios/.symlinks/
+MobileApp/ios/Flutter/App.framework
+MobileApp/ios/Flutter/Flutter.framework
+MobileApp/ios/Flutter/Flutter.podspec
+MobileApp/ios/Flutter/Generated.xcconfig
+MobileApp/ios/Flutter/ephemeral/
+MobileApp/ios/Flutter/app.flx
+MobileApp/ios/Flutter/app.zip
+MobileApp/ios/Flutter/flutter_assets/
+MobileApp/ios/Flutter/flutter_export_environment.sh
+MobileApp/ios/ServiceDefinitions.json
+MobileApp/ios/Runner/GeneratedPluginRegistrant.*
+MobileApp/ios/Runner.xcworkspace/xcuserdata/
+MobileApp/ios/Runner.xcodeproj/xcuserdata/
+MobileApp/ios/Runner.xcodeproj/project.xcworkspace/xcuserdata/
+
+MobileApp/macos/Pods/
+MobileApp/macos/Flutter/ephemeral/
+MobileApp/macos/Flutter/GeneratedPluginRegistrant.swift
+
+MobileApp/linux/flutter/ephemeral/
+MobileApp/windows/flutter/ephemeral/
+MobileApp/web/.dart_tool/
+
+# Hive/SharedPreferences local data
+*.hive
+*.lock
+
+# ===========================================
+# AdminPanel — Node / React / Vite
+# ===========================================
+AdminPanel/node_modules/
+AdminPanel/dist/
+AdminPanel/dist-ssr/
+AdminPanel/.vite/
+AdminPanel/coverage/
+AdminPanel/.turbo/
+AdminPanel/.cache/
+AdminPanel/.parcel-cache/
+AdminPanel/.next/
+AdminPanel/.nuxt/
+AdminPanel/.output/
+**/node_modules/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Env files (never commit)
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.staging
+AdminPanel/.env*
+MobileApp/.env*
+Backend/.env*
+
+# ===========================================
+# Misc
+# ===========================================
+*.bak
+*.tmp
+*.temp
+*.orig
+*.rej
+*.pid
+*.seed
+*.pid.lock
+
+# Certificates / keys
+*.pem
+*.pfx
+*.p12
+*.key
+*.cer
+*.crt

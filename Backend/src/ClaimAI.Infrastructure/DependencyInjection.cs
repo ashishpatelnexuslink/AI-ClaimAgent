@@ -1,0 +1,46 @@
+using ClaimAI.Application.Interfaces;
+using ClaimAI.Domain.Interfaces.Repositories;
+using ClaimAI.Infrastructure.Data;
+using ClaimAI.Infrastructure.Identity;
+using ClaimAI.Infrastructure.Interceptors;
+using ClaimAI.Infrastructure.Repositories;
+using ClaimAI.Infrastructure.Services;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace ClaimAI.Infrastructure;
+
+public static class DependencyInjection
+{
+    public static IServiceCollection AddInfrastructure(
+        this IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddScoped<AuditableEntityInterceptor>();
+
+        services.AddDbContext<ApplicationDbContext>((sp, options) =>
+        {
+            var interceptor = sp.GetRequiredService<AuditableEntityInterceptor>();
+            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"))
+                   .AddInterceptors(interceptor);
+        });
+
+        services.AddIdentityConfiguration();
+        services.AddJwtAuthentication(configuration);
+
+        services.AddHttpContextAccessor();
+        services.AddScoped(typeof(IGenericRepository<>), typeof(GenericRepository<>));
+        services.AddScoped<ITemplateRepository, TemplateRepository>();
+        services.AddScoped<ICurrentUserService, CurrentUserService>();
+        services.AddScoped<IEmailService, EmailService>();
+        services.AddScoped<ISmsService, SmsService>();
+        services.AddScoped<IClaimsService, ClaimsService>();
+        services.AddScoped<INotificationService, NotificationService>();
+        services.AddScoped<IChatService, ChatService>();
+        services.AddScoped<IAdminUserService, AdminUserService>();
+        services.AddScoped<IMobileUserService, MobileUserService>();
+        services.AddScoped<ITemplateService, TemplateService>();
+
+        return services;
+    }
+}

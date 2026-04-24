@@ -1,0 +1,2443 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:claim_ai/features/auth/presentation/cubit/auth_cubit.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
+import 'package:uuid/uuid.dart';
+import 'package:claim_ai/core/navigation/app_routes.dart';
+import 'package:claim_ai/core/storage/chat_transcript_writer.dart';
+import 'package:claim_ai/services/chat_service.dart';
+import 'package:claim_ai/features/chat/data/datasources/chat_remote_datasource.dart';
+import 'package:claim_ai/features/claims/data/datasources/claims_remote_datasource.dart';
+import 'package:claim_ai/injection_container.dart' as di;
+
+const _kDark = Color(0xFF1A1D3B);
+const _kBlue = Color(0xFF2A6FDB);
+const _kBg = Color(0xFFF0F2F7);
+const _kUserInitialsBg = Color(0xFFE8E4FF);
+const _kUserInitialsText = Color(0xFF6C5CE7);
+
+class ClaimChatScreen extends StatefulWidget {
+  /// Optional seed messages carried over from voice mode.
+  /// Each map must have keys `text` (String) and `isUser` (bool).
+  final List<Map<String, dynamic>>? initialMessages;
+
+  const ClaimChatScreen({super.key, this.initialMessages});
+
+  @override
+  State<ClaimChatScreen> createState() => _ClaimChatScreenState();
+}
+
+class _ClaimChatScreenState extends State<ClaimChatScreen> {
+  final _controller = TextEditingController();
+  final _locationController = TextEditingController();
+  final _scrollController = ScrollController();
+  final _inputFocusNode = FocusNode();
+  final _imagePicker = ImagePicker();
+  final List<_ChatMsg> _messages = [];
+  final List<_ChatMsg> _pendingBotMessages = [];
+  bool _isAnimating = false;
+  bool _botTyping = false;
+  bool _fetchingLocation = false;
+  bool _uploadingFiles = false;
+  late final String _threadId;
+  String? _submittedClaimId;
+  final List<String> _uploadedDocumentIds = [];
+  final List<DateTime> _messageTimestamps = [];
+  final ChatTranscriptWriter _transcriptWriter = di.sl<ChatTranscriptWriter>();
+
+  // GET_DATE_TIME inline picker state.
+  DateTime? _dtDate;
+  TimeOfDay? _dtTime;
+
+  // GET_IMAGE state.
+  final List<File> _pickedImages = [];
+  final int _maxImages = 4;
+
+  // GET_DOCUMENT state.
+  final List<PlatformFile> _pickedDocuments = [];
+  final int _maxDocuments = 10;
+  final List<String> _allowedDocExtensions = const ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'];
+
+  @override
+  void initState() {
+    super.initState();
+    _threadId = const Uuid().v4();
+
+    if (widget.initialMessages != null && widget.initialMessages!.isNotEmpty) {
+      // Seed with messages carried over from voice mode
+      for (final m in widget.initialMessages!) {
+        _messages.add(_ChatMsg(
+          text: m['text'] as String,
+          isUser: m['isUser'] as bool,
+        ));
+      }
+    } else {
+      // Fetch a real greeting from the API
+      _initGreeting();
+    }
+  }
+
+  /// Send a silent "hello" to the streaming API and show the response as greeting.
+  Future<void> _initGreeting() async {
+    setState(() => _botTyping = true);
+    await _streamBotReply('hello');
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _locationController.dispose();
+    _scrollController.dispose();
+    _inputFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _send() {
+    final text = _controller.text.trim();
+    if (text.isEmpty || _botTyping) return;
+
+    setState(() {
+      _messages.add(_ChatMsg(text: text, isUser: true));
+      _botTyping = true;
+    });
+    _controller.clear();
+    _scrollToBottom();
+
+    _streamBotReply(text);
+  }
+
+  /// Streams bot response from `/chat/stream`.
+  /// Each message in the SSE payload becomes its own bubble.
+  Future<void> _streamBotReply(String userMessage) async {
+    try {
+      await for (final msg in ChatService.sendMessage(
+        userMessage,
+        threadId: _threadId,
+      )) {
+        if (!mounted) return;
+        _pendingBotMessages.add(_ChatMsg(
+          text: msg.content,
+          isUser: false,
+          animate: true,
+          messageType: msg.messageType,
+          suggestions: msg.suggestions,
+          triggers: msg.triggers,
+          claimData: msg.claimData,
+          payloadType: msg.payloadType,
+          payload: msg.payload,
+        ));
+      }
+    } catch (_) {
+      if (!mounted) return;
+      _pendingBotMessages.add(const _ChatMsg(
+        text: 'Sorry, something went wrong. Please try again.',
+        isUser: false,
+      ));
+    }
+    if (!mounted) return;
+    _showNextPendingMessage();
+  }
+
+  /// Shows the next queued bot message and animates it.
+  /// Called again via [_TypewriterText.onComplete] when animation finishes.
+  void _showNextPendingMessage() {
+    if (!mounted) return;
+
+    // Mark the last animated message as done so it can render as a card
+    _clearLastAnimation();
+
+    if (_pendingBotMessages.isEmpty) {
+      setState(() {
+        _isAnimating = false;
+        _botTyping = false;
+      });
+      _scrollToBottom();
+      _persistTranscript();
+      return;
+    }
+    final next = _pendingBotMessages.removeAt(0);
+    setState(() {
+      _isAnimating = true;
+      _messages.add(next);
+    });
+    _scrollToBottom();
+    _persistTranscript();
+  }
+
+  /// Writes the current chat to `<app docs>/chat_transcripts/<threadId>.json`.
+  /// Fire-and-forget; masks vehicle / VIN / policy identifiers before writing.
+  void _persistTranscript() {
+    final now = DateTime.now();
+    while (_messageTimestamps.length < _messages.length) {
+      _messageTimestamps.add(now);
+    }
+    final snapshot = <TranscriptMessage>[
+      for (var i = 0; i < _messages.length; i++)
+        TranscriptMessage(
+          role: _messages[i].isUser ? 'user' : 'bot',
+          text: _messages[i].text,
+          timestamp: _messageTimestamps[i],
+          messageType: _messages[i].messageType,
+          triggers: _messages[i].triggers,
+          claimData: _messages[i].claimData,
+        ),
+    ];
+    unawaited(_writeTranscriptSilently(snapshot));
+  }
+
+  Future<void> _writeTranscriptSilently(List<TranscriptMessage> snapshot) async {
+    try {
+      await _transcriptWriter.writeTranscript(
+        threadId: _threadId,
+        claimId: _submittedClaimId,
+        messages: snapshot,
+      );
+    } catch (_) {
+      // A disk hiccup shouldn't break the chat.
+    }
+  }
+
+  /// Replace the last animated message with animate=false so structured
+  /// widgets (like policy card) can render instead of plain markdown.
+  void _clearLastAnimation() {
+    for (int i = _messages.length - 1; i >= 0; i--) {
+      if (_messages[i].animate && !_messages[i].isUser) {
+        _messages[i] = _ChatMsg(
+          text: _messages[i].text,
+          isUser: false,
+          animate: false,
+          messageType: _messages[i].messageType,
+          suggestions: _messages[i].suggestions,
+          triggers: _messages[i].triggers,
+          claimData: _messages[i].claimData,
+          payloadType: _messages[i].payloadType,
+          payload: _messages[i].payload,
+        );
+        break;
+      }
+    }
+  }
+
+  /// Handle suggestion chip tap — send it as a user message.
+  void _onSuggestionTap(String suggestion) {
+    if (_botTyping) return;
+    setState(() {
+      _messages.add(_ChatMsg(text: suggestion, isUser: true));
+      _botTyping = true;
+    });
+    _scrollToBottom();
+    _streamBotReply(suggestion);
+  }
+
+  /// GET_DATE_TIME — inline picker handlers.
+  Future<void> _pickIncidentDate() async {
+    if (_botTyping) return;
+    _inputFocusNode.unfocus();
+    FocusScope.of(context).unfocus();
+    final now = DateTime.now();
+    final initial = _dtDate ?? now;
+    final date = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: const ColorScheme.light(primary: _kBlue),
+        ),
+        child: child!,
+      ),
+    );
+    if (date == null || !mounted) return;
+    setState(() => _dtDate = date);
+  }
+
+  Future<void> _pickIncidentTime() async {
+    if (_botTyping) return;
+    _inputFocusNode.unfocus();
+    FocusScope.of(context).unfocus();
+    final initial = _dtTime ?? TimeOfDay.fromDateTime(DateTime.now());
+    final time = await showTimePicker(
+      context: context,
+      initialTime: initial,
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: const ColorScheme.light(primary: _kBlue),
+        ),
+        child: child!,
+      ),
+    );
+    if (time == null || !mounted) return;
+    setState(() => _dtTime = time);
+  }
+
+  void _confirmIncidentDateTime() {
+    if (_botTyping) return;
+    final now = DateTime.now();
+    final date = _dtDate ?? now;
+    final time = _dtTime ?? TimeOfDay.fromDateTime(now);
+    final selected =
+        DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    final formatted = DateFormat('dd MMM yyyy, hh:mm a').format(selected);
+
+    _inputFocusNode.unfocus();
+
+    setState(() {
+      _dtDate = null;
+      _dtTime = null;
+      _messages.add(_ChatMsg(text: formatted, isUser: true));
+      _botTyping = true;
+    });
+    _scrollToBottom();
+    _streamBotReply(formatted);
+  }
+
+  // ── GET_LOCATION trigger handlers ─────────────────────────────────────
+
+  void _onSubmitLocation() {
+    final text = _locationController.text.trim();
+    if (text.isEmpty || _botTyping) return;
+    _locationController.clear();
+    _sendLocationReply(text);
+  }
+
+  Future<void> _onUseCurrentLocation() async {
+    if (_botTyping || _fetchingLocation) return;
+    setState(() => _fetchingLocation = true);
+
+    try {
+      // 1. Check if location services (GPS) are enabled
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please enable location services (GPS) in device settings'),
+          ),
+        );
+        // Prompt user to open location settings
+        await Geolocator.openLocationSettings();
+        return;
+      }
+
+      // 2. Check & request permission
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location permission is required')),
+        );
+        return;
+      }
+      if (permission == LocationPermission.deniedForever) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Location permission is permanently denied. Please enable it in app settings.'),
+          ),
+        );
+        await Geolocator.openAppSettings();
+        return;
+      }
+
+      // 3. Get GPS position
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 15),
+        ),
+      );
+
+      // 4. Reverse geocode to readable address
+      String address;
+      try {
+        final placemarks = await placemarkFromCoordinates(
+          position.latitude,
+          position.longitude,
+        );
+        if (placemarks.isNotEmpty) {
+          final p = placemarks.first;
+          final parts = <String>[
+            if (p.subLocality != null && p.subLocality!.isNotEmpty)
+              p.subLocality!,
+            if (p.locality != null && p.locality!.isNotEmpty)
+              p.locality!,
+            if (p.administrativeArea != null &&
+                p.administrativeArea!.isNotEmpty)
+              p.administrativeArea!,
+          ];
+          address = parts.isNotEmpty
+              ? parts.join(', ')
+              : '${position.latitude}, ${position.longitude}';
+        } else {
+          address = '${position.latitude}, ${position.longitude}';
+        }
+      } catch (_) {
+        // Geocoding failed — fall back to raw coordinates
+        address = '${position.latitude}, ${position.longitude}';
+      }
+
+      if (!mounted) return;
+      _sendLocationReply(address);
+    } on LocationServiceDisabledException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Location services are disabled')),
+      );
+    } on PermissionDeniedException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Location permission was denied')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not get location: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _fetchingLocation = false);
+    }
+  }
+
+  void _sendLocationReply(String location) {
+    setState(() {
+      _messages.add(_ChatMsg(text: location, isUser: true));
+      _botTyping = true;
+    });
+    _scrollToBottom();
+    _streamBotReply(location);
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _kBg,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        scrolledUnderElevation: 1,
+        centerTitle: true,
+        leading: Padding(
+          padding: const EdgeInsets.all(8),
+          child: GestureDetector(
+            onTap: () => Navigator.of(context).pop(),
+            child: Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: const Icon(Icons.arrow_back_ios_new, size: 16, color: _kDark),
+            ),
+          ),
+        ),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircleAvatar(
+              radius: 16,
+              backgroundImage: const AssetImage('assets/images/avatar_assistant.png'),
+              backgroundColor: Colors.grey.shade200,
+            ),
+            const SizedBox(width: 10),
+            const Text(
+              'Claim Assistant',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _kDark),
+            ),
+          ],
+        ),
+      ),
+      body: Column(
+        children: [
+          // Messages list
+          Expanded(
+            child: ListView.builder(
+              controller: _scrollController,
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              itemCount: _messages.length + (_botTyping && !_isAnimating ? 1 : 0),
+              itemBuilder: (context, index) {
+                if (index == _messages.length && _botTyping && !_isAnimating) {
+                  return _buildTypingIndicator();
+                }
+                return _buildBubble(_messages[index]);
+              },
+            ),
+          ),
+
+          // Input bar
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 8,
+                  offset: const Offset(0, -2),
+                ),
+              ],
+            ),
+            child: SafeArea(
+              top: false,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _controller,
+                      focusNode: _inputFocusNode,
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: (_) => _send(),
+                      decoration: InputDecoration(
+                        hintText: 'Type your message...',
+                        hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                          borderSide: BorderSide.none,
+                        ),
+                        filled: true,
+                        fillColor: _kBg,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      ),
+                      style: const TextStyle(fontSize: 14, color: _kDark),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    onPressed: _send,
+                    icon: const Icon(Icons.send_rounded, color: _kBlue),
+                    splashRadius: 24,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── Policy detail detection ──────────────────────────────────────────────
+
+  /// Payload types that should render as a table card.
+  static const _tablePayloadTypes = {'verified_summary', 'final_summary'};
+
+  /// Extracts ordered key/value fields from a structured summary payload
+  /// when the message carries a `SHOW_TABLE` trigger.
+  Map<String, String>? _tableFields(_ChatMsg msg) {
+    if (!msg.triggers.contains('SHOW_TABLE')) return null;
+    if (!_tablePayloadTypes.contains(msg.payloadType)) return null;
+    final payload = msg.payload;
+    if (payload == null || payload.isEmpty) return null;
+
+    final fields = <String, String>{};
+    payload.forEach((key, value) {
+      if (value == null) return;
+      fields[key] = _formatFieldValue(key, value);
+    });
+    return fields.isEmpty ? null : fields;
+  }
+
+  String _cardTitleFor(String? payloadType) {
+    switch (payloadType) {
+      case 'final_summary':
+        return 'Claim Summary';
+      case 'verified_summary':
+      default:
+        return 'Policy Verified';
+    }
+  }
+
+  String _formatFieldValue(String key, dynamic value) {
+    final raw = value.toString().trim();
+    if (raw.isEmpty) return '';
+
+    // Format ISO-like dates (e.g. "2026-12-31") to "10 Aug, 2026".
+    final iso = RegExp(r'^\d{4}-\d{2}-\d{2}').firstMatch(raw);
+    if (iso != null) {
+      final parsed = DateTime.tryParse(raw);
+      if (parsed != null) {
+        return DateFormat('d MMM, yyyy').format(parsed);
+      }
+    }
+    return raw;
+  }
+
+  static final _policyFieldPattern = RegExp(
+    r'\*\*(.+?):\*\*\s*(.+)',
+  );
+
+  /// Returns parsed policy fields if the message contains policy details.
+  Map<String, String>? _parsePolicyFields(String text) {
+    final matches = _policyFieldPattern.allMatches(text).toList();
+    if (matches.length < 4) return null;
+
+    final fields = <String, String>{};
+    for (final m in matches) {
+      fields[m.group(1)!.trim()] = m.group(2)!.trim();
+    }
+
+    // Must contain at least Policy Holder + Policy Number to qualify
+    final keys = fields.keys.map((k) => k.toLowerCase()).toSet();
+    if (!keys.contains('policy holder') && !keys.contains('policyholder')) {
+      return null;
+    }
+    if (!keys.any((k) => k.contains('policy') && k.contains('number'))) {
+      return null;
+    }
+    return fields;
+  }
+
+  /// Extracts intro text before the first bold field line.
+  String _policyIntroText(String text) {
+    final lines = text.split('\n');
+    final buffer = StringBuffer();
+    for (final line in lines) {
+      if (_policyFieldPattern.hasMatch(line)) break;
+      final trimmed = line.trim();
+      if (trimmed.isNotEmpty) {
+        if (buffer.isNotEmpty) buffer.write(' ');
+        buffer.write(trimmed);
+      }
+    }
+    return buffer.toString();
+  }
+
+  /// Extracts the trailing question text after the last bold field line.
+  String _policyTrailingText(String text) {
+    final lines = text.split('\n');
+    final buffer = StringBuffer();
+    bool pastFields = false;
+    for (final line in lines.reversed) {
+      final trimmed = line.trim();
+      if (_policyFieldPattern.hasMatch(line)) {
+        pastFields = true;
+        break;
+      }
+      if (trimmed.isNotEmpty) {
+        buffer.write(trimmed);
+      }
+    }
+    return pastFields ? buffer.toString() : '';
+  }
+
+  // ─── Policy Verified Card ────────────────────────────────────────────────
+  Widget _buildPolicyCard({
+    required _ChatMsg msg,
+    required String title,
+    required Map<String, String> fields,
+    required String introText,
+    required String trailingText,
+    required bool showSuggestions,
+    required bool showTriggers,
+  }) {
+    // Determine status for coloring
+    final statusValue = fields.entries
+        .where((e) => e.key.toLowerCase() == 'status')
+        .map((e) => e.value)
+        .firstOrNull;
+    final isActive = statusValue != null &&
+        statusValue.toLowerCase().contains('active');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Intro text bubble
+        if (introText.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildBotAvatar(),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Container(
+                    constraints: BoxConstraints(
+                        maxWidth:
+                            MediaQuery.of(context).size.width * 0.70),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(16),
+                        topRight: Radius.circular(16),
+                        bottomLeft: Radius.circular(4),
+                        bottomRight: Radius.circular(16),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Text(
+                      introText,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: _kDark,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+        // Policy card
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Container(
+            constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.82),
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.08),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF7F8FA),
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(16),
+                      topRight: Radius.circular(16),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 28,
+                        height: 28,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF34A853),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.check,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: _kDark,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Fields
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 4),
+                  child: Column(
+                    children: List.generate(fields.length, (i) {
+                      final entry = fields.entries.elementAt(i);
+                      final isStatus =
+                          entry.key.toLowerCase() == 'status';
+                      final isLast = i == fields.length - 1;
+                      return Container(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          border: isLast
+                              ? null
+                              : Border(
+                                  bottom: BorderSide(
+                                    color: Colors.grey.shade200,
+                                    width: 1,
+                                  ),
+                                ),
+                        ),
+                        child: Row(
+                          crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(
+                              width: 110,
+                              child: Text(
+                                '${entry.key}:',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey.shade600,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: Text(
+                                entry.value,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: isStatus && isActive
+                                      ? const Color(0xFF34A853)
+                                      : _kDark,
+                                  height: 1.4,
+                                ),
+                                textAlign: TextAlign.right,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ),
+                ),
+
+                // Confirm / Not Correct buttons
+                if (showSuggestions)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                    child: Row(
+                      children: msg.suggestions.map((s) {
+                        final isConfirm = s.toLowerCase().contains('correct') ||
+                            s.toLowerCase().contains('yes') ||
+                            s.toLowerCase().contains('confirm');
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 10),
+                          child: GestureDetector(
+                            onTap: () => _onSuggestionTap(s),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 20, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: isConfirm
+                                    ? _kBlue
+                                    : Colors.white,
+                                borderRadius:
+                                    BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: isConfirm
+                                      ? _kBlue
+                                      : _kDark,
+                                ),
+                              ),
+                              child: Text(
+                                s,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: isConfirm
+                                      ? Colors.white
+                                      : _kDark,
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+
+        // Trigger actions (if any, outside the card)
+        if (showTriggers)
+          Padding(
+            padding: const EdgeInsets.only(left: 46, bottom: 10),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children:
+                  msg.triggers.map((t) => _buildTriggerButton(t)).toList(),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildBotAvatar() {
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: const BoxDecoration(color: _kBlue, shape: BoxShape.circle),
+      child: ClipOval(
+        child: Image.asset(
+          'assets/images/avatar_assistant.png',
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => const Icon(
+            Icons.smart_toy_outlined,
+            color: Colors.white,
+            size: 18,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUserAvatar() {
+    final user = context.watch<AuthCubit>().state.user;
+    final avatarUrl = user?.avatarUrl;
+    final initials = (user?.fullName ?? '')
+        .split(' ')
+        .where((p) => p.isNotEmpty)
+        .take(2)
+        .map((p) => p[0].toUpperCase())
+        .join();
+    final fallback = CircleAvatar(
+      radius: 18,
+      backgroundColor: _kUserInitialsBg,
+      child: Text(
+        initials.isNotEmpty ? initials : '?',
+        style: const TextStyle(
+          color: _kUserInitialsText,
+          fontSize: 13,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+    return SizedBox(
+      width: 36,
+      height: 36,
+      child: ClipOval(
+        child: avatarUrl != null && avatarUrl.isNotEmpty
+            ? Image.network(
+                avatarUrl,
+                fit: BoxFit.cover,
+                width: 36,
+                height: 36,
+                errorBuilder: (_, _, _) => fallback,
+              )
+            : fallback,
+      ),
+    );
+  }
+
+  // ─── Chat Bubble ─────────────────────────────────────────────────────────
+  Widget _buildBubble(_ChatMsg msg) {
+    final isUser = msg.isUser;
+    final isLastBot = !isUser && _messages.last == msg && !_botTyping;
+    final showSuggestions = isLastBot && msg.suggestions.isNotEmpty;
+    final showTriggers = isLastBot && msg.triggers.isNotEmpty;
+    final showCloseButton = isLastBot && msg.messageType == 'done';
+
+    // Check if this is a policy detail message
+    if (!isUser && !msg.animate) {
+      // Structured payload (triggers: SHOW_TABLE + verified_summary / final_summary)
+      final structured = _tableFields(msg);
+      if (structured != null) {
+        return _buildPolicyCard(
+          msg: msg,
+          title: _cardTitleFor(msg.payloadType),
+          fields: structured,
+          introText: msg.text,
+          trailingText: '',
+          showSuggestions: showSuggestions,
+          showTriggers: showTriggers,
+        );
+      }
+
+      // Fallback: parse from markdown text
+      final policyFields = _parsePolicyFields(msg.text);
+      if (policyFields != null) {
+        return _buildPolicyCard(
+          msg: msg,
+          title: 'Policy Verified',
+          fields: policyFields,
+          introText: _policyIntroText(msg.text),
+          trailingText: _policyTrailingText(msg.text),
+          showSuggestions: showSuggestions,
+          showTriggers: showTriggers,
+        );
+      }
+    }
+
+    final hasAttachments = isUser &&
+        (msg.imagePaths.isNotEmpty || msg.documentNames.isNotEmpty);
+
+    return Column(
+      crossAxisAlignment:
+          isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        if (hasAttachments)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: _buildUserAttachments(msg),
+          ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Row(
+            mainAxisAlignment:
+                isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (!isUser) ...[
+                _buildBotAvatar(),
+                const SizedBox(width: 10),
+              ],
+              Flexible(
+                child: Container(
+                  constraints: BoxConstraints(
+                      maxWidth: MediaQuery.of(context).size.width * 0.70),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: isUser ? _kBlue : Colors.white,
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(16),
+                      topRight: const Radius.circular(16),
+                      bottomLeft: Radius.circular(isUser ? 16 : 4),
+                      bottomRight: Radius.circular(isUser ? 4 : 16),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.05),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: isUser
+                      ? Text(
+                          msg.text,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Colors.white,
+                            height: 1.4,
+                          ),
+                        )
+                      : msg.animate
+                          ? _TypewriterText(
+                              text: msg.text,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: _kDark,
+                                height: 1.4,
+                              ),
+                              onComplete: _showNextPendingMessage,
+                            )
+                          : MarkdownBody(
+                              data: msg.text,
+                              selectable: true,
+                              fitContent: true,
+                              shrinkWrap: true,
+                              styleSheet: _botMarkdownStyle,
+                            ),
+                ),
+              ),
+              if (isUser) ...[
+                const SizedBox(width: 10),
+                _buildUserAvatar(),
+              ],
+            ],
+          ),
+        ),
+        // Suggestion chips
+        if (showSuggestions)
+          Padding(
+            padding: const EdgeInsets.only(left: 46, bottom: 10),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: msg.suggestions.map((s) {
+                return GestureDetector(
+                  onTap: () => _onSuggestionTap(s),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: _kBlue),
+                    ),
+                    child: Text(
+                      s,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: _kBlue,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        // Trigger actions
+        if (showTriggers)
+          Padding(
+            padding: const EdgeInsets.only(left: 46, bottom: 10),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: msg.triggers.map((t) => _buildTriggerButton(t)).toList(),
+            ),
+          ),
+        // Close button — appears on `message_type == 'done'`
+        if (showCloseButton)
+          Padding(
+            padding: const EdgeInsets.only(left: 46, bottom: 10),
+            child: _buildCloseButton(msg),
+          ),
+      ],
+    );
+  }
+
+  // ── GET_IMAGE handlers ────────────────────────────────────────────────
+
+  Future<void> _onPickImages() async {
+    if (_pickedImages.length >= _maxImages) return;
+
+    final remaining = _maxImages - _pickedImages.length;
+    final images = await _imagePicker.pickMultiImage(
+      imageQuality: 80,
+      limit: remaining,
+    );
+    if (images.isEmpty || !mounted) return;
+
+    setState(() {
+      for (final img in images) {
+        if (_pickedImages.length >= _maxImages) break;
+        _pickedImages.add(File(img.path));
+      }
+    });
+    _scrollToBottom();
+  }
+
+  void _onRemoveImage(int index) {
+    setState(() => _pickedImages.removeAt(index));
+  }
+
+  Future<void> _onSubmitImages() async {
+    if (_pickedImages.isEmpty || _botTyping || _uploadingFiles) return;
+
+    final files = List<File>.from(_pickedImages);
+    setState(() => _uploadingFiles = true);
+
+    int uploadedCount = 0;
+    try {
+      final ds = di.sl<ClaimsRemoteDataSource>();
+      final category = _inferCategory(isImage: true);
+      for (final file in files) {
+        final bytes = await file.readAsBytes();
+        final name = file.path.split(RegExp(r'[\\/]')).last;
+        final response = await ds.uploadClaimDocument(
+          bytes: bytes,
+          fileName: name.isEmpty ? 'image.jpg' : name,
+          kind: 'Image',
+          category: category,
+          chatThreadId: _threadId,
+        );
+        final id = (response['id'] ?? '').toString();
+        if (id.isNotEmpty) {
+          _uploadedDocumentIds.add(id);
+          uploadedCount++;
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Image upload failed: $e')),
+        );
+      }
+      debugPrint('[Upload] image upload failed: $e');
+    }
+
+    if (!mounted) return;
+    final count = uploadedCount == 0 ? files.length : uploadedCount;
+    final bubble = '$count photo${count > 1 ? 's' : ''} uploaded';
+    final paths = files.map((f) => f.path).toList();
+    setState(() {
+      _pickedImages.clear();
+      _uploadingFiles = false;
+      _messages.add(_ChatMsg(
+        text: bubble,
+        isUser: true,
+        imagePaths: paths,
+      ));
+      _botTyping = true;
+    });
+    _scrollToBottom();
+    _streamBotReply(count.toString());
+  }
+
+  // ── GET_DOCUMENT handlers ───────────────────────────────────────────────
+
+  Future<void> _onPickDocuments() async {
+    if (_pickedDocuments.length >= _maxDocuments) return;
+
+    final result = await FilePicker.platform.pickFiles(
+      allowMultiple: true,
+      type: FileType.custom,
+      allowedExtensions: _allowedDocExtensions,
+    );
+    if (result == null || !mounted) return;
+
+    setState(() {
+      for (final file in result.files) {
+        if (_pickedDocuments.length >= _maxDocuments) break;
+        _pickedDocuments.add(file);
+      }
+    });
+    _scrollToBottom();
+  }
+
+  void _onRemoveDocument(int index) {
+    setState(() => _pickedDocuments.removeAt(index));
+  }
+
+  Future<void> _onSubmitDocuments() async {
+    if (_pickedDocuments.isEmpty || _botTyping || _uploadingFiles) return;
+
+    final docs = List<PlatformFile>.from(_pickedDocuments);
+    setState(() => _uploadingFiles = true);
+
+    int uploadedCount = 0;
+    try {
+      final ds = di.sl<ClaimsRemoteDataSource>();
+      final category = _inferCategory(isImage: false);
+      for (final doc in docs) {
+        // `bytes` is populated when file_picker is used with withData: true
+        // or on web. For mobile path, read the file from disk.
+        List<int> bytes;
+        if (doc.bytes != null) {
+          bytes = doc.bytes!;
+        } else if (doc.path != null) {
+          bytes = await File(doc.path!).readAsBytes();
+        } else {
+          continue;
+        }
+        final response = await ds.uploadClaimDocument(
+          bytes: bytes,
+          fileName: doc.name,
+          kind: 'Document',
+          category: category,
+          chatThreadId: _threadId,
+        );
+        final id = (response['id'] ?? '').toString();
+        if (id.isNotEmpty) {
+          _uploadedDocumentIds.add(id);
+          uploadedCount++;
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Document upload failed: $e')),
+        );
+      }
+      debugPrint('[Upload] document upload failed: $e');
+    }
+
+    if (!mounted) return;
+    final count = uploadedCount == 0 ? docs.length : uploadedCount;
+    final bubble = '$count document${count > 1 ? 's' : ''} uploaded';
+    final imagePaths = <String>[];
+    final docNames = <String>[];
+    for (final d in docs) {
+      final ext = d.extension?.toLowerCase() ?? '';
+      final isImage = const {'jpg', 'jpeg', 'png'}.contains(ext);
+      if (isImage && d.path != null) {
+        imagePaths.add(d.path!);
+      } else {
+        docNames.add(d.name);
+      }
+    }
+    if (imagePaths.isEmpty && docNames.isEmpty) {
+      docNames.addAll(docs.map((d) => d.name));
+    }
+    setState(() {
+      _pickedDocuments.clear();
+      _uploadingFiles = false;
+      _messages.add(_ChatMsg(
+        text: bubble,
+        isUser: true,
+        imagePaths: imagePaths,
+        documentNames: docNames,
+      ));
+      _botTyping = true;
+    });
+    _scrollToBottom();
+    _streamBotReply(count.toString());
+  }
+
+  void _onSkipDocuments() {
+    if (_botTyping) return;
+    setState(() {
+      _pickedDocuments.clear();
+      _messages.add(const _ChatMsg(text: 'Skip', isUser: true));
+      _botTyping = true;
+    });
+    _scrollToBottom();
+    _streamBotReply('Skip');
+  }
+
+  // ─── Trigger Widgets ─────────────────────────────────────────────────────
+  Widget _buildTriggerButton(String trigger) {
+    switch (trigger) {
+      case 'GET_DATE_TIME':
+        return _buildDateTimeTrigger();
+      case 'GET_LOCATION':
+        return _buildLocationTrigger();
+      case 'GET_IMAGE':
+        return _buildImageTrigger();
+      case 'GET_DOCUMENT':
+        return _buildDocumentTrigger();
+      case 'SUBMIT_CLAIM':
+        return _buildSubmitClaimTrigger();
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
+  // ── SUBMIT_CLAIM trigger ─────────────────────────────────────────────────
+
+  bool _submittingClaim = false;
+  bool _closingConversation = false;
+
+  static final _claimRefPattern = RegExp(
+    r'([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})',
+  );
+
+  /// Extracts a claim reference UUID from the final "done" bot message, if any.
+  String? _extractClaimReference(String text) {
+    final match = _claimRefPattern.firstMatch(text);
+    return match?.group(1);
+  }
+
+  /// Picks up the most recent `claim_data` payload we received during the chat.
+  Map<String, dynamic>? _latestClaimData() {
+    for (int i = _messages.length - 1; i >= 0; i--) {
+      final data = _messages[i].claimData;
+      if (data != null && data.isNotEmpty) return data;
+    }
+    return null;
+  }
+
+  /// Picks up the last `save_summary` payload from a `message_type == 'done'`
+  /// bubble. This is the authoritative final summary the bot shows just before
+  /// the Close button, and contains human-readable keys like "Policy Number".
+  Map<String, dynamic>? _latestSaveSummaryPayload() {
+    for (int i = _messages.length - 1; i >= 0; i--) {
+      final m = _messages[i];
+      if (m.messageType == 'done' &&
+          m.payloadType == 'save_summary' &&
+          m.payload != null &&
+          m.payload!.isNotEmpty) {
+        return m.payload;
+      }
+    }
+    return null;
+  }
+
+  /// Translates the human-readable keys from a `save_summary` payload into the
+  /// camelCase property names expected by `CreateClaimFromChatDto` on the
+  /// backend. Unknown keys are kept verbatim — `[JsonExtensionData]` on the
+  /// DTO captures them into the `AdditionalData` JSON blob.
+  Map<String, dynamic> _mapSaveSummaryToDto(Map<String, dynamic> summary) {
+    final mapped = <String, dynamic>{};
+    String? incidentDateRaw;
+    String? incidentTimeRaw;
+
+    summary.forEach((key, value) {
+      if (value == null) return;
+      switch (key) {
+        case 'Policy Number':
+          mapped['policyNumber'] = value;
+          break;
+        case 'Policy Holder':
+          mapped['fullName'] = value;
+          break;
+        case 'Vehicle Number':
+          mapped['vehicleNumber'] = value;
+          break;
+        case 'VIN':
+          mapped['vinNumber'] = value;
+          break;
+        case 'Claim Type':
+          mapped['claimType'] = value.toString();
+          break;
+        case 'Incident Date':
+          incidentDateRaw = value.toString();
+          break;
+        case 'Incident Time':
+          incidentTimeRaw = value.toString();
+          break;
+        case 'Incident Location':
+          mapped['incidentLocation'] = value;
+          break;
+        case 'Incident Description':
+          mapped['incidentDescription'] = value;
+          mapped['description'] = value;
+          break;
+        case 'Claim Amount':
+          if (value is num) {
+            mapped['amount'] = value;
+          } else {
+            final parsed = num.tryParse(value.toString());
+            if (parsed != null) mapped['amount'] = parsed;
+          }
+          break;
+        case 'Vehicle Photos Count':
+          mapped['vehiclePhotosCount'] = _asInt(value);
+          break;
+        case 'Damage Photos Count':
+          mapped['damagePhotosCount'] = _asInt(value);
+          break;
+        case 'License Photos Count':
+          mapped['licensePhotosCount'] = _asInt(value);
+          break;
+        case 'Police Report Count':
+          mapped['policeReportCount'] = _asInt(value);
+          break;
+        case 'Repair Bill Count':
+          mapped['repairBillCount'] = _asInt(value);
+          break;
+        default:
+          // Keep unrecognised keys so the server stores them under AdditionalData.
+          mapped[key] = value;
+      }
+    });
+
+    final combinedIncident = _combineIncidentDateTime(
+      incidentDateRaw,
+      incidentTimeRaw,
+    );
+    if (combinedIncident != null) {
+      mapped['incidentDate'] = combinedIncident.toUtc().toIso8601String();
+    } else {
+      // Preserve the raw strings as extras so nothing is silently dropped.
+      if (incidentDateRaw != null) mapped['Incident Date'] = incidentDateRaw;
+      if (incidentTimeRaw != null) mapped['Incident Time'] = incidentTimeRaw;
+    }
+
+    return mapped;
+  }
+
+  /// Infers the document category for an upload from the most recent bot
+  /// prompt. The chatbot's trigger messages don't carry an explicit category,
+  /// so we fall back to keyword matching on the latest bot text.
+  String _inferCategory({required bool isImage}) {
+    String text = '';
+    for (int i = _messages.length - 1; i >= 0; i--) {
+      if (!_messages[i].isUser) {
+        text = _messages[i].text.toLowerCase();
+        break;
+      }
+    }
+    if (text.contains('damage')) return 'DamagePhoto';
+    if (text.contains('license') || text.contains('licence')) {
+      return 'DriverLicense';
+    }
+    if (text.contains('police')) return 'PoliceReport';
+    if (text.contains('repair') ||
+        text.contains('bill') ||
+        text.contains('invoice')) {
+      return 'BillInvoice';
+    }
+    if (text.contains('vehicle') || text.contains('car')) {
+      return isImage ? 'VehiclePhoto' : 'SupportingDocument';
+    }
+    return isImage ? 'VehiclePhoto' : 'SupportingDocument';
+  }
+
+  /// Coerces a payload value to an `int` (best-effort). Returns 0 on failure
+  /// so counts always round-trip as a number, never null.
+  int _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    final parsed = int.tryParse(value.toString());
+    return parsed ?? 0;
+  }
+
+  /// Parses the "dd-MM-yyyy" date + "hh:mm a" time pair that the chat summary
+  /// uses. Returns null on any parse failure so the caller can fall back to
+  /// keeping the raw strings.
+  DateTime? _combineIncidentDateTime(String? dateRaw, String? timeRaw) {
+    if (dateRaw == null || dateRaw.trim().isEmpty) return null;
+    DateTime? date;
+    for (final pattern in const ['dd-MM-yyyy', 'd-M-yyyy', 'yyyy-MM-dd']) {
+      try {
+        date = DateFormat(pattern).parseStrict(dateRaw.trim());
+        break;
+      } catch (_) {
+        // try next pattern
+      }
+    }
+    date ??= DateTime.tryParse(dateRaw.trim());
+    if (date == null) return null;
+
+    if (timeRaw == null || timeRaw.trim().isEmpty) return date;
+    for (final pattern in const ['hh:mm a', 'h:mm a', 'HH:mm']) {
+      try {
+        final t = DateFormat(pattern).parseStrict(timeRaw.trim());
+        return DateTime(date.year, date.month, date.day, t.hour, t.minute);
+      } catch (_) {
+        // try next pattern
+      }
+    }
+    return date;
+  }
+
+  /// Builds the transcript payload sent to `POST /mobile/conversations`.
+  List<Map<String, dynamic>> _buildConversationMessagesPayload() {
+    final payload = <Map<String, dynamic>>[];
+    for (var i = 0; i < _messages.length; i++) {
+      final m = _messages[i];
+      final ts = i < _messageTimestamps.length
+          ? _messageTimestamps[i]
+          : DateTime.now();
+      final metadata = <String, dynamic>{
+        if (m.messageType.isNotEmpty) 'messageType': m.messageType,
+        if (m.triggers.isNotEmpty) 'triggers': m.triggers,
+        if (m.payloadType != null) 'payloadType': m.payloadType,
+      };
+      payload.add({
+        'role': m.isUser ? 'User' : 'Assistant',
+        'content': m.text,
+        'timestamp': ts.toUtc().toIso8601String(),
+        if (metadata.isNotEmpty)
+          'metadata': jsonEncode(metadata),
+      });
+    }
+    return payload;
+  }
+
+  /// Handler for the Close button shown on the `message_type == 'done'` bubble.
+  /// Always runs end-to-end (try/finally) and surfaces real errors via SnackBar
+  /// so failures are visible instead of silently swallowed.
+  Future<void> _onCloseConversation(_ChatMsg doneMsg) async {
+    if (_closingConversation) return;
+    setState(() => _closingConversation = true);
+
+    final externalRef = _extractClaimReference(doneMsg.text);
+    String? finalClaimId = _submittedClaimId;
+    String? errorMessage;
+
+    try {
+      // 1. Always create a claim row using the lightweight "from-chat"
+      //    endpoint unless SUBMIT_CLAIM already produced one this session.
+      if (finalClaimId == null || finalClaimId.isEmpty) {
+        final claimData = _latestClaimData() ?? <String, dynamic>{};
+        final saveSummary = _latestSaveSummaryPayload();
+        final summaryFields = saveSummary != null
+            ? _mapSaveSummaryToDto(saveSummary)
+            : <String, dynamic>{};
+        // save_summary is the authoritative final payload from the bot, so
+        // its values take precedence over any earlier claim_data snapshot.
+        final payload = <String, dynamic>{
+          ...claimData,
+          ...summaryFields,
+          'chatThreadId': _threadId,
+          'externalReference': ?externalRef,
+        };
+        try {
+          final response = await di
+              .sl<ClaimsRemoteDataSource>()
+              .createClaimFromChat(payload);
+          final created =
+              (response['id'] ?? response['claimId'] ?? '').toString();
+          if (created.isNotEmpty) {
+            finalClaimId = created;
+            _submittedClaimId = finalClaimId;
+            debugPrint('[Close] claim created: $finalClaimId');
+          } else {
+            errorMessage = 'Claim created but backend returned no id.';
+          }
+        } catch (e) {
+          errorMessage = 'Failed to save claim: $e';
+          debugPrint('[Close] createClaimFromChat failed: $e');
+        }
+      }
+
+      // 2. Write the transcript JSON file locally.
+      _persistTranscript();
+
+      // 3. Attach any files uploaded during the chat to the new claim row.
+      if (finalClaimId != null &&
+          finalClaimId.isNotEmpty &&
+          _uploadedDocumentIds.isNotEmpty) {
+        try {
+          final result = await di.sl<ClaimsRemoteDataSource>().attachClaimDocuments(
+                claimId: finalClaimId,
+                documentIds: List<String>.from(_uploadedDocumentIds),
+              );
+          debugPrint(
+              '[Close] attached ${result['attachedCount']} document(s) to $finalClaimId');
+        } catch (e) {
+          errorMessage ??= 'Failed to attach documents: $e';
+          debugPrint('[Close] attachClaimDocuments failed: $e');
+        }
+      }
+
+      // 4. Save the full transcript to the Conversation tables.
+      if (finalClaimId != null && finalClaimId.isNotEmpty) {
+        try {
+          final result = await di.sl<ChatRemoteDataSource>().saveConversation(
+                threadId: _threadId,
+                claimId: finalClaimId,
+                externalReference: externalRef,
+                messages: _buildConversationMessagesPayload(),
+              );
+          debugPrint('[Close] conversation saved: ${result['conversationId']}');
+        } catch (e) {
+          errorMessage ??= 'Failed to save conversation: $e';
+          debugPrint('[Close] saveConversation failed: $e');
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _closingConversation = false);
+
+        if (errorMessage != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(errorMessage),
+              backgroundColor: Colors.red.shade700,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+
+        // 4. Always clear the stack and land on the Claims tab inside the
+        //    HomePage shell so the bottom nav is preserved.
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          AppRoutes.home,
+          (route) => false,
+          arguments: {'initialTab': 1},
+        );
+      }
+    }
+  }
+
+  Widget _buildCloseButton(_ChatMsg msg) {
+    return _buildPillButton(
+      icon: Icons.check_circle_outline,
+      label: 'Close',
+      onTap: () => _onCloseConversation(msg),
+      isLoading: _closingConversation,
+    );
+  }
+
+  Widget _buildSubmitClaimTrigger() {
+    // Find the message that has claim_data
+    final claimMsg = _messages.lastWhere(
+      (m) => m.claimData != null && m.claimData!.isNotEmpty,
+      orElse: () => const _ChatMsg(text: '', isUser: false),
+    );
+
+    if (claimMsg.claimData == null || claimMsg.claimData!.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return _buildPillButton(
+      icon: Icons.check_circle_outline,
+      label: 'Submit Claim',
+      onTap: () => _onSubmitClaim(claimMsg.claimData!),
+      isLoading: _submittingClaim,
+    );
+  }
+
+  Future<void> _onSubmitClaim(Map<String, dynamic> claimData) async {
+    if (_submittingClaim) return;
+    setState(() => _submittingClaim = true);
+
+    try {
+      // Add the chat thread ID so the claim is linked to this conversation
+      final payload = {
+        ...claimData,
+        'chatThreadId': _threadId,
+      };
+
+      final dataSource = di.sl<ClaimsRemoteDataSource>();
+      final response = await dataSource.createClaim(payload);
+
+      if (!mounted) return;
+
+      final claimNumber = response['claimNumber'] as String? ?? '';
+      _submittedClaimId = (response['id'] ?? response['claimId'] ?? claimNumber).toString();
+
+      setState(() {
+        _messages.add(_ChatMsg(
+          text: 'Claim **$claimNumber** has been submitted successfully!',
+          isUser: false,
+          animate: true,
+        ));
+        _submittingClaim = false;
+      });
+      _scrollToBottom();
+      _persistTranscript();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(_ChatMsg(
+          text: 'Failed to submit claim. Please try again.',
+          isUser: false,
+        ));
+        _submittingClaim = false;
+      });
+      _scrollToBottom();
+    }
+  }
+
+  // ── User attachments (images / documents) rendered above user bubble ──
+  Widget _buildUserAttachments(_ChatMsg msg) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        if (msg.imagePaths.isNotEmpty)
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.7,
+            ),
+            child: Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 6,
+              runSpacing: 6,
+              children: msg.imagePaths.map((path) {
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.file(
+                    File(path),
+                    width: 88,
+                    height: 88,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => Container(
+                      width: 88,
+                      height: 88,
+                      color: Colors.grey.shade200,
+                      child: Icon(
+                        Icons.broken_image_outlined,
+                        color: Colors.grey.shade400,
+                        size: 24,
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        if (msg.documentNames.isNotEmpty) ...[
+          if (msg.imagePaths.isNotEmpty) const SizedBox(height: 6),
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.7,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: msg.documentNames.map((name) {
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.insert_drive_file_outlined,
+                        size: 18,
+                        color: _kBlue,
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          name,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: _kDark,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  // ── GET_DATE_TIME inline picker widget ───────────────────────────────
+  Widget _buildDateTimeTrigger() {
+    final now = DateTime.now();
+    final date = _dtDate ?? now;
+    final time = _dtTime ?? TimeOfDay.fromDateTime(now);
+    final dateLabel = DateFormat('d MMM yyyy').format(date);
+    final timeLabel = time.format(context);
+
+    return SizedBox(
+      width: double.infinity,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Select Incident Date & Time',
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.grey.shade600,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _dateTimeField(
+                  icon: Icons.calendar_today_outlined,
+                  value: dateLabel,
+                  onTap: _pickIncidentDate,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _dateTimeField(
+                  icon: Icons.access_time,
+                  value: timeLabel,
+                  onTap: _pickIncidentTime,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: _confirmIncidentDateTime,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                color: _kBlue,
+                borderRadius: BorderRadius.circular(100),
+                boxShadow: [
+                  BoxShadow(
+                    color: _kBlue.withValues(alpha: 0.25),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: const Center(
+                child: Text(
+                  'Confirm Date & Time',
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dateTimeField({
+    required IconData icon,
+    required String value,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: _kBlue),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: _kDark,
+                  fontWeight: FontWeight.w600,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade400),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Reusable pill-shaped action button for triggers.
+  Widget _buildPillButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool isLoading = false,
+  }) {
+    return GestureDetector(
+      onTap: isLoading ? null : onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _kBlue),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isLoading)
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2, color: _kBlue),
+              )
+            else
+              Icon(icon, size: 16, color: _kBlue),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 13,
+                color: _kBlue,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Location trigger: address input + "Use Current Location".
+  Widget _buildLocationTrigger() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: _locationController,
+          textInputAction: TextInputAction.send,
+          onSubmitted: (_) => _onSubmitLocation(),
+          style: const TextStyle(fontSize: 13, color: _kDark),
+          decoration: InputDecoration(
+            hintText: 'Enter street, city or zip code',
+            hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade400),
+            prefixIcon: Icon(Icons.location_on_outlined,
+                size: 18, color: Colors.grey.shade400),
+            prefixIconConstraints:
+                const BoxConstraints(minWidth: 40, minHeight: 0),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            isDense: true,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(22),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(22),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(22),
+              borderSide: const BorderSide(color: _kBlue),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        _buildPillButton(
+          icon: Icons.my_location,
+          label: 'Use Current Location',
+          onTap: _onUseCurrentLocation,
+          isLoading: _fetchingLocation,
+        ),
+      ],
+    );
+  }
+
+  // ─── GET_IMAGE trigger UI ───────────────────────────────────────────────
+  Widget _buildImageTrigger() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Upload Photos',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: _kDark,
+            ),
+          ),
+          if (_pickedImages.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            // Image thumbnails row
+            SizedBox(
+              height: 72,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _pickedImages.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 8),
+                itemBuilder: (_, index) {
+                  return Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.file(
+                          _pickedImages[index],
+                          width: 72,
+                          height: 72,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      Positioned(
+                        top: -6,
+                        right: -6,
+                        child: GestureDetector(
+                          onTap: () => _onRemoveImage(index),
+                          child: Container(
+                            width: 20,
+                            height: 20,
+                            decoration: const BoxDecoration(
+                              color: Colors.red,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.close,
+                              size: 12,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${_pickedImages.length}/$_maxImages UPLOADED',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          // Upload button
+          GestureDetector(
+            onTap: _pickedImages.length >= _maxImages
+                ? _onSubmitImages
+                : _onPickImages,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    _pickedImages.length >= _maxImages
+                        ? Icons.check_circle_outline
+                        : Icons.camera_alt_outlined,
+                    size: 18,
+                    color: _kDark,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _pickedImages.length >= _maxImages ? 'DONE' : 'UPLOAD',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: _kDark,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── GET_DOCUMENT trigger UI ────────────────────────────────────────────
+  Widget _buildDocumentTrigger() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Upload Documents',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: _kDark,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'You can upload photos or PDF files.',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+              ),
+              if (_pickedDocuments.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                // Document list
+                ...List.generate(_pickedDocuments.length, (index) {
+                  final doc = _pickedDocuments[index];
+                  final sizeKb = doc.size ~/ 1024;
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.description_outlined,
+                            size: 20, color: _kBlue),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                doc.name,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  color: _kDark,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                'Document \u2022 $sizeKb KB',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey.shade500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () => _onRemoveDocument(index),
+                          child: Icon(Icons.close,
+                              size: 18, color: Colors.grey.shade500),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+                Text(
+                  '${_pickedDocuments.length}/$_maxDocuments UPLOADED',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 12),
+              // Upload button
+              GestureDetector(
+                onTap: _pickedDocuments.isNotEmpty &&
+                        _pickedDocuments.length <= _maxDocuments
+                    ? _onSubmitDocuments
+                    : _onPickDocuments,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        _pickedDocuments.isNotEmpty
+                            ? Icons.check_circle_outline
+                            : Icons.camera_alt_outlined,
+                        size: 18,
+                        color: _kDark,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _pickedDocuments.isNotEmpty ? 'DONE' : 'UPLOAD',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: _kDark,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Skip button
+        const SizedBox(height: 8),
+        GestureDetector(
+          onTap: _onSkipDocuments,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: _kBlue),
+            ),
+            child: const Text(
+              'Skip',
+              style: TextStyle(
+                fontSize: 13,
+                color: _kBlue,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─── Typing Indicator ────────────────────────────────────────────────────
+  Widget _buildTypingIndicator() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildBotAvatar(),
+          const SizedBox(width: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(3, (i) {
+            return TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: 1),
+              duration: Duration(milliseconds: 600 + (i * 200)),
+              builder: (context, value, _) {
+                return Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.grey.shade400,
+                  ),
+                );
+              },
+            );
+              }),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Bot Markdown Style ───────────────────────────────────────────────────
+final _botMarkdownStyle = MarkdownStyleSheet(
+  p: const TextStyle(fontSize: 14, color: _kDark, height: 1.4),
+  pPadding: EdgeInsets.zero,
+  strong: const TextStyle(
+    fontSize: 14, color: _kDark, fontWeight: FontWeight.bold, height: 1.4,
+  ),
+  tableHead: const TextStyle(
+    fontSize: 13, fontWeight: FontWeight.bold, color: _kDark,
+  ),
+  tableBody: const TextStyle(fontSize: 13, color: _kDark),
+  tableBorder: TableBorder.all(color: Colors.grey.shade300, width: 0.5),
+  tableHeadAlign: TextAlign.left,
+  tableCellsPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+  blockSpacing: 8,
+  listBullet: const TextStyle(fontSize: 14, color: _kDark),
+  h1: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _kDark),
+  h1Padding: EdgeInsets.zero,
+  h2: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _kDark),
+  h2Padding: EdgeInsets.zero,
+  h3: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: _kDark),
+  h3Padding: EdgeInsets.zero,
+);
+
+// ─── Typewriter Text Widget ───────────────────────────────────────────────
+class _TypewriterText extends StatefulWidget {
+  final String text;
+  final TextStyle style;
+  final VoidCallback? onComplete;
+
+  const _TypewriterText({
+    required this.text,
+    required this.style,
+    this.onComplete,
+  });
+
+  @override
+  State<_TypewriterText> createState() => _TypewriterTextState();
+}
+
+class _TypewriterTextState extends State<_TypewriterText> {
+  int _charCount = 0;
+  Timer? _timer;
+  bool _done = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(milliseconds: 18), (_) {
+      if (_charCount >= widget.text.length) {
+        _timer?.cancel();
+        if (!_done) {
+          _done = true;
+          widget.onComplete?.call();
+        }
+        return;
+      }
+      setState(() {
+        _charCount = (_charCount + 2).clamp(0, widget.text.length);
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final visibleText = widget.text.substring(0, _charCount);
+    return MarkdownBody(
+      data: visibleText,
+      selectable: _done,
+      fitContent: true,
+      shrinkWrap: true,
+      styleSheet: _botMarkdownStyle,
+    );
+  }
+}
+
+// ─── Chat Message Model ────────────────────────────────────────────────────
+class _ChatMsg {
+  final String text;
+  final bool isUser;
+  final bool animate;
+  final String messageType;
+  final List<String> suggestions;
+  final List<String> triggers;
+  final Map<String, dynamic>? claimData;
+  final String? payloadType;
+  final Map<String, dynamic>? payload;
+
+  final List<String> imagePaths;
+  final List<String> documentNames;
+
+  const _ChatMsg({
+    required this.text,
+    required this.isUser,
+    this.animate = false,
+    this.messageType = '',
+    this.suggestions = const [],
+    this.triggers = const [],
+    this.claimData,
+    this.payloadType,
+    this.payload,
+    this.imagePaths = const [],
+    this.documentNames = const [],
+  });
+}

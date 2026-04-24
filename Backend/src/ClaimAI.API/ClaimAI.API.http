@@ -1,0 +1,6 @@
+@ClaimAI.API_HostAddress = http://localhost:5030
+
+GET {{ClaimAI.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
