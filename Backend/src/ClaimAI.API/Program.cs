@@ -5,6 +5,7 @@ using ClaimAI.API.Middleware;
 using ClaimAI.Application;
 using ClaimAI.Infrastructure;
 using ClaimAI.Infrastructure.Data.Seeders;
+using ClaimAI.Infrastructure.Identity;
 using Scalar.AspNetCore;
 using Serilog;
 
@@ -17,6 +18,7 @@ builder.Host.UseSerilog((context, configuration) =>
 // Layer registrations
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddAuthorizationPolicies();
 
 // Controllers with validation filter

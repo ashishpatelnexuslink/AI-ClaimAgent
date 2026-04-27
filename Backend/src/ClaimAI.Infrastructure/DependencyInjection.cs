@@ -26,7 +26,6 @@ public static class DependencyInjection
         });
 
         services.AddIdentityConfiguration();
-        services.AddJwtAuthentication(configuration);
 
         services.AddHttpContextAccessor();
         services.AddScoped(typeof(IGenericRepository<>), typeof(GenericRepository<>));
