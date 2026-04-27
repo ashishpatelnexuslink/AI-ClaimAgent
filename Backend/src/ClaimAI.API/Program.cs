@@ -35,17 +35,24 @@ builder.Services.AddControllers(options =>
 // OpenAPI with JWT Bearer auth
 builder.Services.AddOpenApiWithAuth();
 
-// CORS
-var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-    ?? new[] { "http://localhost:5173", "http://localhost:3000", "https://claimai.nexuslink.in" };
+// Read origins from appsettings.json
+var allowedOrigins = builder.Configuration
+    .GetSection("Cors:AllowedOrigins")
+    .Get<string[]>() ?? Array.Empty<string>();
+
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader()
-              .AllowCredentials());
+    options.AddPolicy("ReactCorsPolicy", policy =>
+    {
+        policy
+            .WithOrigins(allowedOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials()
+            .WithExposedHeaders("Content-Disposition", "X-Total-Count"); // Expose any custom headers
+    });
 });
+
 
 var app = builder.Build();
 
@@ -68,7 +75,9 @@ if (!app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 }
 app.UseStaticFiles(); // serve wwwroot (profile photos, etc.)
-app.UseCors("AllowAll");
+// 5. CORS (MUST BE AFTER ROUTING, BEFORE AUTH)
+app.UseCors("ReactCorsPolicy");
+
 
 app.UseAuthentication();
 app.UseAuthorization();
