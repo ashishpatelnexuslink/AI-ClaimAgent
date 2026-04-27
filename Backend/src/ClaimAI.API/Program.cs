@@ -77,9 +77,11 @@ if (!app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 }
 app.UseStaticFiles(); // serve wwwroot (profile photos, etc.)
-// 5. CORS (MUST BE AFTER ROUTING, BEFORE AUTH)
-app.UseCors("ReactCorsPolicy");
 
+app.UseRouting();
+
+// CORS must come after UseRouting and before UseAuthentication/UseAuthorization
+app.UseCors("ReactCorsPolicy");
 
 app.UseAuthentication();
 app.UseAuthorization();
