@@ -63,9 +63,12 @@ public class ClaimDocumentsController : ControllerBase
             return BadRequest(ApiResponse<object>.FailResponse(
                 $"Content type '{file.ContentType}' is not allowed for {normalisedKind}."));
 
+        var trimmedCategory = string.IsNullOrWhiteSpace(category) ? null : category.Trim();
+        var categoryFolder = SanitizeCategoryFolder(trimmedCategory);
+
         var uploadsRoot = _env.WebRootPath
             ?? Path.Combine(_env.ContentRootPath, "wwwroot");
-        var uploadsDir = Path.Combine(uploadsRoot, "uploads", "claim-documents");
+        var uploadsDir = Path.Combine(uploadsRoot, "uploads", "claim-documents", categoryFolder);
         Directory.CreateDirectory(uploadsDir);
 
         var ext = Path.GetExtension(file.FileName);
@@ -77,7 +80,7 @@ public class ClaimDocumentsController : ControllerBase
             await file.CopyToAsync(stream);
         }
 
-        var relativeUrl = $"/uploads/claim-documents/{storedName}";
+        var relativeUrl = $"/uploads/claim-documents/{categoryFolder}/{storedName}";
 
         var doc = new ClaimDocument
         {
@@ -89,7 +92,7 @@ public class ClaimDocumentsController : ControllerBase
             ContentType = file.ContentType,
             FileSize = file.Length,
             Kind = normalisedKind,
-            Category = string.IsNullOrWhiteSpace(category) ? null : category.Trim(),
+            Category = trimmedCategory,
         };
         _context.ClaimDocuments.Add(doc);
         await _context.SaveChangesAsync();
@@ -153,10 +156,89 @@ public class ClaimDocumentsController : ControllerBase
         if (doc is null)
             return NotFound(ApiResponse<object>.FailResponse("Document not found."));
 
+        TryDeletePhysicalFile(doc.RelativeUrl);
+
         _context.ClaimDocuments.Remove(doc);
         await _context.SaveChangesAsync();
 
         return Ok(ApiResponse<object>.SuccessResponse(new { deleted = true }));
+    }
+
+    /// <summary>
+    /// Deletes every unattached (ClaimId == null) document for the current user
+    /// in the given chat thread, optionally narrowed by category. Used by the
+    /// mobile chat flow to wipe a previous batch of uploads when the user
+    /// re-uploads images for the same prompt (e.g. AI asks to retake the
+    /// damage photo). Already-attached docs are left untouched.
+    /// </summary>
+    [HttpDelete("by-thread/{threadId}")]
+    public async Task<IActionResult> DeleteByThread(string threadId, [FromQuery] string? category)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId is null) return Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(threadId))
+            return BadRequest(ApiResponse<object>.FailResponse("threadId is required."));
+
+        var trimmedCategory = string.IsNullOrWhiteSpace(category) ? null : category.Trim();
+
+        var query = _context.ClaimDocuments
+            .Where(d => d.UserId == userId
+                        && d.ChatThreadId == threadId
+                        && d.ClaimId == null);
+
+        if (trimmedCategory != null)
+            query = query.Where(d => d.Category == trimmedCategory);
+
+        var docs = await query.ToListAsync();
+        if (docs.Count == 0)
+            return Ok(ApiResponse<object>.SuccessResponse(new { deletedIds = Array.Empty<string>() }));
+
+        foreach (var d in docs)
+            TryDeletePhysicalFile(d.RelativeUrl);
+
+        var deletedIds = docs.Select(d => d.Id.ToString()).ToList();
+        _context.ClaimDocuments.RemoveRange(docs);
+        await _context.SaveChangesAsync();
+
+        return Ok(ApiResponse<object>.SuccessResponse(new { deletedIds }));
+    }
+
+    /// <summary>
+    /// Maps an arbitrary user-supplied category to a safe folder name. Anything
+    /// outside [A-Za-z0-9_-] is dropped; empty input falls back to
+    /// "Uncategorized" so we never write into the parent claim-documents folder
+    /// (which would mix back into the legacy flat-storage shape).
+    /// </summary>
+    private static string SanitizeCategoryFolder(string? category)
+    {
+        if (string.IsNullOrWhiteSpace(category)) return "Uncategorized";
+        var cleaned = new string(category
+            .Where(c => char.IsLetterOrDigit(c) || c == '_' || c == '-')
+            .ToArray());
+        return string.IsNullOrEmpty(cleaned) ? "Uncategorized" : cleaned;
+    }
+
+    /// <summary>
+    /// Resolves a stored <see cref="ClaimDocument.RelativeUrl"/> to its on-disk
+    /// path under wwwroot and deletes the file. Tolerant of legacy rows that
+    /// were saved before the category-subfolder layout existed. Errors are
+    /// swallowed — the DB row is the source of truth.
+    /// </summary>
+    private void TryDeletePhysicalFile(string? relativeUrl)
+    {
+        if (string.IsNullOrWhiteSpace(relativeUrl)) return;
+
+        var webRoot = _env.WebRootPath
+            ?? Path.Combine(_env.ContentRootPath, "wwwroot");
+        var trimmed = relativeUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+        var diskPath = Path.Combine(webRoot, trimmed);
+
+        if (System.IO.File.Exists(diskPath))
+        {
+            try { System.IO.File.Delete(diskPath); }
+            catch { /* ignore */ }
+        }
     }
 
     [HttpPost("attach")]

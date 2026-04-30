@@ -12,7 +12,6 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<UserProfile> UserProfiles => Set<UserProfile>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<Conversation> Conversations => Set<Conversation>();
-    public DbSet<ConversationMessage> ConversationMessages => Set<ConversationMessage>();
     public DbSet<ClaimDocument> ClaimDocuments => Set<ClaimDocument>();
 
     public DbSet<Template> Templates => Set<Template>();

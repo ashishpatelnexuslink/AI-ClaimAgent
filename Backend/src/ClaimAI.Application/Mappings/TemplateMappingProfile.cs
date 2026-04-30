@@ -1,4 +1,5 @@
 using AutoMapper;
+using ClaimAI.Application.DTOs.AiMl;
 using ClaimAI.Application.DTOs.Templates;
 using ClaimAI.Domain.Entities.Templates;
 
@@ -67,5 +68,13 @@ public class TemplateMappingProfile : Profile
             .ForMember(d => d.CreatedBy, o => o.Ignore())
             .ForMember(d => d.UpdatedBy, o => o.Ignore())
             .ForMember(d => d.IsDeleted, o => o.Ignore());
+
+        // Entity -> AI/ML payload
+        CreateMap<Template, TemplateConfigRequestDto>()
+            .ForMember(d => d.TemplateId, o => o.MapFrom(s => s.Id));
+        CreateMap<TemplateIdentityField, TemplateConfigIdentityFieldDto>();
+        CreateMap<TemplateFieldGroupRule, TemplateConfigGroupRuleDto>();
+        CreateMap<TemplatePhotoSetting, TemplateConfigPhotoSettingDto>();
+        CreateMap<TemplateDocumentSetting, TemplateConfigDocumentSettingDto>();
     }
 }

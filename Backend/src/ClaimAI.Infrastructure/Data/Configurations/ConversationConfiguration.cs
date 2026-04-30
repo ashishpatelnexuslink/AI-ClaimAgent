@@ -9,7 +9,8 @@ public class ConversationConfiguration : IEntityTypeConfiguration<Conversation>
     public void Configure(EntityTypeBuilder<Conversation> builder)
     {
         builder.Property(c => c.UserId).IsRequired().HasMaxLength(450);
-        builder.Property(c => c.Title).HasMaxLength(200);
+        builder.Property(c => c.ThreadId).IsRequired().HasMaxLength(100);
+        builder.Property(c => c.JsonFilePath).IsRequired().HasMaxLength(500);
 
         builder.HasOne(c => c.User)
                .WithMany()
@@ -23,5 +24,6 @@ public class ConversationConfiguration : IEntityTypeConfiguration<Conversation>
 
         builder.HasIndex(c => c.UserId);
         builder.HasIndex(c => c.ClaimId);
+        builder.HasIndex(c => c.ThreadId);
     }
 }
