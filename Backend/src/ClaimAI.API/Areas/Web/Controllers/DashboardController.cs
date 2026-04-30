@@ -49,10 +49,12 @@ public class DashboardController : ControllerBase
 
         var totalUsers = await _context.UserProfiles.CountAsync(cancellationToken);
 
-        // "Active" conversation = any conversation with a message in the last 24 hours.
+        // "Active" conversation = any conversation row touched in the last 24
+        // hours. Messages live in a JSON file now, not a child table, so we
+        // proxy activity off the row's UpdatedAt/CreatedAt instead.
         var activeSince = now.AddHours(-24);
         var activeConversations = await _context.Conversations
-            .Where(c => c.Messages.Any(m => m.CreatedAt >= activeSince))
+            .Where(c => (c.UpdatedAt ?? c.CreatedAt) >= activeSince)
             .CountAsync(cancellationToken);
 
         // Period-over-period deltas for the three tiles that show a trend chip.

@@ -1,4 +1,5 @@
 using AutoMapper;
+using ClaimAI.Application.DTOs.AiMl;
 using ClaimAI.Application.DTOs.Common;
 using ClaimAI.Application.DTOs.Templates;
 using ClaimAI.Application.Interfaces;
@@ -18,17 +19,20 @@ public class TemplateService : ITemplateService
     private readonly ITemplateRepository _templates;
     private readonly IMapper _mapper;
     private readonly ILogger<TemplateService> _logger;
+    private readonly IAiMlClient _aiMlClient;
 
     public TemplateService(
         ApplicationDbContext context,
         ITemplateRepository templates,
         IMapper mapper,
-        ILogger<TemplateService> logger)
+        ILogger<TemplateService> logger,
+        IAiMlClient aiMlClient)
     {
         _context = context;
         _templates = templates;
         _mapper = mapper;
         _logger = logger;
+        _aiMlClient = aiMlClient;
     }
 
     /// <inheritdoc />
@@ -285,6 +289,54 @@ public class TemplateService : ITemplateService
 
         _logger.LogInformation("Soft-deleted template {TemplateId}", id);
         return Result.Success("Template deleted.");
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<TemplateConfigResponseDto>> SyncToAiAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var template = await _templates.GetByIdWithChildrenAsync(id, cancellationToken);
+        if (template is null)
+            return Result<TemplateConfigResponseDto>.Failure("Template not found.");
+
+        return await PushTemplateToAiAsync(template, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<TemplateConfigResponseDto>> SyncActiveToAiAsync(string companyName, InsuranceType insuranceType, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(companyName))
+            return Result<TemplateConfigResponseDto>.Failure("Company name is required.");
+
+        var template = await _templates.GetActiveAsync(companyName, insuranceType, cancellationToken);
+        if (template is null)
+            return Result<TemplateConfigResponseDto>.Failure(
+                $"No active template for {companyName} / {insuranceType}.");
+
+        return await PushTemplateToAiAsync(template, cancellationToken);
+    }
+
+    private async Task<Result<TemplateConfigResponseDto>> PushTemplateToAiAsync(Template template, CancellationToken cancellationToken)
+    {
+        var payload = _mapper.Map<TemplateConfigRequestDto>(template);
+        payload.IdentityFields = template.IdentityFields
+            .OrderBy(f => f.DisplayOrder)
+            .Select(f => _mapper.Map<TemplateConfigIdentityFieldDto>(f))
+            .ToList();
+        payload.GroupRules = template.GroupRules
+            .OrderBy(r => r.GroupKey)
+            .Select(r => _mapper.Map<TemplateConfigGroupRuleDto>(r))
+            .ToList();
+        payload.PhotoSettings = template.PhotoSettings
+            .OrderBy(p => p.DisplayOrder)
+            .Select(p => _mapper.Map<TemplateConfigPhotoSettingDto>(p))
+            .ToList();
+        payload.DocumentSettings = template.DocumentSettings
+            .OrderBy(d => d.DisplayOrder)
+            .Select(d => _mapper.Map<TemplateConfigDocumentSettingDto>(d))
+            .ToList();
+
+        _logger.LogInformation("Syncing template {TemplateId} v{Version} to AI/ML", template.Id, template.Version);
+        return await _aiMlClient.SyncTemplateConfigAsync(payload, cancellationToken);
     }
 
     private TemplateDetailDto ToDetailDto(Template template)

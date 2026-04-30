@@ -7,6 +7,9 @@ public class SaveConversationRequestValidator : AbstractValidator<SaveConversati
 {
     public SaveConversationRequestValidator()
     {
+        RuleFor(x => x.ThreadId)
+            .NotEmpty().WithMessage("ThreadId is required.");
+
         RuleFor(x => x.Messages)
             .NotEmpty().WithMessage("Messages are required.");
 

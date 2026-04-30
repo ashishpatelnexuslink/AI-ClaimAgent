@@ -1,3 +1,4 @@
+using ClaimAI.Application.DTOs.AiMl;
 using ClaimAI.Application.DTOs.Common;
 using ClaimAI.Application.DTOs.Templates;
 using ClaimAI.Domain.Common;
@@ -30,4 +31,13 @@ public interface ITemplateService
 
     /// <summary>Soft-deletes a template. Fails when the target is not in <see cref="TemplateStatus.Draft"/>.</summary>
     Task<Result> DeleteAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>Loads the template tree and POSTs it to the AI/ML <c>/config</c> endpoint.</summary>
+    Task<Result<TemplateConfigResponseDto>> SyncToAiAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resolves the active template for (<paramref name="companyName"/>, <paramref name="insuranceType"/>) and POSTs it to the AI/ML <c>/config</c> endpoint.
+    /// Used when the mobile app enters chat or voice mode.
+    /// </summary>
+    Task<Result<TemplateConfigResponseDto>> SyncActiveToAiAsync(string companyName, InsuranceType insuranceType, CancellationToken cancellationToken = default);
 }

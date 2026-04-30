@@ -1,3 +1,4 @@
+using ClaimAI.Application.DTOs.AiMl;
 using ClaimAI.Application.DTOs.Common;
 using ClaimAI.Application.DTOs.Templates;
 using ClaimAI.Application.Interfaces;
@@ -97,6 +98,17 @@ public class TemplatesController : ControllerBase
             return BadRequest(ApiResponse<object>.FailResponse(result.Errors));
 
         return Ok(ApiResponse<TemplateDetailDto>.SuccessResponse(result.Data!, result.Message));
+    }
+
+    /// <summary>POSTs the template settings to the AI/ML <c>/config</c> endpoint.</summary>
+    [HttpPost("{id:guid}/sync-ai")]
+    public async Task<IActionResult> SyncToAi(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _templateService.SyncToAiAsync(id, cancellationToken);
+        if (!result.Succeeded)
+            return BadRequest(ApiResponse<object>.FailResponse(result.Errors));
+
+        return Ok(ApiResponse<TemplateConfigResponseDto>.SuccessResponse(result.Data!, result.Message));
     }
 
     /// <summary>Soft-deletes a Draft template (and its children).</summary>

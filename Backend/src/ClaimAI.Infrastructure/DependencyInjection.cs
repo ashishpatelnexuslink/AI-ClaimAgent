@@ -1,5 +1,6 @@
 using ClaimAI.Application.Interfaces;
 using ClaimAI.Domain.Interfaces.Repositories;
+using ClaimAI.Infrastructure.Configuration;
 using ClaimAI.Infrastructure.Data;
 using ClaimAI.Infrastructure.Identity;
 using ClaimAI.Infrastructure.Interceptors;
@@ -39,6 +40,15 @@ public static class DependencyInjection
         services.AddScoped<IAdminUserService, AdminUserService>();
         services.AddScoped<IMobileUserService, MobileUserService>();
         services.AddScoped<ITemplateService, TemplateService>();
+
+        services.Configure<AiMlOptions>(configuration.GetSection(AiMlOptions.SectionName));
+        services.AddHttpClient<IAiMlClient, AiMlClient>((sp, client) =>
+        {
+            var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<AiMlOptions>>().Value;
+            if (!string.IsNullOrWhiteSpace(opts.BaseUrl))
+                client.BaseAddress = new Uri(opts.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(30);
+        });
 
         return services;
     }
