@@ -11,10 +11,10 @@ import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:uuid/uuid.dart';
 
 import 'package:claim_ai/core/navigation/app_routes.dart';
+import 'package:claim_ai/core/services/voice_service.dart';
 import 'package:claim_ai/core/storage/chat_transcript_writer.dart';
 import 'package:claim_ai/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:claim_ai/features/claims/presentation/cubit/claims_cubit.dart';
@@ -92,6 +92,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   bool _uploadingFiles = false;
   bool _submittingClaim = false;
   bool _closingConversation = false;
+  // Claim/docs/conversation persisted server-side once the bot streams a
+  // `save_summary` message. Close button only writes the local transcript
+  // unless this flag is still false (then it falls back to a full save).
+  bool _savedOnSummary = false;
+  Future<void>? _autoSaveFuture;
 
   // GET_DATE_TIME trigger selection (nullable until user picks).
   DateTime? _dtDate;
@@ -100,8 +105,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   final ChatTranscriptWriter _transcriptWriter = di.sl<ChatTranscriptWriter>();
 
   // ─── Speech Recognition ──────────────────────────────────────────────────
-  final stt.SpeechToText _speech = stt.SpeechToText();
-  bool _speechAvailable = false;
+  final VoiceService _voice = VoiceService();
+  bool _voiceAvailable = false;
+  String? _localeId;
   String _liveTranscript = '';
 
   // ─── Text-to-Speech (avatar voice) ──────────────────────────────────────
@@ -110,7 +116,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
   // ─── Auto-listen after bot finishes speaking ───────────────────────────
   Timer? _autoListenTimer;
-  static const Duration _autoListenDelay = Duration(seconds: 3);
+  // Wait long enough for the TTS audio session / focus to release before we
+  // start the recognizer. 600ms was too short on Android — the engine would
+  // start "listening" while audio routing was still owned by TTS, so the mic
+  // was deaf until the user manually re-tapped. 1500ms reliably hands over.
+  static const Duration _autoListenDelay = Duration(milliseconds: 1500);
 
   // ─── Controllers ────────────────────────────────────────────────────────
   final TextEditingController _textController = TextEditingController();
@@ -143,7 +153,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       duration: const Duration(milliseconds: 700),
     );
 
-    _initSpeech();
+    _initVoice();
     _initTts();
 
     _textController.addListener(() {
@@ -156,45 +166,75 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       _streamBotReply('hello');
     });
   }
 
-  Future<void> _initSpeech() async {
-    final micStatus = await Permission.microphone.request();
-    if (!micStatus.isGranted) {
-      _speechAvailable = false;
-      if (mounted) setState(() {});
-      return;
-    }
+  Future<void> _initVoice() async {
+    _voice
+      ..onTextUpdate = _onVoiceTextUpdate
+      ..onFinalText = _onVoiceFinalText
+      ..onError = _onVoiceError
+      ..onListeningChange = _onVoiceListeningChange;
 
-    _speechAvailable = await _speech.initialize(
-      onError: (error) {
-        if (!mounted) return;
-        setState(() => _isRecording = false);
-        _pulseController.stop();
-        _pulseController.reset();
-        _blinkController.stop();
-        _blinkController.reset();
-      },
-      onStatus: (status) {
-        if (status == 'done' || status == 'notListening') {
-          if (!mounted) return;
-          if (_isRecording) {
-            setState(() => _isRecording = false);
-            _pulseController.stop();
-            _pulseController.reset();
-            _blinkController.stop();
-            _blinkController.reset();
-            if (_liveTranscript.trim().isNotEmpty) {
-              _handleVoiceInput(_liveTranscript.trim());
-              _liveTranscript = '';
-            }
-          }
-        }
-      },
-    );
+    final ok = await _voice.initialize();
+    _voiceAvailable = ok;
+    if (ok) {
+      _localeId = await _voice.resolveBestEnglishLocale();
+    }
     if (mounted) setState(() {});
+  }
+
+  // ─── VoiceService callbacks ──────────────────────────────────────────────
+  void _onVoiceTextUpdate(String liveText) {
+    if (!mounted) return;
+    setState(() => _liveTranscript = liveText);
+  }
+
+  void _onVoiceFinalText(String finalText) {
+    if (!mounted) return;
+    setState(() => _liveTranscript = '');
+    _resetRecordingUi();
+    final transcript = finalText.trim();
+    if (transcript.isNotEmpty) {
+      _handleVoiceInput(transcript);
+    }
+  }
+
+  void _onVoiceError(String error) {
+    if (!mounted) return;
+    if (error == 'permission_denied') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+              'Microphone permission is required for voice input'),
+          action: SnackBarAction(
+            label: 'Settings',
+            onPressed: () => openAppSettings(),
+          ),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Voice error: $error')),
+      );
+    }
+    _resetRecordingUi();
+  }
+
+  void _onVoiceListeningChange(bool isActive) {
+    if (!mounted) return;
+    setState(() => _isRecording = isActive);
+    if (isActive) {
+      _pulseController.repeat(reverse: true);
+      _blinkController.repeat(reverse: true);
+    } else {
+      _pulseController.stop();
+      _pulseController.reset();
+      _blinkController.stop();
+      _blinkController.reset();
+    }
   }
 
   Future<void> _initTts() async {
@@ -260,10 +300,20 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     if (lastBotIdx < 0) return false;
     final last = _messages[lastBotIdx];
     if (last.messageType == 'done') return false;
-    final actionableTriggers = last.triggers
-        .where((t) => t != 'SHOW_TABLE')
+    // SHOW_TABLE is informational; GET_DATE_TIME and GET_LOCATION accept a
+    // spoken answer (e.g. "yesterday at 9pm", "MG Road Pune") in addition to
+    // their respective widgets, so we still auto-listen on those turns.
+    // GET_IMAGE / GET_DOCUMENT / SUBMIT_CLAIM genuinely require widget
+    // interaction.
+    const voiceFriendlyTriggers = {
+      'SHOW_TABLE',
+      'GET_DATE_TIME',
+      'GET_LOCATION',
+    };
+    final blockingTriggers = last.triggers
+        .where((t) => !voiceFriendlyTriggers.contains(t))
         .toList();
-    if (actionableTriggers.isNotEmpty) return false;
+    if (blockingTriggers.isNotEmpty) return false;
     return true;
   }
 
@@ -302,7 +352,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   @override
   void dispose() {
     _cancelAutoListen();
-    _speech.stop();
+    _voice.dispose();
     _tts.stop();
     _textController.dispose();
     _locationController.dispose();
@@ -396,6 +446,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         });
         _scrollToBottom();
         unawaited(_speakBotReply(msg.content));
+        // Bot has streamed the final summary — fire-and-forget the save so
+        // the Close button only has to write the local transcript file.
+        if (msg.payloadType == 'save_summary') {
+          _triggerAutoSaveOnSummary(msg.payload, msg.content);
+        }
       }
     } catch (_) {
       if (!mounted) return;
@@ -429,6 +484,12 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     _streamBotReply(transcript);
   }
 
+  /// Time the TTS audio session needs to fully release after `_tts.stop()`
+  /// before we can reliably grab the mic. Without this brief gap, Android
+  /// hands the recognizer an engine that's nominally listening but receives
+  /// no audio (TTS still owns audio focus).
+  static const Duration _postTtsStopDelay = Duration(milliseconds: 300);
+
   Future<void> _onMicTap() async {
     if (_botTyping) return;
 
@@ -436,80 +497,68 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
     if (_botSpeaking) {
       await _tts.stop();
+      await Future.delayed(_postTtsStopDelay);
     }
 
-    if (!_isRecording) {
-      if (!_speechAvailable) {
-        await _initSpeech();
-        if (!_speechAvailable) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text(
-                  'Microphone permission is required for voice input'),
-              action: SnackBarAction(
-                label: 'Settings',
-                onPressed: () => openAppSettings(),
-              ),
+    if (_voice.isListening) {
+      await _voice.stop();
+      return;
+    }
+
+    if (!_voiceAvailable) {
+      await _initVoice();
+      if (!_voiceAvailable) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+                'Microphone permission is required for voice input'),
+            action: SnackBarAction(
+              label: 'Settings',
+              onPressed: () => openAppSettings(),
             ),
-          );
-          return;
-        }
+          ),
+        );
+        return;
       }
-
-      setState(() {
-        _isRecording = true;
-        _liveTranscript = '';
-      });
-      _pulseController.repeat(reverse: true);
-      _blinkController.repeat(reverse: true);
-
-      _speech.listen(
-        onResult: (result) {
-          if (!mounted) return;
-          setState(() {
-            _liveTranscript = result.recognizedWords;
-          });
-          if (result.finalResult && _liveTranscript.trim().isNotEmpty) {
-            _stopRecordingAndSubmit();
-          }
-        },
-        listenOptions: stt.SpeechListenOptions(
-          listenMode: stt.ListenMode.dictation,
-          cancelOnError: true,
-          partialResults: true,
-        ),
-        listenFor: const Duration(seconds: 30),
-        pauseFor: const Duration(seconds: 10),
-      );
-    } else {
-      _stopRecordingAndSubmit();
     }
+
+    await _voice.start(localeId: _localeId ?? 'en_IN');
   }
 
-  void _stopRecordingAndSubmit() {
-    _speech.stop();
-    setState(() => _isRecording = false);
+  void _resetRecordingUi() {
+    if (!mounted) return;
+    setState(() {
+      _isRecording = false;
+    });
     _pulseController.stop();
     _pulseController.reset();
     _blinkController.stop();
     _blinkController.reset();
+  }
 
-    if (_liveTranscript.trim().isNotEmpty) {
-      final transcript = _liveTranscript.trim();
-      _liveTranscript = '';
-      _handleVoiceInput(transcript);
-    }
+  void _stopRecordingAndSubmit() {
+    _voice.stop();
+  }
+
+  /// Wipe the in-progress transcript without leaving listening mode, so the
+  /// user can start over after misspeaking. The silence clock is reset too.
+  void _onDeleteTranscript() {
+    _voice.resetTranscript();
   }
 
   // ═════════════════════════════════════════════════════════════════════════
   // SUMMARY CARD HELPERS (verified_summary / final_summary / policy)
   // ═════════════════════════════════════════════════════════════════════════
 
-  static const _tablePayloadTypes = {'verified_summary', 'final_summary'};
+  static const _tablePayloadTypes = {
+    'initial_summary',
+    'verified_summary',
+    'final_summary',
+    'save_summary',
+  };
 
   Map<String, String>? _tableFields(_ChatMessage msg) {
-    if (!msg.triggers.contains('SHOW_TABLE')) return null;
     if (!_tablePayloadTypes.contains(msg.payloadType)) return null;
     final payload = msg.payload;
     if (payload == null || payload.isEmpty) return null;
@@ -524,8 +573,12 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
   String _cardTitleFor(String? payloadType) {
     switch (payloadType) {
+      case 'initial_summary':
+        return 'Initial Summary';
       case 'final_summary':
         return 'Claim Summary';
+      case 'save_summary':
+        return 'Saved Claim Summary';
       case 'verified_summary':
       default:
         return 'Policy Verified';
@@ -769,7 +822,13 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   }
 
   Future<void> _onSubmitImages() async {
-    if (_pickedImages.isEmpty || _botTyping || _uploadingFiles) return;
+    debugPrint('[Upload] _onSubmitImages enter '
+        'picked=${_pickedImages.length} '
+        'botTyping=$_botTyping uploading=$_uploadingFiles');
+    if (_pickedImages.isEmpty || _botTyping || _uploadingFiles) {
+      debugPrint('[Upload] _onSubmitImages BAILED (guard)');
+      return;
+    }
 
     final files = List<File>.from(_pickedImages);
     setState(() => _uploadingFiles = true);
@@ -810,6 +869,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       _pickedImages.clear();
       _uploadingFiles = false;
     });
+    debugPrint('[Upload] images submit → uploadedCount=$uploadedCount '
+        'fallbackCount=${files.length} sending="${count.toString()}"');
     _addUserAttachmentMessage(
       text: '$count photo${count > 1 ? 's' : ''} uploaded',
       imagePaths: paths,
@@ -842,7 +903,13 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   }
 
   Future<void> _onSubmitDocuments() async {
-    if (_pickedDocuments.isEmpty || _botTyping || _uploadingFiles) return;
+    debugPrint('[Upload] _onSubmitDocuments enter '
+        'picked=${_pickedDocuments.length} '
+        'botTyping=$_botTyping uploading=$_uploadingFiles');
+    if (_pickedDocuments.isEmpty || _botTyping || _uploadingFiles) {
+      debugPrint('[Upload] _onSubmitDocuments BAILED (guard)');
+      return;
+    }
 
     final docs = List<PlatformFile>.from(_pickedDocuments);
     setState(() => _uploadingFiles = true);
@@ -904,6 +971,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       _pickedDocuments.clear();
       _uploadingFiles = false;
     });
+    debugPrint('[Upload] docs submit → uploadedCount=$uploadedCount '
+        'fallbackCount=${docs.length} sending="${count.toString()}"');
     _addUserAttachmentMessage(
       text: '$count document${count > 1 ? 's' : ''} uploaded',
       imagePaths: imagePaths,
@@ -1115,45 +1184,84 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     return payload;
   }
 
+  /// Fire-and-forget auto-save invoked the moment the bot streams a message
+  /// with `payload_type == "save_summary"`. Idempotent — only the first call
+  /// per session does any work; the Close button awaits [_autoSaveFuture]
+  /// so it won't race-create a duplicate claim.
+  void _triggerAutoSaveOnSummary(
+      Map<String, dynamic>? saveSummaryPayload, String doneText) {
+    if (_savedOnSummary || _autoSaveFuture != null) return;
+    final externalRef = _extractClaimReference(doneText);
+    final future = _runSaveClaimAndConversation(
+      saveSummaryPayload: saveSummaryPayload,
+      externalRef: externalRef,
+    );
+    _autoSaveFuture = future;
+    future.then((_) {
+      _savedOnSummary = true;
+    }).catchError((Object e) {
+      debugPrint('[AutoSave] save_summary save failed (will retry on Close): $e');
+      _autoSaveFuture = null;
+    });
+  }
+
+  /// Performs the full server-side save: create claim row (if not already
+  /// created via SUBMIT_CLAIM), attach uploaded documents, save the chat
+  /// transcript to the Conversation tables. Throws on any step failure.
+  Future<void> _runSaveClaimAndConversation({
+    Map<String, dynamic>? saveSummaryPayload,
+    String? externalRef,
+  }) async {
+    String? finalClaimId = _submittedClaimId;
+
+    if (finalClaimId == null || finalClaimId.isEmpty) {
+      final claimData = _latestClaimData() ?? <String, dynamic>{};
+      final saveSummary = saveSummaryPayload ?? _latestSaveSummaryPayload();
+      final summaryFields = saveSummary != null
+          ? _mapSaveSummaryToDto(saveSummary)
+          : <String, dynamic>{};
+      final payload = <String, dynamic>{
+        ...claimData,
+        ...summaryFields,
+        'chatThreadId': _threadId,
+        'externalReference': ?externalRef,
+      };
+      final response = await di
+          .sl<ClaimsRemoteDataSource>()
+          .createClaimFromChat(payload);
+      final created = (response['id'] ?? response['claimId'] ?? '').toString();
+      if (created.isEmpty) {
+        throw Exception('Claim created but backend returned no id.');
+      }
+      finalClaimId = created;
+      _submittedClaimId = finalClaimId;
+    }
+
+    if (_uploadedDocumentIds.isNotEmpty) {
+      await di.sl<ClaimsRemoteDataSource>().attachClaimDocuments(
+            claimId: finalClaimId,
+            documentIds: List<String>.from(_uploadedDocumentIds),
+          );
+    }
+
+    await di.sl<ChatRemoteDataSource>().saveConversation(
+          threadId: _threadId,
+          claimId: finalClaimId,
+          externalReference: externalRef,
+          messages: _buildConversationMessagesPayload(),
+        );
+  }
+
   Future<void> _onCloseConversation(_ChatMessage doneMsg) async {
     if (_closingConversation) return;
     setState(() => _closingConversation = true);
 
-    final externalRef = _extractClaimReference(doneMsg.text);
-    String? finalClaimId = _submittedClaimId;
     String? errorMessage;
 
     try {
-      if (finalClaimId == null || finalClaimId.isEmpty) {
-        final claimData = _latestClaimData() ?? <String, dynamic>{};
-        final saveSummary = _latestSaveSummaryPayload();
-        final summaryFields = saveSummary != null
-            ? _mapSaveSummaryToDto(saveSummary)
-            : <String, dynamic>{};
-        final payload = <String, dynamic>{
-          ...claimData,
-          ...summaryFields,
-          'chatThreadId': _threadId,
-          'externalReference': ?externalRef,
-        };
-        try {
-          final response = await di
-              .sl<ClaimsRemoteDataSource>()
-              .createClaimFromChat(payload);
-          final created =
-              (response['id'] ?? response['claimId'] ?? '').toString();
-          if (created.isNotEmpty) {
-            finalClaimId = created;
-            _submittedClaimId = finalClaimId;
-          } else {
-            errorMessage = 'Claim created but backend returned no id.';
-          }
-        } catch (e) {
-          errorMessage = 'Failed to save claim: $e';
-        }
-      }
-
-      // Local transcript
+      // Always write the local transcript file. The server-side save is
+      // normally already done from the `save_summary` streaming hook above;
+      // we only retry it here when that auto-save failed or never fired.
       try {
         await _transcriptWriter.writeTranscript(
           threadId: _threadId,
@@ -1175,29 +1283,22 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         );
       } catch (_) {}
 
-      if (finalClaimId != null &&
-          finalClaimId.isNotEmpty &&
-          _uploadedDocumentIds.isNotEmpty) {
+      // Wait for any in-flight auto-save so we don't race-create a duplicate
+      // claim, then fall back to a fresh save if it never succeeded.
+      if (_autoSaveFuture != null) {
         try {
-          await di.sl<ClaimsRemoteDataSource>().attachClaimDocuments(
-                claimId: finalClaimId,
-                documentIds: List<String>.from(_uploadedDocumentIds),
-              );
-        } catch (e) {
-          errorMessage ??= 'Failed to attach documents: $e';
-        }
+          await _autoSaveFuture;
+        } catch (_) {}
       }
 
-      if (finalClaimId != null && finalClaimId.isNotEmpty) {
+      if (!_savedOnSummary) {
         try {
-          await di.sl<ChatRemoteDataSource>().saveConversation(
-                threadId: _threadId,
-                claimId: finalClaimId,
-                externalReference: externalRef,
-                messages: _buildConversationMessagesPayload(),
-              );
+          await _runSaveClaimAndConversation(
+            externalRef: _extractClaimReference(doneMsg.text),
+          );
+          _savedOnSummary = true;
         } catch (e) {
-          errorMessage ??= 'Failed to save conversation: $e';
+          errorMessage = 'Failed to save claim: $e';
         }
       }
     } finally {
@@ -2767,6 +2868,24 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                 ),
               ),
               const Spacer(),
+              if (_liveTranscript.trim().isNotEmpty)
+                GestureDetector(
+                  onTap: _onDeleteTranscript,
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade200,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.delete_outline_rounded,
+                      size: 18,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                ),
               GestureDetector(
                 onTap: _stopRecordingAndSubmit,
                 child: Container(
@@ -2849,7 +2968,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                       onSubmitted: (_) => _submitTypedMessage(),
                       style: const TextStyle(fontSize: 14, color: _kDark),
                       decoration: InputDecoration(
-                        hintText: 'Type a message...',
+                        hintText: _botSpeaking
+                            ? 'Tap mic to interrupt'
+                            : 'Type a message...',
                         hintStyle: TextStyle(
                           fontSize: 14,
                           color: Colors.grey.shade500,
@@ -2862,15 +2983,28 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                     ),
                   ),
                   GestureDetector(
-                    onTap: _onMicTap,
+                    onTap: _voiceAvailable ? _onMicTap : null,
                     behavior: HitTestBehavior.opaque,
                     child: Padding(
                       padding: const EdgeInsets.only(left: 8),
-                      child: Icon(
-                        Icons.mic_none_rounded,
-                        size: 20,
-                        color: _isRecording ? _kRed : _kBlue,
-                      ),
+                      child: _voiceAvailable
+                          ? Icon(
+                              _botSpeaking
+                                  ? Icons.stop_circle_rounded
+                                  : Icons.mic_none_rounded,
+                              size: 20,
+                              color: _isRecording
+                                  ? _kRed
+                                  : (_botSpeaking ? _kRed : _kBlue),
+                            )
+                          : const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: _kBlue,
+                              ),
+                            ),
                     ),
                   ),
                 ],
@@ -2879,7 +3013,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           ),
           const SizedBox(width: 8),
           GestureDetector(
-            onTap: _hasDraftText ? _submitTypedMessage : _onMicTap,
+            onTap: _hasDraftText
+                ? _submitTypedMessage
+                : (_voiceAvailable ? _onMicTap : null),
             child: Container(
               width: 44,
               height: 44,
