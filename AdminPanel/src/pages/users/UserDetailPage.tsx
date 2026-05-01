@@ -3,6 +3,7 @@ import { ArrowLeft, Ban, KeyRound, Trash2 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { usersService } from '../../services/users.service';
 import { claimsService } from '../../services/claims.service';
+import { authService } from '../../services/auth.service';
 import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import Avatar from '../../components/ui/Avatar';
@@ -27,6 +28,22 @@ export default function UserDetailPage() {
   });
 
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [resetting, setResetting] = useState(false);
+
+  const handleResetPassword = async () => {
+    if (!user) return;
+    setResetting(true);
+    try {
+      await authService.forgotPassword(user.email);
+      addToast(`Password reset link sent to ${user.email}`, 'success');
+      setConfirmReset(false);
+    } catch {
+      addToast('Failed to send password reset link', 'error');
+    } finally {
+      setResetting(false);
+    }
+  };
 
   const userClaims = allClaims?.filter((c) => c.userId === id) ?? [];
   const approvedCount = userClaims.filter((c) => c.status === 'Approved').length;
@@ -70,7 +87,7 @@ export default function UserDetailPage() {
           </div>
           <div className="flex flex-col gap-2">
             <Button variant="outline" size="sm"><Ban size={14} /> {user.status === 'Active' ? 'Suspend' : 'Activate'}</Button>
-            <Button variant="outline" size="sm"><KeyRound size={14} /> Reset Password</Button>
+            <Button variant="outline" size="sm" onClick={() => setConfirmReset(true)}><KeyRound size={14} /> Reset Password</Button>
             <Button variant="danger" size="sm" onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> Delete</Button>
           </div>
         </div>
@@ -118,6 +135,25 @@ export default function UserDetailPage() {
           <p className="text-sm text-gray-400 text-center py-4">No claims found</p>
         )}
       </div>
+
+      {/* Reset Password Confirmation */}
+      <Modal
+        isOpen={confirmReset}
+        onClose={() => !resetting && setConfirmReset(false)}
+        title="Reset Password"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setConfirmReset(false)} disabled={resetting}>Cancel</Button>
+            <Button variant="primary" onClick={handleResetPassword} disabled={resetting}>
+              {resetting ? 'Sending...' : 'Send Reset Link'}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-gray-600">
+          Send a password reset link to <strong>{user.email}</strong>?
+        </p>
+      </Modal>
 
       {/* Delete Confirmation */}
       <Modal
