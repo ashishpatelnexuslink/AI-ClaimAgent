@@ -55,7 +55,7 @@ public class AiMlClient : IAiMlClient
                 "→ AI/ML POST {BaseUrl}{Path} bearer={TokenPreview} body: {Body}",
                 _http.BaseAddress, _options.ConfigPath, Preview(token), requestJson);
 
-            var response = await SendAsync(_options.ConfigPath, envelope, token, cancellationToken);
+            var response = await SendAsync(BuildUri(_options.ConfigPath), envelope, token, cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
 
             _logger.LogInformation(
@@ -76,7 +76,7 @@ public class AiMlClient : IAiMlClient
                     "→ AI/ML POST {Path} (retry) bearer={TokenPreview}",
                     _options.ConfigPath, Preview(token));
 
-                response = await SendAsync(_options.ConfigPath, envelope, token, cancellationToken);
+                response = await SendAsync(BuildUri(_options.ConfigPath), envelope, token, cancellationToken);
                 body = await response.Content.ReadAsStringAsync(cancellationToken);
 
                 _logger.LogInformation(
@@ -105,12 +105,29 @@ public class AiMlClient : IAiMlClient
     }
 
     private async Task<HttpResponseMessage> SendAsync<T>(
-        string path, T body, string token, CancellationToken cancellationToken)
+        Uri uri, T body, string token, CancellationToken cancellationToken)
     {
         using var content = JsonContent.Create(body, options: _json);
-        using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = content };
+        using var request = new HttpRequestMessage(HttpMethod.Post, uri) { Content = content };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return await _http.SendAsync(request, cancellationToken);
+    }
+
+    private Uri BuildUri(string path)
+    {
+        if (Uri.TryCreate(path, UriKind.Absolute, out var absolute))
+            return absolute;
+
+        var baseUrl = _http.BaseAddress?.ToString();
+        if (string.IsNullOrWhiteSpace(baseUrl))
+            baseUrl = _options.BaseUrl;
+
+        if (string.IsNullOrWhiteSpace(baseUrl))
+            throw new InvalidOperationException(
+                "AiMl:BaseUrl is not configured; cannot build an absolute request URI.");
+
+        return new Uri(new Uri(baseUrl.TrimEnd('/') + "/", UriKind.Absolute),
+            (path ?? string.Empty).TrimStart('/'));
     }
 
     private async Task<string> GetTokenAsync(bool forceRefresh, CancellationToken cancellationToken)
@@ -141,7 +158,7 @@ public class AiMlClient : IAiMlClient
 
             var loginPayload = new { username = _options.Username, password = _options.Password };
             using var loginResponse = await _http.PostAsJsonAsync(
-                _options.LoginPath, loginPayload, _json, cancellationToken);
+                BuildUri(_options.LoginPath), loginPayload, _json, cancellationToken);
 
             var loginBody = await loginResponse.Content.ReadAsStringAsync(cancellationToken);
 

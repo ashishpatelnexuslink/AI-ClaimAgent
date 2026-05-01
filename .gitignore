@@ -199,3 +199,4 @@ Backend/.env*
 *.key
 *.cer
 *.crt
+/Backend/src/ClaimAI.API/wwwroot/uploads/claim-documents

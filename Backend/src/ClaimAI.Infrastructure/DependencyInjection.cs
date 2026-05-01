@@ -45,8 +45,10 @@ public static class DependencyInjection
         services.AddHttpClient<IAiMlClient, AiMlClient>((sp, client) =>
         {
             var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<AiMlOptions>>().Value;
-            if (!string.IsNullOrWhiteSpace(opts.BaseUrl))
-                client.BaseAddress = new Uri(opts.BaseUrl);
+            if (string.IsNullOrWhiteSpace(opts.BaseUrl))
+                throw new InvalidOperationException(
+                    "AiMl:BaseUrl is not configured. Set it in appsettings.json under the \"AiMl\" section.");
+            client.BaseAddress = new Uri(opts.BaseUrl, UriKind.Absolute);
             client.Timeout = TimeSpan.FromSeconds(30);
         });
 
