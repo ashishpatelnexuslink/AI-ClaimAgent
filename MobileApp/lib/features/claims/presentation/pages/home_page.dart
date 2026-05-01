@@ -140,22 +140,36 @@ class _HeaderSection extends StatelessWidget {
       builder: (context, state) {
         final avatarUrl = state.user?.avatarUrl;
         final hasAvatar = avatarUrl != null && avatarUrl.isNotEmpty;
+        final initials = Container(
+          width: 44,
+          height: 44,
+          alignment: Alignment.center,
+          color: const Color(0xFFEEF3FC),
+          child: Text(
+            _initialsFrom(state.user?.fullName),
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF2A6FDB),
+            ),
+          ),
+        );
         return Row(
           children: [
-            CircleAvatar(
-              radius: 22,
-              backgroundColor: const Color(0xFFEEF3FC),
-              backgroundImage: hasAvatar ? NetworkImage(avatarUrl) : null,
-              child: hasAvatar
-                  ? null
-                  : Text(
-                      _initialsFrom(state.user?.fullName),
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF2A6FDB),
-                      ),
-                    ),
+            SizedBox(
+              width: 44,
+              height: 44,
+              child: ClipOval(
+                child: hasAvatar
+                    ? Image.network(
+                        avatarUrl,
+                        fit: BoxFit.cover,
+                        width: 44,
+                        height: 44,
+                        errorBuilder: (_, _, _) => initials,
+                      )
+                    : initials,
+              ),
             ),
             const SizedBox(width: AppSpacing.sm),
 
