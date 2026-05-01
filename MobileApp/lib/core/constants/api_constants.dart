@@ -3,8 +3,9 @@ class ApiConstants {
 
   // Base URLs per environment
   static const String devBaseUrl = 'http://192.168.11.5:5030/api';
-  static const String stagingBaseUrl = 'https://staging-api.claimai.com/api';
-  static const String prodBaseUrl = 'https://api.claimai.com/api';
+  //static const String devBaseUrl = 'https://claimai-api.nexuslink.in/api';
+  static const String stagingBaseUrl = 'https://claimai-api.nexuslink.in/api';
+  static const String prodBaseUrl = 'https://claimai-api.nexuslink.in/api';
 
   // Timeouts
   static const int connectTimeout = 30000;
@@ -32,6 +33,8 @@ class ApiConstants {
   static const String claimDocumentsByClaim =
       '/mobile/claim-documents/by-claim/{claimId}';
   static const String deleteClaimDocument = '/mobile/claim-documents/{id}';
+  static const String deleteClaimDocumentsByThread =
+      '/mobile/claim-documents/by-thread/{threadId}';
   static const String claimById = '/mobile/claims/{id}';
   static const String claimSummary = '/mobile/claims/{id}/summary';
   static const String claimStatus = '/mobile/claims/{id}/status';

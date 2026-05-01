@@ -44,6 +44,14 @@ abstract class ClaimsRemoteDataSource {
 
   /// Deletes a single uploaded document.
   Future<void> deleteClaimDocument(String documentId);
+
+  /// Deletes every unattached document the current user uploaded for the
+  /// given chat thread, optionally narrowed by category. Returns the ids of
+  /// the rows that were actually deleted so the caller can prune local state.
+  Future<List<String>> deleteClaimDocumentsByThread({
+    required String threadId,
+    String? category,
+  });
 }
 
 class ClaimsRemoteDataSourceImpl implements ClaimsRemoteDataSource {
@@ -180,5 +188,24 @@ class ClaimsRemoteDataSourceImpl implements ClaimsRemoteDataSource {
     await _client.delete(
       ApiConstants.deleteClaimDocument.replaceFirst('{id}', documentId),
     );
+  }
+
+  @override
+  Future<List<String>> deleteClaimDocumentsByThread({
+    required String threadId,
+    String? category,
+  }) async {
+    final response = await _client.delete(
+      ApiConstants.deleteClaimDocumentsByThread
+          .replaceFirst('{threadId}', threadId),
+      queryParameters: {
+        if (category != null && category.isNotEmpty) 'category': category,
+      },
+    );
+    final data = response.data['data'];
+    if (data is Map && data['deletedIds'] is List) {
+      return (data['deletedIds'] as List).map((e) => e.toString()).toList();
+    }
+    return const <String>[];
   }
 }

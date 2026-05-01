@@ -49,7 +49,18 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   bool _uploadingFiles = false;
   late final String _threadId;
   String? _submittedClaimId;
-  final List<String> _uploadedDocumentIds = [];
+  // True once the claim/docs/conversation have been persisted server-side.
+  // Set when the bot streams a `save_summary` message; the Close button uses
+  // this to skip its own save and only write the local transcript file.
+  bool _savedOnSummary = false;
+  // Tracks the in-flight auto-save so the Close button can await it before
+  // deciding whether to run a fallback save (prevents a duplicate claim if
+  // the user taps Close while auto-save is still uploading).
+  Future<void>? _autoSaveFuture;
+  // Tracks docs uploaded during this chat thread, paired with the category
+  // they were uploaded under. Category is needed so re-uploads for the same
+  // AI prompt (e.g. a second batch of damage photos) can wipe the prior batch.
+  final List<({String id, String category})> _uploadedDocumentIds = [];
   final List<DateTime> _messageTimestamps = [];
   final ChatTranscriptWriter _transcriptWriter = di.sl<ChatTranscriptWriter>();
 
@@ -134,6 +145,12 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           payloadType: msg.payloadType,
           payload: msg.payload,
         ));
+        // Bot has streamed the final summary — fire-and-forget the save
+        // (claim row + doc attach + conversation transcript) right away so
+        // the Close button only has to write the local transcript file.
+        if (msg.payloadType == 'save_summary') {
+          _triggerAutoSaveOnSummary(msg.payload, msg.content);
+        }
       }
     } catch (_) {
       if (!mounted) return;
@@ -541,12 +558,17 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   // ─── Policy detail detection ──────────────────────────────────────────────
 
   /// Payload types that should render as a table card.
-  static const _tablePayloadTypes = {'verified_summary', 'final_summary'};
+  static const _tablePayloadTypes = {
+    'initial_summary',
+    'verified_summary',
+    'final_summary',
+    'save_summary',
+  };
 
-  /// Extracts ordered key/value fields from a structured summary payload
-  /// when the message carries a `SHOW_TABLE` trigger.
+  /// Extracts ordered key/value fields from a structured summary payload.
+  /// Any message whose `payload_type` is one of [_tablePayloadTypes] is
+  /// rendered as a table card, regardless of the `SHOW_TABLE` trigger.
   Map<String, String>? _tableFields(_ChatMsg msg) {
-    if (!msg.triggers.contains('SHOW_TABLE')) return null;
     if (!_tablePayloadTypes.contains(msg.payloadType)) return null;
     final payload = msg.payload;
     if (payload == null || payload.isEmpty) return null;
@@ -561,8 +583,12 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
 
   String _cardTitleFor(String? payloadType) {
     switch (payloadType) {
+      case 'initial_summary':
+        return 'Initial Summary';
       case 'final_summary':
         return 'Claim Summary';
+      case 'save_summary':
+        return 'Saved Claim Summary';
       case 'verified_summary':
       default:
         return 'Policy Verified';
@@ -832,39 +858,38 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                 if (showSuggestions)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-                    child: Row(
+                    child: Wrap(
+                      spacing: 10,
+                      runSpacing: 8,
                       children: msg.suggestions.map((s) {
                         final isConfirm = s.toLowerCase().contains('correct') ||
                             s.toLowerCase().contains('yes') ||
                             s.toLowerCase().contains('confirm');
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 10),
-                          child: GestureDetector(
-                            onTap: () => _onSuggestionTap(s),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 20, vertical: 10),
-                              decoration: BoxDecoration(
+                        return GestureDetector(
+                          onTap: () => _onSuggestionTap(s),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: isConfirm
+                                  ? _kBlue
+                                  : Colors.white,
+                              borderRadius:
+                                  BorderRadius.circular(8),
+                              border: Border.all(
                                 color: isConfirm
                                     ? _kBlue
-                                    : Colors.white,
-                                borderRadius:
-                                    BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: isConfirm
-                                      ? _kBlue
-                                      : _kDark,
-                                ),
+                                    : _kDark,
                               ),
-                              child: Text(
-                                s,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: isConfirm
-                                      ? Colors.white
-                                      : _kDark,
-                                ),
+                            ),
+                            child: Text(
+                              s,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: isConfirm
+                                    ? Colors.white
+                                    : _kDark,
                               ),
                             ),
                           ),
@@ -1125,10 +1150,23 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     if (_pickedImages.length >= _maxImages) return;
 
     final remaining = _maxImages - _pickedImages.length;
-    final images = await _imagePicker.pickMultiImage(
-      imageQuality: 80,
-      limit: remaining,
-    );
+
+    // Android's photo picker misbehaves with pickMultiImage(limit: 1) — it can
+    // refuse to open or return an empty list. Fall back to single pickImage
+    // when only one slot is left.
+    final List<XFile> images;
+    if (remaining == 1) {
+      final single = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 80,
+      );
+      images = single == null ? <XFile>[] : <XFile>[single];
+    } else {
+      images = await _imagePicker.pickMultiImage(
+        imageQuality: 80,
+        limit: remaining,
+      );
+    }
     if (images.isEmpty || !mounted) return;
 
     setState(() {
@@ -1144,6 +1182,40 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     setState(() => _pickedImages.removeAt(index));
   }
 
+  void _openImageViewer(List<String> paths, int initialIndex) {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        barrierColor: Colors.black,
+        pageBuilder: (_, _, _) =>
+            _ImageViewerPage(paths: paths, initialIndex: initialIndex),
+      ),
+    );
+  }
+
+  /// Wipes prior unattached uploads for this thread+category before a fresh
+  /// batch — implements the "re-upload replaces the previous image" flow when
+  /// the AI prompts the user to retake/re-attach a document of the same kind.
+  Future<void> _replacePriorUploads(String category) async {
+    final hadPrior = _uploadedDocumentIds.any((d) => d.category == category);
+    if (!hadPrior) return;
+    try {
+      final deleted = await di.sl<ClaimsRemoteDataSource>()
+          .deleteClaimDocumentsByThread(
+            threadId: _threadId,
+            category: category,
+          );
+      if (deleted.isNotEmpty) {
+        final deletedSet = deleted.toSet();
+        _uploadedDocumentIds.removeWhere((d) => deletedSet.contains(d.id));
+      } else {
+        _uploadedDocumentIds.removeWhere((d) => d.category == category);
+      }
+    } catch (e) {
+      debugPrint('[Upload] failed to clear prior $category uploads: $e');
+    }
+  }
+
   Future<void> _onSubmitImages() async {
     if (_pickedImages.isEmpty || _botTyping || _uploadingFiles) return;
 
@@ -1154,6 +1226,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     try {
       final ds = di.sl<ClaimsRemoteDataSource>();
       final category = _inferCategory(isImage: true);
+      // Re-upload semantics: a fresh batch for this category replaces any
+      // prior unattached uploads in this thread under the same category.
+      await _replacePriorUploads(category);
       for (final file in files) {
         final bytes = await file.readAsBytes();
         final name = file.path.split(RegExp(r'[\\/]')).last;
@@ -1166,7 +1241,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         );
         final id = (response['id'] ?? '').toString();
         if (id.isNotEmpty) {
-          _uploadedDocumentIds.add(id);
+          _uploadedDocumentIds.add((id: id, category: category));
           uploadedCount++;
         }
       }
@@ -1232,6 +1307,8 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     try {
       final ds = di.sl<ClaimsRemoteDataSource>();
       final category = _inferCategory(isImage: false);
+      // Re-upload semantics — see _onSubmitImages.
+      await _replacePriorUploads(category);
       for (final doc in docs) {
         // `bytes` is populated when file_picker is used with withData: true
         // or on web. For mobile path, read the file from disk.
@@ -1252,7 +1329,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         );
         final id = (response['id'] ?? '').toString();
         if (id.isNotEmpty) {
-          _uploadedDocumentIds.add(id);
+          _uploadedDocumentIds.add((id: id, category: category));
           uploadedCount++;
         }
       }
@@ -1295,17 +1372,6 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     });
     _scrollToBottom();
     _streamBotReply(count.toString());
-  }
-
-  void _onSkipDocuments() {
-    if (_botTyping) return;
-    setState(() {
-      _pickedDocuments.clear();
-      _messages.add(const _ChatMsg(text: 'Skip', isUser: true));
-      _botTyping = true;
-    });
-    _scrollToBottom();
-    _streamBotReply('Skip');
   }
 
   // ─── Trigger Widgets ─────────────────────────────────────────────────────
@@ -1542,83 +1608,114 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   /// Handler for the Close button shown on the `message_type == 'done'` bubble.
   /// Always runs end-to-end (try/finally) and surfaces real errors via SnackBar
   /// so failures are visible instead of silently swallowed.
+  /// Fire-and-forget auto-save invoked the moment the bot streams a message
+  /// with `payload_type == "save_summary"`. Idempotent — only the first call
+  /// per chat session does any work; the rest short-circuit. The Close button
+  /// awaits [_autoSaveFuture] so it can decide whether to retry on failure.
+  void _triggerAutoSaveOnSummary(
+      Map<String, dynamic>? saveSummaryPayload, String doneText) {
+    if (_savedOnSummary || _autoSaveFuture != null) return;
+    final externalRef = _extractClaimReference(doneText);
+    final future = _runSaveClaimAndConversation(
+      saveSummaryPayload: saveSummaryPayload,
+      externalRef: externalRef,
+    );
+    _autoSaveFuture = future;
+    future.then((_) {
+      _savedOnSummary = true;
+    }).catchError((Object e) {
+      debugPrint('[AutoSave] save_summary save failed (will retry on Close): $e');
+      // Clear the future so the Close-button fallback can run a fresh attempt.
+      _autoSaveFuture = null;
+    });
+  }
+
+  /// Performs the full server-side save: create claim row (if not already
+  /// created via SUBMIT_CLAIM), attach uploaded documents, save the chat
+  /// transcript to the Conversation tables. Throws on any step failure so the
+  /// caller can decide whether to retry or surface the error.
+  Future<void> _runSaveClaimAndConversation({
+    Map<String, dynamic>? saveSummaryPayload,
+    String? externalRef,
+  }) async {
+    String? finalClaimId = _submittedClaimId;
+
+    if (finalClaimId == null || finalClaimId.isEmpty) {
+      final claimData = _latestClaimData() ?? <String, dynamic>{};
+      final saveSummary = saveSummaryPayload ?? _latestSaveSummaryPayload();
+      final summaryFields = saveSummary != null
+          ? _mapSaveSummaryToDto(saveSummary)
+          : <String, dynamic>{};
+      // save_summary is the authoritative final payload from the bot, so its
+      // values take precedence over any earlier claim_data snapshot.
+      final payload = <String, dynamic>{
+        ...claimData,
+        ...summaryFields,
+        'chatThreadId': _threadId,
+        'externalReference': ?externalRef,
+      };
+      final response = await di
+          .sl<ClaimsRemoteDataSource>()
+          .createClaimFromChat(payload);
+      final created = (response['id'] ?? response['claimId'] ?? '').toString();
+      if (created.isEmpty) {
+        throw Exception('Claim created but backend returned no id.');
+      }
+      finalClaimId = created;
+      _submittedClaimId = finalClaimId;
+      debugPrint('[AutoSave] claim created: $finalClaimId');
+    }
+
+    if (_uploadedDocumentIds.isNotEmpty) {
+      final result = await di.sl<ClaimsRemoteDataSource>().attachClaimDocuments(
+            claimId: finalClaimId,
+            documentIds: _uploadedDocumentIds.map((d) => d.id).toList(),
+          );
+      debugPrint(
+          '[AutoSave] attached ${result['attachedCount']} document(s) to $finalClaimId');
+    }
+
+    final convResult = await di.sl<ChatRemoteDataSource>().saveConversation(
+          threadId: _threadId,
+          claimId: finalClaimId,
+          externalReference: externalRef,
+          messages: _buildConversationMessagesPayload(),
+        );
+    debugPrint('[AutoSave] conversation saved: ${convResult['conversationId']}');
+  }
+
   Future<void> _onCloseConversation(_ChatMsg doneMsg) async {
     if (_closingConversation) return;
     setState(() => _closingConversation = true);
 
-    final externalRef = _extractClaimReference(doneMsg.text);
-    String? finalClaimId = _submittedClaimId;
     String? errorMessage;
 
     try {
-      // 1. Always create a claim row using the lightweight "from-chat"
-      //    endpoint unless SUBMIT_CLAIM already produced one this session.
-      if (finalClaimId == null || finalClaimId.isEmpty) {
-        final claimData = _latestClaimData() ?? <String, dynamic>{};
-        final saveSummary = _latestSaveSummaryPayload();
-        final summaryFields = saveSummary != null
-            ? _mapSaveSummaryToDto(saveSummary)
-            : <String, dynamic>{};
-        // save_summary is the authoritative final payload from the bot, so
-        // its values take precedence over any earlier claim_data snapshot.
-        final payload = <String, dynamic>{
-          ...claimData,
-          ...summaryFields,
-          'chatThreadId': _threadId,
-          'externalReference': ?externalRef,
-        };
-        try {
-          final response = await di
-              .sl<ClaimsRemoteDataSource>()
-              .createClaimFromChat(payload);
-          final created =
-              (response['id'] ?? response['claimId'] ?? '').toString();
-          if (created.isNotEmpty) {
-            finalClaimId = created;
-            _submittedClaimId = finalClaimId;
-            debugPrint('[Close] claim created: $finalClaimId');
-          } else {
-            errorMessage = 'Claim created but backend returned no id.';
-          }
-        } catch (e) {
-          errorMessage = 'Failed to save claim: $e';
-          debugPrint('[Close] createClaimFromChat failed: $e');
-        }
-      }
-
-      // 2. Write the transcript JSON file locally.
+      // Always write the local transcript file. The server-side save (claim
+      // row + doc attach + Conversations row) is normally already done from
+      // the `save_summary` streaming hook above; this method only retries it
+      // when that auto-save failed or never fired.
       _persistTranscript();
 
-      // 3. Attach any files uploaded during the chat to the new claim row.
-      if (finalClaimId != null &&
-          finalClaimId.isNotEmpty &&
-          _uploadedDocumentIds.isNotEmpty) {
+      // Wait for any in-flight auto-save so we don't race-create a duplicate
+      // claim, then fall back to a fresh save if it never succeeded.
+      if (_autoSaveFuture != null) {
         try {
-          final result = await di.sl<ClaimsRemoteDataSource>().attachClaimDocuments(
-                claimId: finalClaimId,
-                documentIds: List<String>.from(_uploadedDocumentIds),
-              );
-          debugPrint(
-              '[Close] attached ${result['attachedCount']} document(s) to $finalClaimId');
-        } catch (e) {
-          errorMessage ??= 'Failed to attach documents: $e';
-          debugPrint('[Close] attachClaimDocuments failed: $e');
+          await _autoSaveFuture;
+        } catch (_) {
+          // Swallowed — _savedOnSummary check below decides whether to retry.
         }
       }
 
-      // 4. Save the full transcript to the Conversation tables.
-      if (finalClaimId != null && finalClaimId.isNotEmpty) {
+      if (!_savedOnSummary) {
         try {
-          final result = await di.sl<ChatRemoteDataSource>().saveConversation(
-                threadId: _threadId,
-                claimId: finalClaimId,
-                externalReference: externalRef,
-                messages: _buildConversationMessagesPayload(),
-              );
-          debugPrint('[Close] conversation saved: ${result['conversationId']}');
+          await _runSaveClaimAndConversation(
+            externalRef: _extractClaimReference(doneMsg.text),
+          );
+          _savedOnSummary = true;
         } catch (e) {
-          errorMessage ??= 'Failed to save conversation: $e';
-          debugPrint('[Close] saveConversation failed: $e');
+          errorMessage = 'Failed to save claim: $e';
+          debugPrint('[Close] fallback save failed: $e');
         }
       }
     } finally {
@@ -1730,22 +1827,27 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
               alignment: WrapAlignment.end,
               spacing: 6,
               runSpacing: 6,
-              children: msg.imagePaths.map((path) {
-                return ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.file(
-                    File(path),
-                    width: 88,
-                    height: 88,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => Container(
+              children: msg.imagePaths.asMap().entries.map((entry) {
+                final index = entry.key;
+                final path = entry.value;
+                return GestureDetector(
+                  onTap: () => _openImageViewer(msg.imagePaths, index),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.file(
+                      File(path),
                       width: 88,
                       height: 88,
-                      color: Colors.grey.shade200,
-                      child: Icon(
-                        Icons.broken_image_outlined,
-                        color: Colors.grey.shade400,
-                        size: 24,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => Container(
+                        width: 88,
+                        height: 88,
+                        color: Colors.grey.shade200,
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: Colors.grey.shade400,
+                          size: 24,
+                        ),
                       ),
                     ),
                   ),
@@ -2263,27 +2365,6 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
             ],
           ),
         ),
-        // Skip button
-        const SizedBox(height: 8),
-        GestureDetector(
-          onTap: _onSkipDocuments,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: _kBlue),
-            ),
-            child: const Text(
-              'Skip',
-              style: TextStyle(
-                fontSize: 13,
-                color: _kBlue,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -2440,4 +2521,97 @@ class _ChatMsg {
     this.imagePaths = const [],
     this.documentNames = const [],
   });
+}
+
+class _ImageViewerPage extends StatefulWidget {
+  const _ImageViewerPage({required this.paths, required this.initialIndex});
+
+  final List<String> paths;
+  final int initialIndex;
+
+  @override
+  State<_ImageViewerPage> createState() => _ImageViewerPageState();
+}
+
+class _ImageViewerPageState extends State<_ImageViewerPage> {
+  late final PageController _controller;
+  late int _index;
+
+  @override
+  void initState() {
+    super.initState();
+    _index = widget.initialIndex;
+    _controller = PageController(initialPage: _index);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            PageView.builder(
+              controller: _controller,
+              itemCount: widget.paths.length,
+              onPageChanged: (i) => setState(() => _index = i),
+              itemBuilder: (_, i) {
+                return InteractiveViewer(
+                  minScale: 1,
+                  maxScale: 4,
+                  child: Center(
+                    child: Image.file(
+                      File(widget.paths[i]),
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) => const Icon(
+                        Icons.broken_image_outlined,
+                        color: Colors.white54,
+                        size: 64,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+            Positioned(
+              top: 8,
+              left: 8,
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ),
+            if (widget.paths.length > 1)
+              Positioned(
+                bottom: 16,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(
+                      '${_index + 1} / ${widget.paths.length}',
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }

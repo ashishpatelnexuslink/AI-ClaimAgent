@@ -6,6 +6,7 @@ using ClaimAI.Infrastructure.Identity;
 using ClaimAI.Infrastructure.Interceptors;
 using ClaimAI.Infrastructure.Repositories;
 using ClaimAI.Infrastructure.Services;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,15 +20,35 @@ public static class DependencyInjection
     {
         services.AddScoped<AuditableEntityInterceptor>();
 
-        services.AddDbContext<ApplicationDbContext>((sp, options) =>
-        {
-            var interceptor = sp.GetRequiredService<AuditableEntityInterceptor>();
-            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"))
-                   .AddInterceptors(interceptor);
-        });
+        //services.AddDbContext<ApplicationDbContext>((sp, options) =>
+        //{
+        //    var interceptor = sp.GetRequiredService<AuditableEntityInterceptor>();
+        //    options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"))
+        //           .AddInterceptors(interceptor);
+        //});
 
         services.AddIdentityConfiguration();
 
+        //services.AddDbContext<IdentityDbContext>(options =>
+        //    options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
+
+        services.AddDbContext<ApplicationDbContext>(options =>
+            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"),
+            b =>
+            {
+                b.MigrationsAssembly("ClaimAI.Infrastructure");
+               // b.UseNetTopologySuite(); // Enable spatial data support
+            }));
+
+        // Factory allows repositories to create independent DbContext instances per
+        // operation, enabling concurrent Task.WhenAll queries without threading conflicts.
+        services.AddDbContextFactory<ApplicationDbContext>(options =>
+            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"),
+            b =>
+            {
+                b.MigrationsAssembly("ClaimAI.Infrastructure");
+               // b.UseNetTopologySuite();
+            }), ServiceLifetime.Scoped);
         services.AddHttpContextAccessor();
         services.AddScoped(typeof(IGenericRepository<>), typeof(GenericRepository<>));
         services.AddScoped<ITemplateRepository, TemplateRepository>();
