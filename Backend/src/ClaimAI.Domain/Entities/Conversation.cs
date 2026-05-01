@@ -17,4 +17,6 @@ public class Conversation : BaseEntity
     public string ThreadId { get; set; } = string.Empty;
 
     public string JsonFilePath { get; set; } = string.Empty;
+
+    public string? ChatMode { get; set; }
 }
