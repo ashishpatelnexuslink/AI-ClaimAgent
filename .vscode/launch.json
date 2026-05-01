@@ -8,24 +8,21 @@
             "name": "MobileApp",
             "cwd": "MobileApp",
             "request": "launch",
-            "type": "dart",
-            "args": ["--web-port=59582"]
+            "type": "dart"
         },
         {
             "name": "MobileApp (profile mode)",
             "cwd": "MobileApp",
             "request": "launch",
             "type": "dart",
-            "flutterMode": "profile",
-            "args": ["--web-port=59582"]
+            "flutterMode": "profile"
         },
         {
             "name": "MobileApp (release mode)",
             "cwd": "MobileApp",
             "request": "launch",
             "type": "dart",
-            "flutterMode": "release",
-            "args": ["--web-port=59582"]
+            "flutterMode": "release"
         }
     ]
 }

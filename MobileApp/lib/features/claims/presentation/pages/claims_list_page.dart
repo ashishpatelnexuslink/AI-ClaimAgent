@@ -27,82 +27,74 @@ class ClaimsListPage extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Claims'),
       ),
-      body: BlocBuilder<ClaimsCubit, ClaimsState>(
-        builder: (context, state) {
-          if (state.isLoading && state.claims.isEmpty) {
-            return const LoadingWidget(message: 'Loading claims...');
-          }
+      body: Column(
+        children: [
+          _buildFilterChipsRow(),
+          Expanded(
+            child: BlocBuilder<ClaimsCubit, ClaimsState>(
+              builder: (context, state) {
+                if (state.isLoading && state.claims.isEmpty) {
+                  return const LoadingWidget(message: 'Loading claims...');
+                }
 
-          if (state.errorMessage != null && state.claims.isEmpty) {
-            return AppErrorWidget(
-              message: state.errorMessage!,
-              onRetry: () =>
-                  context.read<ClaimsCubit>().fetchClaims(refresh: true),
-            );
-          }
+                if (state.errorMessage != null && state.claims.isEmpty) {
+                  return AppErrorWidget(
+                    message: state.errorMessage!,
+                    onRetry: () =>
+                        context.read<ClaimsCubit>().fetchClaims(refresh: true),
+                  );
+                }
 
-          if (state.claims.isEmpty) {
-            return const EmptyWidget(
-              message: 'No claims found',
-              icon: Icons.description_outlined,
-            );
-          }
+                final selected = state.selectedStatus;
+                final visibleClaims = selected == null
+                    ? state.claims
+                    : state.claims
+                        .where((c) => c.status.name == selected)
+                        .toList();
 
-          final selected = state.selectedStatus;
-          final visibleClaims = selected == null
-              ? state.claims
-              : state.claims
-                  .where((c) => c.status.name == selected)
-                  .toList();
+                if (visibleClaims.isEmpty) {
+                  return const EmptyWidget(
+                    message: 'No claims found',
+                    icon: Icons.assignment_outlined,
+                  );
+                }
 
-          final showLoader = state.hasMore && selected == null;
-          return Column(
-            children: [
-              _buildFilterChipsRow(),
-              Expanded(
-                child: visibleClaims.isEmpty
-                    ? const EmptyWidget(
-                        message: 'No claims found',
-                        icon: Icons.description_outlined,
-                      )
-                    : RefreshIndicator(
-                        onRefresh: () => context
-                            .read<ClaimsCubit>()
-                            .fetchClaims(refresh: true),
-                        child: ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(
-                            AppSpacing.md,
-                            AppSpacing.sm,
-                            AppSpacing.md,
-                            AppSpacing.md,
-                          ),
-                          itemCount:
-                              visibleClaims.length + (showLoader ? 1 : 0),
-                          itemBuilder: (context, index) {
-                            if (index == visibleClaims.length) {
-                              context.read<ClaimsCubit>().fetchClaims();
-                              return const Padding(
-                                padding: EdgeInsets.all(AppSpacing.md),
-                                child: Center(
-                                    child: CircularProgressIndicator()),
-                              );
-                            }
+                final showLoader = state.hasMore && selected == null;
+                return RefreshIndicator(
+                  onRefresh: () =>
+                      context.read<ClaimsCubit>().fetchClaims(refresh: true),
+                  child: ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.md,
+                      AppSpacing.sm,
+                      AppSpacing.md,
+                      AppSpacing.md,
+                    ),
+                    itemCount: visibleClaims.length + (showLoader ? 1 : 0),
+                    itemBuilder: (context, index) {
+                      if (index == visibleClaims.length) {
+                        context.read<ClaimsCubit>().fetchClaims();
+                        return const Padding(
+                          padding: EdgeInsets.all(AppSpacing.md),
+                          child: Center(child: CircularProgressIndicator()),
+                        );
+                      }
 
-                            final claim = visibleClaims[index];
-                            return ClaimCard(
-                              claim: claim,
-                              onTap: () => Navigator.of(context).pushNamed(
-                                AppRoutes.claimDetail,
-                                arguments: {'claimId': claim.id},
-                              ),
-                            );
-                          },
+                      final claim = visibleClaims[index];
+                      return ClaimCard(
+                        claim: claim,
+                        onTap: () => Navigator.of(context).pushNamed(
+                          AppRoutes.claimDetail,
+                          arguments: {'claimId': claim.id},
                         ),
-                      ),
-              ),
-            ],
-          );
-        },
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

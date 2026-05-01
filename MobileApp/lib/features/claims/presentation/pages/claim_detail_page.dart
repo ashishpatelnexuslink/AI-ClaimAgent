@@ -4,10 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:claim_ai/core/constants/app_theme.dart';
-import 'package:claim_ai/core/network/dio_client.dart';
 import 'package:claim_ai/core/utils/date_utils.dart';
 import 'package:claim_ai/core/widgets/loading_widget.dart';
 import 'package:claim_ai/core/widgets/error_widget.dart';
@@ -33,7 +30,6 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
   bool _documentsLoading = false;
   final Set<String> _busyCategories = {};
   final Set<String> _deletingIds = {};
-  final Set<String> _downloadingDocs = {};
 
   static const _allowedDocExtensions = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
 
@@ -182,62 +178,6 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
     }
   }
 
-  Future<Directory> _resolveDownloadsDir() async {
-    if (Platform.isAndroid) {
-      final publicDownloads = Directory('/storage/emulated/0/Download');
-      if (await publicDownloads.exists()) return publicDownloads;
-      try {
-        await publicDownloads.create(recursive: true);
-        return publicDownloads;
-      } catch (_) {
-        final ext = await getExternalStorageDirectory();
-        if (ext != null) return ext;
-      }
-    }
-    return getApplicationDocumentsDirectory();
-  }
-
-  Future<bool> _ensureStoragePermission() async {
-    if (!Platform.isAndroid) return true;
-    if (await Permission.storage.request().isGranted) return true;
-    final manage = await Permission.manageExternalStorage.request();
-    return manage.isGranted;
-  }
-
-  String _uniqueFilePath(String dir, String name) {
-    final dot = name.lastIndexOf('.');
-    final base = dot > 0 ? name.substring(0, dot) : name;
-    final ext = dot > 0 ? name.substring(dot) : '';
-    var candidate = '$dir/$name';
-    var i = 1;
-    while (File(candidate).existsSync()) {
-      candidate = '$dir/$base ($i)$ext';
-      i++;
-    }
-    return candidate;
-  }
-
-  Future<void> _downloadDoc(String url, String name) async {
-    if (url.isEmpty) return;
-    if (_downloadingDocs.contains(url)) return;
-    setState(() => _downloadingDocs.add(url));
-    try {
-      if (!await _ensureStoragePermission()) {
-        _snack('Storage permission denied');
-        return;
-      }
-      final dir = await _resolveDownloadsDir();
-      final safeName = name.trim().isEmpty ? 'document.pdf' : name.trim();
-      final filePath = _uniqueFilePath(dir.path, safeName);
-      await di.sl<DioClient>().dio.download(url, filePath);
-      _snack('Saved to $filePath');
-    } catch (e) {
-      _snack('Download failed: $e');
-    } finally {
-      if (mounted) setState(() => _downloadingDocs.remove(url));
-    }
-  }
-
   Future<void> _deleteDoc(String id) async {
     if (!_isEditable()) return;
     if (id.isEmpty || _deletingIds.contains(id)) return;
@@ -349,8 +289,6 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
                   onUploadPhoto: _pickAndUploadPhoto,
                   onUploadDocument: _pickAndUploadDocument,
                   onDeleteDoc: _deleteDoc,
-                  onDownloadDoc: _downloadDoc,
-                  downloadingDocs: _downloadingDocs,
                 ),
                 const SizedBox(height: AppSpacing.xl),
               ],
@@ -570,8 +508,6 @@ class _DocumentsCard extends StatelessWidget {
   final Future<void> Function(String category) onUploadPhoto;
   final Future<void> Function(String category) onUploadDocument;
   final Future<void> Function(String id) onDeleteDoc;
-  final Future<void> Function(String url, String name) onDownloadDoc;
-  final Set<String> downloadingDocs;
 
   const _DocumentsCard({
     required this.claim,
@@ -582,8 +518,6 @@ class _DocumentsCard extends StatelessWidget {
     required this.onUploadPhoto,
     required this.onUploadDocument,
     required this.onDeleteDoc,
-    required this.onDownloadDoc,
-    required this.downloadingDocs,
   });
 
   @override
@@ -656,8 +590,6 @@ class _DocumentsCard extends StatelessWidget {
               canEdit: canEdit,
               onUpload: onUploadDocument,
               onDelete: onDeleteDoc,
-              onDownload: onDownloadDoc,
-              downloadingDocs: downloadingDocs,
             ),
             const _SectionDivider(),
             _PhotoSection(
@@ -684,8 +616,6 @@ class _DocumentsCard extends StatelessWidget {
               canEdit: canEdit,
               onUpload: onUploadDocument,
               onDelete: onDeleteDoc,
-              onDownload: onDownloadDoc,
-              downloadingDocs: downloadingDocs,
             ),
           ],
         ],
@@ -748,7 +678,7 @@ class _PhotoSection extends StatelessWidget {
               scrollDirection: Axis.horizontal,
               itemCount: photos.length,
               separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (ctx, i) {
+              itemBuilder: (_, i) {
                 final p = photos[i];
                 final url = (p['url'] ?? '').toString();
                 final id = (p['id'] ?? '').toString();
@@ -758,20 +688,6 @@ class _PhotoSection extends StatelessWidget {
                   onDelete: (!canEdit || id.isEmpty)
                       ? null
                       : () => onDelete(id),
-                  onTap: url.isEmpty
-                      ? null
-                      : () {
-                          final urls = photos
-                              .map((e) => (e['url'] ?? '').toString())
-                              .where((u) => u.isNotEmpty)
-                              .toList();
-                          final initial = urls.indexOf(url);
-                          _showImageViewer(
-                            ctx,
-                            urls,
-                            initial < 0 ? 0 : initial,
-                          );
-                        },
                 );
               },
             ),
@@ -833,8 +749,6 @@ class _FilesSection extends StatelessWidget {
   final bool canEdit;
   final Future<void> Function(String category) onUpload;
   final Future<void> Function(String id) onDelete;
-  final Future<void> Function(String url, String name) onDownload;
-  final Set<String> downloadingDocs;
 
   const _FilesSection({
     required this.title,
@@ -845,8 +759,6 @@ class _FilesSection extends StatelessWidget {
     required this.deletingIds,
     required this.onUpload,
     required this.onDelete,
-    required this.onDownload,
-    required this.downloadingDocs,
     this.canEdit = true,
   });
 
@@ -871,17 +783,13 @@ class _FilesSection extends StatelessWidget {
         else
           ...docs.map((d) {
             final id = (d['id'] ?? '').toString();
-            final url = (d['url'] ?? '').toString();
-            final name = (d['fileName'] ?? 'file').toString();
             return _FileRow(
-              name: name,
+              name: (d['fileName'] ?? 'file').toString(),
               sizeBytes: (d['fileSize'] as num?)?.toInt() ?? 0,
               deleting: deletingIds.contains(id),
               onDelete: (!canEdit || id.isEmpty)
                   ? null
                   : () => onDelete(id),
-              downloading: downloadingDocs.contains(url),
-              onDownload: url.isEmpty ? null : () => onDownload(url, name),
             );
           }),
         const SizedBox(height: AppSpacing.sm),
@@ -905,109 +813,40 @@ class _FilesSection extends StatelessWidget {
   }
 }
 
-void _showImageViewer(
-  BuildContext context,
-  List<String> urls,
-  int initialIndex,
-) {
-  if (urls.isEmpty) return;
-  final controller = PageController(initialPage: initialIndex);
-  showDialog(
-    context: context,
-    barrierColor: Colors.black.withValues(alpha: 0.92),
-    builder: (ctx) {
-      return Stack(
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.of(ctx).pop(),
-            behavior: HitTestBehavior.opaque,
-            child: PageView.builder(
-              controller: controller,
-              itemCount: urls.length,
-              itemBuilder: (_, i) {
-                return InteractiveViewer(
-                  minScale: 1,
-                  maxScale: 5,
-                  child: Center(
-                    child: Image.network(
-                      urls[i],
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, _, _) => const Icon(
-                        Icons.broken_image_outlined,
-                        color: Colors.white54,
-                        size: 64,
-                      ),
-                      loadingBuilder: (_, child, progress) {
-                        if (progress == null) return child;
-                        return const Center(
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          Positioned(
-            top: MediaQuery.of(ctx).padding.top + 8,
-            right: 8,
-            child: IconButton(
-              icon: const Icon(Icons.close, color: Colors.white, size: 28),
-              onPressed: () => Navigator.of(ctx).pop(),
-            ),
-          ),
-        ],
-      );
-    },
-  );
-}
-
 class _PhotoThumb extends StatelessWidget {
   final String url;
   final bool deleting;
   final VoidCallback? onDelete;
-  final VoidCallback? onTap;
 
   const _PhotoThumb({
     required this.url,
     this.deleting = false,
     this.onDelete,
-    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final thumb = Container(
-      width: 76,
-      height: 76,
-      decoration: BoxDecoration(
-        color: AppColors.background,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.border),
-        image: url.isEmpty
-            ? null
-            : DecorationImage(
-                image: NetworkImage(url),
-                fit: BoxFit.cover,
-              ),
-      ),
-      child: url.isEmpty
-          ? const Icon(Icons.image_not_supported_outlined,
-              color: AppColors.textHint)
-          : null,
-    );
     return Stack(
       children: [
-        (onTap != null && url.isNotEmpty)
-            ? GestureDetector(
-                onTap: onTap,
-                behavior: HitTestBehavior.opaque,
-                child: thumb,
-              )
-            : thumb,
+        Container(
+          width: 76,
+          height: 76,
+          decoration: BoxDecoration(
+            color: AppColors.background,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppColors.border),
+            image: url.isEmpty
+                ? null
+                : DecorationImage(
+                    image: NetworkImage(url),
+                    fit: BoxFit.cover,
+                  ),
+          ),
+          child: url.isEmpty
+              ? const Icon(Icons.image_not_supported_outlined,
+                  color: AppColors.textHint)
+              : null,
+        ),
         if (onDelete != null)
           Positioned(
             top: 2,
@@ -1044,15 +883,11 @@ class _FileRow extends StatelessWidget {
   final int sizeBytes;
   final bool deleting;
   final VoidCallback? onDelete;
-  final bool downloading;
-  final VoidCallback? onDownload;
   const _FileRow({
     required this.name,
     required this.sizeBytes,
     this.deleting = false,
     this.onDelete,
-    this.downloading = false,
-    this.onDownload,
   });
 
   @override
@@ -1102,44 +937,22 @@ class _FileRow extends StatelessWidget {
               ],
             ),
           ),
-          if (onDownload != null)
-            downloading
-                ? const Padding(
-                    padding: EdgeInsets.all(4),
-                    child: SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
-                : GestureDetector(
-                    onTap: onDownload,
-                    behavior: HitTestBehavior.opaque,
-                    child: const Padding(
-                      padding: EdgeInsets.all(4),
-                      child: Icon(Icons.file_download_outlined,
-                          size: 20, color: AppColors.primary),
-                    ),
-                  ),
-          if (onDelete != null) ...[
-            const SizedBox(width: 4),
-            if (deleting)
-              const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            else
-              GestureDetector(
-                onTap: onDelete,
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.all(4),
-                  child: Icon(Icons.close,
-                      size: 18, color: Colors.grey.shade500),
-                ),
+          if (deleting)
+            const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            GestureDetector(
+              onTap: onDelete,
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Icon(Icons.close,
+                    size: 18, color: Colors.grey.shade500),
               ),
-          ],
+            ),
         ],
       ),
     );

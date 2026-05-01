@@ -9,7 +9,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Initialize environment
-  EnvConfig.init(Environment.prod);
+  EnvConfig.init(Environment.dev);
 
   // Initialize Hive for local DB
   await Hive.initFlutter();

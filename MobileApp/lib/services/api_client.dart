@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 import 'package:http/http.dart' as http;
 
 import 'package:claim_ai/config/app_config.dart';
@@ -55,10 +54,6 @@ class ApiClient {
     final token = await AuthService.getValidToken();
     final uri = Uri.parse('${AppConfig.chatbotBaseUrl}$path')
         .replace(queryParameters: queryParams);
-
-    if (kDebugMode) {
-      debugPrint('[chat-stream] GET $uri');
-    }
 
     final request = http.Request('GET', uri);
     request.headers.addAll(_buildHeaders(token));

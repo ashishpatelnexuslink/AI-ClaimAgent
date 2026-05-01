@@ -6,6 +6,9 @@ import 'package:claim_ai/services/api_client.dart';
 /// Uses the streaming `/chat/stream` endpoint for all messages.
 class ChatService {
   /// Stream structured messages from the chatbot via SSE.
+  ///
+  /// Each yielded [ChatStreamMessage] contains `content`, `messageType`,
+  /// and `suggestions`.
   static Stream<ChatStreamMessage> sendMessage(
     String message, {
     String? threadId,

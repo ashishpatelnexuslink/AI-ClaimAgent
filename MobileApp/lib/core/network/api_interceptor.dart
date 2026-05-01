@@ -45,12 +45,7 @@ class ApiInterceptor extends Interceptor {
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) async {
     _logger.e(
-      'ERROR[${err.response?.statusCode}] => PATH: ${err.requestOptions.path}\n'
-      'METHOD: ${err.requestOptions.method}\n'
-      'REQUEST DATA: ${err.requestOptions.data}\n'
-      'QUERY: ${err.requestOptions.queryParameters}\n'
-      'RESPONSE BODY: ${err.response?.data}\n'
-      'DIO MESSAGE: ${err.message}',
+      'ERROR[${err.response?.statusCode}] => PATH: ${err.requestOptions.path}',
     );
 
     if (err.response?.statusCode == 401) {
@@ -99,16 +94,6 @@ class ApiInterceptor extends Interceptor {
     // path against the browser origin (localhost:<devPort>) on retry.
     final token = await _localStorage.getAccessToken();
     requestOptions.headers['Authorization'] = 'Bearer $token';
-
-    // FormData is a single-use stream — Dio consumes its bytes during the
-    // first attempt. Without cloning, the retry tries to re-read an empty
-    // stream and the upload silently fails (the 401 we just refreshed past
-    // becomes a hung request or a confusing follow-on error). Clone so the
-    // retry has fresh bytes.
-    if (requestOptions.data is FormData) {
-      requestOptions.data = (requestOptions.data as FormData).clone();
-    }
-
     return _dio.fetch(requestOptions);
   }
 }

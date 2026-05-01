@@ -14,9 +14,12 @@ class AuthLayout extends StatelessWidget {
     return Scaffold(
       backgroundColor: _bgColor,
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
+        child: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
                     const SizedBox(height: 16),
                     // Logo - source PNG is 500x500 with whitespace,
                     // display larger so visible content matches Figma
@@ -122,9 +125,13 @@ class AuthLayout extends StatelessWidget {
                         ],
                       ),
                     ),
-              const SizedBox(height: 24),
-              // Bottom bar - Verified Protection (floating rounded card)
-              Container(
+                    const SizedBox(height: 24),
+                  ],
+                ),
+              ),
+            ),
+            // Bottom bar - Verified Protection (floating rounded card)
+            Container(
               margin: const EdgeInsets.fromLTRB(20, 0, 20, 16),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               decoration: BoxDecoration(
@@ -155,29 +162,27 @@ class AuthLayout extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Verified Protection',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF1A1A2E),
-                          ),
+                  const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Verified Protection',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF1A1A2E),
                         ),
-                        SizedBox(height: 2),
-                        Text(
-                          'Your data is secured by neural encryption.',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Color(0xFF9CA3AF),
-                          ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Your data is secured by neural encryption.',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF9CA3AF),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -185,7 +190,6 @@ class AuthLayout extends StatelessWidget {
           ],
         ),
       ),
-    ),
-  );
+    );
   }
 }

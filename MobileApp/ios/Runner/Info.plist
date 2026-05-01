@@ -76,9 +76,5 @@
 	<string>ClaimAI needs your location to record where the incident occurred.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>ClaimAI needs your location to record where the incident occurred.</string>
-	<key>UIFileSharingEnabled</key>
-	<true/>
-	<key>LSSupportsOpeningDocumentsInPlace</key>
-	<true/>
 </dict>
 </plist>
