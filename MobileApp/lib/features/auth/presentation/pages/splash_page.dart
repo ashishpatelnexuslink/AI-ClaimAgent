@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:claim_ai/core/navigation/app_routes.dart';
 // import 'package:claim_ai/core/services/biometric_service.dart';
 // import 'package:claim_ai/core/storage/local_storage.dart';
+import 'package:claim_ai/core/usecases/usecase.dart';
 import 'package:claim_ai/features/auth/domain/repositories/auth_repository.dart';
+import 'package:claim_ai/features/auth/domain/usecases/get_user_profile_usecase.dart';
 import 'package:claim_ai/injection_container.dart';
 
 class SplashPage extends StatefulWidget {
@@ -174,8 +176,19 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
       debugPrint('[splash] _checkAuth: authRepo resolved');
       // final localStorage = sl<LocalStorage>();
       // final biometricService = sl<BiometricService>();
-      final isLoggedIn = await authRepo.isLoggedIn();
-      debugPrint('[splash] _checkAuth: isLoggedIn=$isLoggedIn');
+      var isLoggedIn = await authRepo.isLoggedIn();
+      debugPrint('[splash] _checkAuth: hasToken=$isLoggedIn');
+
+      // A stored token only proves we logged in once — it may be expired and
+      // its refresh token may also be expired. Probe an authenticated endpoint
+      // so the Dio interceptor exercises refresh-on-401; if both tokens are
+      // dead the call returns Left(AuthFailure) and we route to login instead
+      // of dropping the user on home with a stuck-loading screen.
+      if (isLoggedIn) {
+        final probe = await sl<GetUserProfileUseCase>()(const NoParams());
+        isLoggedIn = probe.isRight();
+        debugPrint('[splash] _checkAuth: probe ok=$isLoggedIn');
+      }
 
       if (!mounted) return;
 

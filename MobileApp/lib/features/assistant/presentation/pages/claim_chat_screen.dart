@@ -69,8 +69,12 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   TimeOfDay? _dtTime;
 
   // GET_IMAGE state.
+  // Legacy single-bucket flow (no `allowed_angles` in payload).
   final List<File> _pickedImages = [];
   final int _maxImages = 4;
+  // Dynamic per-angle flow driven by `payload.allowed_angles` — keyed by
+  // angle name (e.g. "front_left"). Cleared after each successful submit.
+  final Map<String, File> _angleImages = {};
 
   // GET_DOCUMENT state.
   final List<PlatformFile> _pickedDocuments = [];
@@ -668,6 +672,295 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     return pastFields ? buffer.toString() : '';
   }
 
+  // ─── Review Your Claim card (payload_type == "final_summary") ───────────
+  /// Keys that should appear under the INCIDENT DETAILS section header.
+  static const _incidentKeys = {
+    'Incident Date',
+    'Incident Time',
+    'Incident Location',
+    'Incident Description',
+    'Damage Details',
+    'Date',
+    'Time',
+    'Location',
+    'Description',
+  };
+
+  /// Keys that should appear under the DOCUMENTS section header. Each value
+  /// is rendered as "N Files".
+  static const _documentKeys = {
+    'Vehicle Photos Count',
+    'Damage Photos Count',
+    'License Photos Count',
+    'Police Report Count',
+    'Repair Bill Count',
+    'Invoice Count',
+  };
+
+  String _humanizeDocLabel(String key) {
+    switch (key) {
+      case 'Vehicle Photos Count': return 'Vehicle Photos';
+      case 'Damage Photos Count': return 'Damage Vehicle Photos';
+      case 'License Photos Count': return 'Driving License';
+      case 'Police Report Count': return 'Police Report';
+      case 'Repair Bill Count': return 'Repair Bill';
+      case 'Invoice Count': return 'Invoice';
+      default: return key.replaceAll(' Count', '');
+    }
+  }
+
+  Widget _buildFinalSummaryCard({
+    required _ChatMsg msg,
+    required bool isLastBot,
+  }) {
+    final payload = msg.payload!;
+    final basic = <MapEntry<String, String>>[];
+    final incident = <MapEntry<String, String>>[];
+    final documents = <MapEntry<String, String>>[];
+
+    payload.forEach((key, value) {
+      if (value == null) return;
+      final formatted = _formatFieldValue(key, value);
+      if (formatted.isEmpty) return;
+      if (_documentKeys.contains(key)) {
+        final count = _asInt(value);
+        documents.add(MapEntry(_humanizeDocLabel(key), '$count Files'));
+      } else if (_incidentKeys.contains(key)) {
+        incident.add(MapEntry(key, formatted));
+      } else {
+        basic.add(MapEntry(key, formatted));
+      }
+    });
+
+    final maxCardWidth = MediaQuery.of(context).size.width * 0.86;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Bot avatar + intro bubble.
+        if (msg.text.trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildBotAvatar(),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(16),
+                        topRight: Radius.circular(16),
+                        bottomLeft: Radius.circular(4),
+                        bottomRight: Radius.circular(16),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Text(
+                      msg.text,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: _kDark,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+        // Blue review card.
+        Padding(
+          padding: const EdgeInsets.only(left: 46, bottom: 10),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxCardWidth),
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF2A6FDB), Color(0xFF1E5BC2)],
+                ),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: _kBlue.withValues(alpha: 0.25),
+                    blurRadius: 14,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Header.
+                  Row(
+                    children: [
+                      Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.description_outlined,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      const Text(
+                        'Review Your Claim',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  ..._reviewRows(basic),
+                  if (incident.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    _reviewSectionHeader('INCIDENT DETAILS'),
+                    const SizedBox(height: 10),
+                    ..._reviewRows(incident, multiline: true),
+                  ],
+                  if (documents.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    _reviewSectionHeader('DOCUMENTS'),
+                    const SizedBox(height: 10),
+                    ..._reviewRows(documents),
+                  ],
+                  const SizedBox(height: 18),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: (!isLastBot ||
+                              _confirmingFinalSummary ||
+                              _botTyping)
+                          ? null
+                          : () => _onConfirmFinalSummary(msg),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: _kBlue,
+                        disabledBackgroundColor:
+                            Colors.white.withValues(alpha: 0.7),
+                        disabledForegroundColor: _kBlue.withValues(alpha: 0.6),
+                        elevation: 0,
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(28),
+                        ),
+                      ),
+                      child: _confirmingFinalSummary
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation(_kBlue),
+                              ),
+                            )
+                          : const Text(
+                              'Confirm & Submit Claim',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _reviewSectionHeader(String label) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          height: 1,
+          color: Colors.white.withValues(alpha: 0.2),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.7),
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.0,
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _reviewRows(
+    List<MapEntry<String, String>> rows, {
+    bool multiline = false,
+  }) {
+    return [
+      for (final r in rows)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 120,
+                child: Text(
+                  '${r.key}:',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.75),
+                    fontSize: 13,
+                    height: 1.45,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  r.value,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    height: 1.45,
+                  ),
+                  textAlign:
+                      multiline ? TextAlign.left : TextAlign.right,
+                  maxLines: multiline ? null : 2,
+                  overflow:
+                      multiline ? TextOverflow.visible : TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+    ];
+  }
+
   // ─── Policy Verified Card ────────────────────────────────────────────────
   Widget _buildPolicyCard({
     required _ChatMsg msg,
@@ -910,7 +1203,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
               spacing: 8,
               runSpacing: 8,
               children:
-                  msg.triggers.map((t) => _buildTriggerButton(t)).toList(),
+                  msg.triggers.map((t) => _buildTriggerButton(t, msg)).toList(),
             ),
           ),
       ],
@@ -984,6 +1277,16 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
 
     // Check if this is a policy detail message
     if (!isUser && !msg.animate) {
+      // Final summary uses the dedicated "Review Your Claim" card with a
+      // "Confirm & Submit Claim" CTA that persists to the database.
+      if (msg.payloadType == 'final_summary' &&
+          msg.payload != null &&
+          msg.payload!.isNotEmpty) {
+        return _buildFinalSummaryCard(
+          msg: msg,
+          isLastBot: isLastBot,
+        );
+      }
       // Structured payload (triggers: SHOW_TABLE + verified_summary / final_summary)
       final structured = _tableFields(msg);
       if (structured != null) {
@@ -1131,7 +1434,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
             child: Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: msg.triggers.map((t) => _buildTriggerButton(t)).toList(),
+              children: msg.triggers.map((t) => _buildTriggerButton(t, msg)).toList(),
             ),
           ),
         // Close button — appears on `message_type == 'done'`
@@ -1180,6 +1483,80 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
 
   void _onRemoveImage(int index) {
     setState(() => _pickedImages.removeAt(index));
+  }
+
+  // ── Per-angle GET_IMAGE handlers (driven by `payload.allowed_angles`) ──
+
+  Future<void> _onPickAngleImage(String angle) async {
+    final picked = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _angleImages[angle] = File(picked.path));
+    _scrollToBottom();
+  }
+
+  void _onRemoveAngleImage(String angle) {
+    setState(() => _angleImages.remove(angle));
+  }
+
+  Future<void> _onSubmitAngleImages() async {
+    if (_angleImages.isEmpty || _botTyping || _uploadingFiles) return;
+
+    final entries = _angleImages.entries.toList(growable: false);
+    setState(() => _uploadingFiles = true);
+
+    int uploadedCount = 0;
+    try {
+      final ds = di.sl<ClaimsRemoteDataSource>();
+      final category = _inferCategory(isImage: true);
+      // Re-upload semantics: a fresh batch replaces any prior unattached
+      // uploads in this thread under the same category.
+      await _replacePriorUploads(category);
+      for (final entry in entries) {
+        final file = entry.value;
+        final bytes = await file.readAsBytes();
+        final name = file.path.split(RegExp(r'[\\/]')).last;
+        final response = await ds.uploadClaimDocument(
+          bytes: bytes,
+          fileName: name.isEmpty ? 'image.jpg' : name,
+          kind: 'Image',
+          category: category,
+          chatThreadId: _threadId,
+          angle: entry.key,
+        );
+        final id = (response['id'] ?? '').toString();
+        if (id.isNotEmpty) {
+          _uploadedDocumentIds.add((id: id, category: category));
+          uploadedCount++;
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Image upload failed: $e')),
+        );
+      }
+      debugPrint('[Upload] angle image upload failed: $e');
+    }
+
+    if (!mounted) return;
+    final count = uploadedCount == 0 ? entries.length : uploadedCount;
+    final bubble = '$count photo${count > 1 ? 's' : ''} uploaded';
+    final paths = entries.map((e) => e.value.path).toList();
+    setState(() {
+      _angleImages.clear();
+      _uploadingFiles = false;
+      _messages.add(_ChatMsg(
+        text: bubble,
+        isUser: true,
+        imagePaths: paths,
+      ));
+      _botTyping = true;
+    });
+    _scrollToBottom();
+    _streamBotReply(count.toString());
   }
 
   void _openImageViewer(List<String> paths, int initialIndex) {
@@ -1375,14 +1752,14 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   }
 
   // ─── Trigger Widgets ─────────────────────────────────────────────────────
-  Widget _buildTriggerButton(String trigger) {
+  Widget _buildTriggerButton(String trigger, _ChatMsg msg) {
     switch (trigger) {
       case 'GET_DATE_TIME':
         return _buildDateTimeTrigger();
       case 'GET_LOCATION':
         return _buildLocationTrigger();
       case 'GET_IMAGE':
-        return _buildImageTrigger();
+        return _buildImageTrigger(msg);
       case 'GET_DOCUMENT':
         return _buildDocumentTrigger();
       case 'SUBMIT_CLAIM':
@@ -1392,10 +1769,34 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     }
   }
 
+  // Helpers to read GET_IMAGE constraints from a message payload.
+  List<String> _allowedAnglesOf(_ChatMsg msg) {
+    final raw = msg.payload?['allowed_angles'];
+    if (raw is List) return raw.map((e) => e.toString()).toList(growable: false);
+    return const [];
+  }
+
+  int? _payloadInt(_ChatMsg msg, String key) {
+    final raw = msg.payload?[key];
+    if (raw is num) return raw.toInt();
+    if (raw is String) return int.tryParse(raw);
+    return null;
+  }
+
+  /// "front_left" → "Front Left" for display.
+  String _humanizeAngle(String angle) {
+    return angle
+        .split(RegExp(r'[_\s]+'))
+        .where((p) => p.isNotEmpty)
+        .map((p) => p[0].toUpperCase() + p.substring(1).toLowerCase())
+        .join(' ');
+  }
+
   // ── SUBMIT_CLAIM trigger ─────────────────────────────────────────────────
 
   bool _submittingClaim = false;
   bool _closingConversation = false;
+  bool _confirmingFinalSummary = false;
 
   static final _claimRefPattern = RegExp(
     r'([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})',
@@ -1752,6 +2153,50 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     );
   }
 
+  /// Tapped from the `final_summary` review card. Persists the claim +
+  /// documents + conversation to the database, then sends "Yes Confirm" to
+  /// the bot so the conversation can continue.
+  Future<void> _onConfirmFinalSummary(_ChatMsg msg) async {
+    if (_confirmingFinalSummary || _botTyping) return;
+    setState(() => _confirmingFinalSummary = true);
+
+    String? errorMessage;
+    try {
+      // Treat the final_summary payload as the authoritative source so
+      // _runSaveClaimAndConversation maps the human-readable keys via
+      // _mapSaveSummaryToDto and creates a proper claim row.
+      await _runSaveClaimAndConversation(
+        saveSummaryPayload: msg.payload,
+      );
+      _savedOnSummary = true;
+    } catch (e) {
+      errorMessage = 'Failed to save claim: $e';
+      debugPrint('[ConfirmFinalSummary] save failed: $e');
+    }
+
+    if (!mounted) return;
+    setState(() => _confirmingFinalSummary = false);
+
+    if (errorMessage != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(errorMessage),
+          backgroundColor: Colors.red.shade700,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+    // Send "Yes Confirm" to the bot so the conversation continues.
+    const reply = 'Yes Confirm';
+    setState(() {
+      _messages.add(const _ChatMsg(text: reply, isUser: true));
+      _botTyping = true;
+    });
+    _scrollToBottom();
+    _streamBotReply(reply);
+  }
+
   Widget _buildSubmitClaimTrigger() {
     // Find the message that has claim_data
     final claimMsg = _messages.lastWhere(
@@ -2105,7 +2550,182 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   }
 
   // ─── GET_IMAGE trigger UI ───────────────────────────────────────────────
-  Widget _buildImageTrigger() {
+  Widget _buildImageTrigger(_ChatMsg msg) {
+    final angles = _allowedAnglesOf(msg);
+    if (angles.isEmpty) {
+      return _buildLegacyImageTrigger();
+    }
+    final minCount = _payloadInt(msg, 'min_count') ?? angles.length;
+    final maxCount = _payloadInt(msg, 'max_count') ?? angles.length;
+    final filledCount = _angleImages.length;
+    final canSubmit =
+        filledCount >= minCount && !_uploadingFiles && !_botTyping;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Upload Photos',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: _kDark,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '$filledCount of $maxCount uploaded · min $minCount',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey.shade600,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (int i = 0; i < angles.length; i++) ...[
+            if (i > 0) const SizedBox(height: 8),
+            _buildAngleRow(angles[i], maxCount),
+          ],
+          const SizedBox(height: 12),
+          if (filledCount >= minCount)
+            GestureDetector(
+              onTap: canSubmit ? _onSubmitAngleImages : null,
+              child: Opacity(
+                opacity: canSubmit ? 1.0 : 0.5,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: BoxDecoration(
+                    color: _kBlue,
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (_uploadingFiles)
+                        const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      else
+                        const Icon(Icons.check_circle_outline,
+                            size: 18, color: Colors.white),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'DONE',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// One row in the per-angle uploader: label + thumbnail (when picked) +
+  /// upload/replace/remove controls. Single-image picker per row.
+  Widget _buildAngleRow(String angle, int maxCount) {
+    final picked = _angleImages[angle];
+    final atCap = _angleImages.length >= maxCount && picked == null;
+    return Row(
+      children: [
+        if (picked != null) ...[
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.file(picked,
+                width: 48, height: 48, fit: BoxFit.cover),
+          ),
+          const SizedBox(width: 10),
+        ] else ...[
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF0F2F7),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(Icons.image_outlined,
+                color: Colors.grey.shade500, size: 22),
+          ),
+          const SizedBox(width: 10),
+        ],
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _humanizeAngle(angle),
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: _kDark,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                picked == null ? 'Not uploaded' : 'Uploaded',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: picked == null ? Colors.grey.shade600 : _kBlue,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (picked != null)
+          IconButton(
+            tooltip: 'Remove',
+            onPressed: () => _onRemoveAngleImage(angle),
+            icon: const Icon(Icons.close, size: 18, color: Colors.red),
+            visualDensity: VisualDensity.compact,
+          ),
+        TextButton.icon(
+          onPressed: (atCap || _uploadingFiles)
+              ? null
+              : () => _onPickAngleImage(angle),
+          icon: Icon(picked == null ? Icons.camera_alt_outlined : Icons.refresh,
+              size: 16),
+          label: Text(picked == null ? 'Upload' : 'Replace',
+              style: const TextStyle(fontSize: 12)),
+          style: TextButton.styleFrom(
+            foregroundColor: _kBlue,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            visualDensity: VisualDensity.compact,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Legacy single-button image flow used when the bot's GET_IMAGE message
+  /// has no `allowed_angles` in its payload.
+  Widget _buildLegacyImageTrigger() {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -2133,7 +2753,6 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           ),
           if (_pickedImages.isNotEmpty) ...[
             const SizedBox(height: 12),
-            // Image thumbnails row
             SizedBox(
               height: 72,
               child: ListView.separated(
@@ -2189,7 +2808,6 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
             ),
           ],
           const SizedBox(height: 12),
-          // Upload button
           GestureDetector(
             onTap: _pickedImages.length >= _maxImages
                 ? _onSubmitImages

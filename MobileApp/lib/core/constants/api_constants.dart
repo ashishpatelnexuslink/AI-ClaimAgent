@@ -2,8 +2,8 @@ class ApiConstants {
   ApiConstants._();
 
   // Base URLs per environment
-  static const String devBaseUrl = 'http://192.168.11.5:5030/api';
-  //static const String devBaseUrl = 'https://claimai-api.nexuslink.in/api';
+  //static const String devBaseUrl = 'http://192.168.11.5:5030/api';
+  static const String devBaseUrl = 'https://claimai-api.nexuslink.in/api';
   static const String stagingBaseUrl = 'https://claimai-api.nexuslink.in/api';
   static const String prodBaseUrl = 'https://claimai-api.nexuslink.in/api';
 

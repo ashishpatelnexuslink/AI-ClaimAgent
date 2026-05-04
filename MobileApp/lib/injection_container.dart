@@ -4,6 +4,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:get_it/get_it.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:claim_ai/core/auth/session_event_bus.dart';
 import 'package:claim_ai/core/network/api_interceptor.dart';
 import 'package:claim_ai/core/network/dio_client.dart';
 import 'package:claim_ai/core/network/network_info.dart';
@@ -77,13 +78,18 @@ Future<void> init() async {
     ),
   );
   sl.registerLazySingleton(() => BiometricService());
+  sl.registerLazySingleton(() => SessionEventBus());
 
   sl.registerLazySingleton<NetworkInfo>(
     () => NetworkInfoImpl(connectivity: sl<Connectivity>()),
   );
 
   sl.registerLazySingleton(
-    () => ApiInterceptor(localStorage: sl<LocalStorage>(), dio: sl<Dio>()),
+    () => ApiInterceptor(
+      localStorage: sl<LocalStorage>(),
+      dio: sl<Dio>(),
+      sessionBus: sl<SessionEventBus>(),
+    ),
   );
 
   sl.registerLazySingleton(
@@ -134,6 +140,7 @@ Future<void> init() async {
       verifyOtpUseCase: sl<VerifyOtpUseCase>(),
       getUserProfileUseCase: sl<GetUserProfileUseCase>(),
       logoutUseCase: sl<LogoutUseCase>(),
+      sessionBus: sl<SessionEventBus>(),
     ),
   );
 
