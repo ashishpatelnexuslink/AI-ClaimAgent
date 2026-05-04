@@ -160,12 +160,11 @@ class _SampleTile extends StatelessWidget {
                   ],
                 ),
                 child: Text(
-                  '*$label*',
+                  label,
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
-                    fontStyle: FontStyle.italic,
                   ),
                 ),
               ),
