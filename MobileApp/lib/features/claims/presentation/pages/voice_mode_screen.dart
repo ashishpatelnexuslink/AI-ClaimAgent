@@ -16,6 +16,7 @@ import 'package:uuid/uuid.dart';
 import 'package:claim_ai/core/navigation/app_routes.dart';
 import 'package:claim_ai/core/services/voice_service.dart';
 import 'package:claim_ai/core/storage/chat_transcript_writer.dart';
+import 'package:claim_ai/features/assistant/presentation/widgets/sample_images_dialog.dart';
 import 'package:claim_ai/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:claim_ai/features/claims/presentation/cubit/claims_cubit.dart';
 import 'package:claim_ai/features/chat/data/datasources/chat_remote_datasource.dart';
@@ -58,6 +59,12 @@ class _ChatMessage {
     this.imagePaths = const [],
     this.documentNames = const [],
   });
+}
+
+class _SpeechEntry {
+  final int messageIndex;
+  final int totalChars;
+  const _SpeechEntry(this.messageIndex, this.totalChars);
 }
 
 class VoiceModeScreen extends StatefulWidget {
@@ -117,6 +124,15 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   // ─── Text-to-Speech (avatar voice) ──────────────────────────────────────
   final FlutterTts _tts = FlutterTts();
   bool _botSpeaking = false;
+
+  // ─── Speech-synced typewriter ──────────────────────────────────────────
+  // Bot bubbles reveal their text progressively, in sync with TTS playback,
+  // so reading and listening stay aligned. We queue an entry per utterance
+  // because flutter_tts queues replies (setQueueMode(1)) and only fires the
+  // start handler when each one actually begins.
+  final List<_SpeechEntry> _pendingSpeech = [];
+  _SpeechEntry? _currentSpeech;
+  int _spokenChars = 0;
 
   // ─── Auto-listen after bot finishes speaking ───────────────────────────
   Timer? _autoListenTimer;
@@ -254,25 +270,48 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     _tts.setStartHandler(() {
       if (!mounted) return;
       _cancelAutoListen();
-      setState(() => _botSpeaking = true);
+      setState(() {
+        _botSpeaking = true;
+        _currentSpeech =
+            _pendingSpeech.isNotEmpty ? _pendingSpeech.removeAt(0) : null;
+        _spokenChars = 0;
+      });
       _speakController.repeat(reverse: true);
+    });
+    _tts.setProgressHandler((text, start, end, word) {
+      if (!mounted || _currentSpeech == null) return;
+      setState(() => _spokenChars = end);
     });
     _tts.setCompletionHandler(() {
       if (!mounted) return;
-      setState(() => _botSpeaking = false);
+      setState(() {
+        _botSpeaking = false;
+        _currentSpeech = null;
+        _spokenChars = 0;
+      });
       _speakController.stop();
       _speakController.reset();
       _scheduleAutoListen();
     });
     _tts.setCancelHandler(() {
       if (!mounted) return;
-      setState(() => _botSpeaking = false);
+      setState(() {
+        _botSpeaking = false;
+        _currentSpeech = null;
+        _spokenChars = 0;
+        _pendingSpeech.clear();
+      });
       _speakController.stop();
       _speakController.reset();
     });
     _tts.setErrorHandler((_) {
       if (!mounted) return;
-      setState(() => _botSpeaking = false);
+      setState(() {
+        _botSpeaking = false;
+        _currentSpeech = null;
+        _spokenChars = 0;
+        _pendingSpeech.clear();
+      });
       _speakController.stop();
       _speakController.reset();
     });
@@ -347,10 +386,28 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     }
   }
 
-  Future<void> _speakBotReply(String text) async {
+  Future<void> _speakBotReply(String text, {int? messageIndex}) async {
     final spoken = _sanitizeForSpeech(text);
     if (spoken.isEmpty) return;
+    if (messageIndex != null) {
+      _pendingSpeech.add(_SpeechEntry(messageIndex, spoken.length));
+    }
     await _tts.speak(spoken);
+  }
+
+  /// Returns the portion of [text] that should be visible right now, based on
+  /// TTS playback progress for the bot bubble at [index]. While the utterance
+  /// is being spoken, characters are revealed proportionally to the spoken-
+  /// chars / total-chars ratio reported by flutter_tts. Bubbles that aren't
+  /// currently being spoken render their full text.
+  String _visibleBotText(int index, String text) {
+    final cur = _currentSpeech;
+    if (cur == null || cur.messageIndex != index || cur.totalChars <= 0) {
+      return text;
+    }
+    final ratio = (_spokenChars / cur.totalChars).clamp(0.0, 1.0);
+    final n = (text.length * ratio).ceil().clamp(0, text.length);
+    return text.substring(0, n);
   }
 
   @override
@@ -449,11 +506,15 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           _messageTimestamps.add(DateTime.now());
         });
         _scrollToBottom();
-        unawaited(_speakBotReply(msg.content));
+        final botIndex = _messages.length - 1;
+        unawaited(_speakBotReply(msg.content, messageIndex: botIndex));
         // Bot has streamed the final summary — fire-and-forget the save so
         // the Close button only has to write the local transcript file.
         if (msg.payloadType == 'save_summary') {
           _triggerAutoSaveOnSummary(msg.payload, msg.content);
+        }
+        if (msg.triggers.contains('AUTO_GET_LOCATION')) {
+          unawaited(_onUseCurrentLocation());
         }
       }
     } catch (_) {
@@ -1202,20 +1263,61 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
     summary.forEach((key, value) {
       if (value == null) return;
-      switch (key) {
-        case 'Policy Number': mapped['policyNumber'] = value; break;
-        case 'Policy Holder': mapped['fullName'] = value; break;
-        case 'Vehicle Number': mapped['vehicleNumber'] = value; break;
-        case 'VIN': mapped['vinNumber'] = value; break;
-        case 'Claim Type': mapped['claimType'] = value.toString(); break;
-        case 'Incident Date': incidentDateRaw = value.toString(); break;
-        case 'Incident Time': incidentTimeRaw = value.toString(); break;
-        case 'Incident Location': mapped['incidentLocation'] = value; break;
-        case 'Incident Description':
+      switch (key.toLowerCase().trim()) {
+        case 'policy number':
+          mapped['policyNumber'] = value; break;
+        case 'policy holder':
+        case 'policyholder':
+        case 'full name':
+        case 'name':
+          mapped['fullName'] = value; break;
+        case 'plat number':
+        case 'plate number':
+        case 'vehicle number':
+        case 'vehicle registration number':
+        case 'registration number':
+          mapped['vehicleNumber'] = value;
+          mapped['vehicleRegistrationNumber'] = value;
+          break;
+        case 'vin':
+        case 'vin number':
+        case 'vehicle identification number':
+          mapped['vinNumber'] = value; break;
+        case 'vehicle':
+        case 'vehicle model':
+          mapped['vehicleModel'] = value; break;
+        case 'coverage':
+        case 'coverage type':
+          mapped['coverageType'] = value; break;
+        case 'status':
+        case 'policy status':
+          mapped['policyStatus'] = value; break;
+        case 'valid until':
+        case 'policy valid until':
+          {
+            final parsed = DateTime.tryParse(value.toString());
+            if (parsed != null) {
+              mapped['policyValidUntil'] = parsed.toUtc().toIso8601String();
+            } else {
+              mapped[key] = value;
+            }
+          }
+          break;
+        case 'claim type': mapped['claimType'] = value.toString(); break;
+        case 'incident date':
+        case 'date': incidentDateRaw = value.toString(); break;
+        case 'incident time':
+        case 'time': incidentTimeRaw = value.toString(); break;
+        case 'incident location':
+        case 'location': mapped['incidentLocation'] = value; break;
+        case 'incident description':
+        case 'damage details':
+        case 'description':
           mapped['incidentDescription'] = value;
           mapped['description'] = value;
           break;
-        case 'Claim Amount':
+        case 'claim amount':
+        case 'amount':
           if (value is num) {
             mapped['amount'] = value;
           } else {
@@ -1223,11 +1325,29 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
             if (parsed != null) mapped['amount'] = parsed;
           }
           break;
-        case 'Vehicle Photos Count': mapped['vehiclePhotosCount'] = _asInt(value); break;
-        case 'Damage Photos Count': mapped['damagePhotosCount'] = _asInt(value); break;
-        case 'License Photos Count': mapped['licensePhotosCount'] = _asInt(value); break;
-        case 'Police Report Count': mapped['policeReportCount'] = _asInt(value); break;
-        case 'Repair Bill Count': mapped['repairBillCount'] = _asInt(value); break;
+        case 'vehicle photos':
+        case 'vehicle photos count':
+          mapped['vehiclePhotosCount'] = _extractCount(value); break;
+        case 'damage photos':
+        case 'damage photos count':
+          mapped['damagePhotosCount'] = _extractCount(value); break;
+        case 'driver license':
+        case 'driving license':
+        case 'license photos':
+        case 'license photos count':
+          mapped['licensePhotosCount'] = _extractCount(value); break;
+        case 'police report':
+        case 'police report count':
+          mapped['policeReportCount'] = _extractCount(value); break;
+        case 'repair bill':
+        case 'bill invoice':
+        case 'invoice':
+        case 'invoice count':
+        case 'repair bill count':
+          mapped['repairBillCount'] = _extractCount(value); break;
+        case 'supporting docs':
+        case 'supporting documents':
+          mapped[key] = _extractCount(value); break;
         default: mapped[key] = value;
       }
     });
@@ -1772,6 +1892,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
   Widget _buildBotBubble(_ChatMessage msg, int index) {
     final isLastBot = index == _lastBotIndex();
+    final visibleText = _visibleBotText(index, msg.text);
 
     // Final summary uses the dedicated "Review Your Claim" card with a
     // "Confirm & Submit Claim" CTA that persists to the database.
@@ -1788,7 +1909,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         msg: msg,
         title: _cardTitleFor(msg.payloadType),
         fields: structured,
-        introText: msg.text,
+        introText: visibleText,
         isLastBot: isLastBot,
       );
     }
@@ -1800,7 +1921,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         msg: msg,
         title: 'Policy Verified',
         fields: policyFields,
-        introText: _policyIntroText(msg.text),
+        introText: _policyIntroText(visibleText),
         isLastBot: isLastBot,
       );
     }
@@ -1833,13 +1954,36 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                       ),
                     ],
                   ),
-                  child: _buildFormattedText(
-                    msg.text,
-                    const TextStyle(
-                      fontSize: 14,
-                      color: _kDark,
-                      height: 1.4,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildFormattedText(
+                        visibleText,
+                        const TextStyle(
+                          fontSize: 14,
+                          color: _kDark,
+                          height: 1.4,
+                        ),
+                      ),
+                      if (_sampleImagesOf(msg).isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: GestureDetector(
+                            onTap: () => _openSampleImagesViewer(msg),
+                            child: const Text(
+                              '(See sample)',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: _kBlue,
+                                decoration: TextDecoration.underline,
+                                decorationColor: _kBlue,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -2114,6 +2258,34 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     final raw = msg.payload?['allowed_angles'];
     if (raw is List) return raw.map((e) => e.toString()).toList(growable: false);
     return const [];
+  }
+
+  /// Returns the raw base64-encoded sample images from a `GET_IMAGE` payload
+  /// (key `sample_images`). Empty when the bot did not include samples.
+  List<String> _sampleImagesOf(_ChatMessage msg) {
+    final raw = msg.payload?['sample_images'];
+    if (raw is List) {
+      return raw
+          .map((e) => e.toString())
+          .where((s) => s.isNotEmpty)
+          .toList(growable: false);
+    }
+    return const [];
+  }
+
+  void _openSampleImagesViewer(_ChatMessage msg) {
+    final samples = _sampleImagesOf(msg);
+    if (samples.isEmpty) return;
+    final angles = _allowedAnglesOf(msg);
+    final labels = <String>[
+      for (var i = 0; i < samples.length; i++)
+        i < angles.length ? _humanizeAngle(angles[i]) : 'Sample ${i + 1}',
+    ];
+    showSampleImagesDialog(
+      context: context,
+      base64Images: samples,
+      labels: labels,
+    );
   }
 
   int? _payloadInt(_ChatMessage msg, String key) {
@@ -2826,36 +2998,67 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
   // ─── Review Your Claim card (payload_type == "final_summary") ──────────
   static const _incidentKeys = {
-    'Incident Date',
-    'Incident Time',
-    'Incident Location',
-    'Incident Description',
-    'Damage Details',
-    'Date',
-    'Time',
-    'Location',
-    'Description',
+    'incident date',
+    'incident time',
+    'incident location',
+    'incident description',
+    'damage details',
+    'date',
+    'time',
+    'location',
+    'description',
   };
 
   static const _documentKeys = {
-    'Vehicle Photos Count',
-    'Damage Photos Count',
-    'License Photos Count',
-    'Police Report Count',
-    'Repair Bill Count',
-    'Invoice Count',
+    'vehicle photos',
+    'damage photos',
+    'driver license',
+    'driving license',
+    'license photos',
+    'supporting docs',
+    'supporting documents',
+    'police report',
+    'bill invoice',
+    'repair bill',
+    'invoice',
+    'vehicle photos count',
+    'damage photos count',
+    'license photos count',
+    'police report count',
+    'repair bill count',
+    'invoice count',
   };
 
   String _humanizeDocLabel(String key) {
-    switch (key) {
-      case 'Vehicle Photos Count': return 'Vehicle Photos';
-      case 'Damage Photos Count': return 'Damage Vehicle Photos';
-      case 'License Photos Count': return 'Driving License';
-      case 'Police Report Count': return 'Police Report';
-      case 'Repair Bill Count': return 'Repair Bill';
-      case 'Invoice Count': return 'Invoice';
+    final k = key.toLowerCase().trim();
+    switch (k) {
+      case 'vehicle photos':
+      case 'vehicle photos count': return 'Vehicle Photos';
+      case 'damage photos':
+      case 'damage photos count': return 'Damage Vehicle Photos';
+      case 'driver license':
+      case 'driving license':
+      case 'license photos':
+      case 'license photos count': return 'Driving License';
+      case 'supporting docs':
+      case 'supporting documents': return 'Uploaded Documents';
+      case 'police report':
+      case 'police report count': return 'Police Report';
+      case 'bill invoice':
+      case 'invoice':
+      case 'invoice count': return 'Invoice';
+      case 'repair bill':
+      case 'repair bill count': return 'Repair Bill';
       default: return key.replaceAll(' Count', '');
     }
+  }
+
+  int _extractCount(dynamic value) {
+    if (value is num) return value.toInt();
+    final raw = value.toString();
+    final match = RegExp(r'\d+').firstMatch(raw);
+    if (match != null) return int.parse(match.group(0)!);
+    return _asInt(value);
   }
 
   Widget _buildFinalSummaryCard({
@@ -2871,10 +3074,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       if (value == null) return;
       final formatted = _formatFieldValue(key, value);
       if (formatted.isEmpty) return;
-      if (_documentKeys.contains(key)) {
-        final count = _asInt(value);
+      final keyLc = key.toLowerCase().trim();
+      if (_documentKeys.contains(keyLc)) {
+        final count = _extractCount(value);
         documents.add(MapEntry(_humanizeDocLabel(key), '$count Files'));
-      } else if (_incidentKeys.contains(key)) {
+      } else if (_incidentKeys.contains(keyLc)) {
         incident.add(MapEntry(key, formatted));
       } else {
         basic.add(MapEntry(key, formatted));

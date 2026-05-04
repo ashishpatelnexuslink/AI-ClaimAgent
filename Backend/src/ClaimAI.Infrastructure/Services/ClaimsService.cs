@@ -142,6 +142,7 @@ public class ClaimsService : IClaimsService
             LicensePhotosCount = dto.LicensePhotosCount ?? 0,
             PoliceReportCount = dto.PoliceReportCount ?? 0,
             RepairBillCount = dto.RepairBillCount ?? 0,
+            SupportingDocsCount = dto.SupportingDocsCount ?? 0,
             ChatThreadId = dto.ChatThreadId,
 
             AdditionalData = SerializeExtras(extras),
@@ -227,6 +228,7 @@ public class ClaimsService : IClaimsService
             LicensePhotosCount = claim.LicensePhotosCount,
             PoliceReportCount = claim.PoliceReportCount,
             RepairBillCount = claim.RepairBillCount,
+            SupportingDocsCount = claim.SupportingDocsCount,
             ChatThreadId = claim.ChatThreadId,
             AdditionalData = claim.AdditionalData,
             CreatedAt = claim.CreatedAt,

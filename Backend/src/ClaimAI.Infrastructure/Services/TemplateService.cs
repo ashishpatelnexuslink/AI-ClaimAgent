@@ -224,6 +224,7 @@ public class TemplateService : ITemplateService
                 IsRequired = p.IsRequired,
                 AllowedAngles = p.AllowedAngles.ToList(),
                 SampleImageUrls = p.SampleImageUrls.ToList(),
+                ShowSample = p.ShowSample,
                 MaxFileSizeMb = p.MaxFileSizeMb,
                 AllowedMimeTypes = p.AllowedMimeTypes.ToList(),
                 DisplayOrder = p.DisplayOrder

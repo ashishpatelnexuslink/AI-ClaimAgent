@@ -158,6 +158,7 @@ export interface TemplatePhotoSetting {
   isRequired: boolean;
   allowedAngles: string[];
   sampleImageUrls: string[];
+  showSample: boolean;
   maxFileSizeMb: number;
   allowedMimeTypes: string[];
   displayOrder: number;
@@ -235,6 +236,7 @@ export interface CreatePhotoSetting {
   isRequired: boolean;
   allowedAngles: string[];
   sampleImageUrls: string[];
+  showSample: boolean;
   maxFileSizeMb: number;
   allowedMimeTypes: string[];
   displayOrder: number;

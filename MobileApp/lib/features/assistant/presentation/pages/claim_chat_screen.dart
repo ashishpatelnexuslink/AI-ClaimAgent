@@ -11,12 +11,19 @@ import 'package:geocoding/geocoding.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
+import 'package:claim_ai/core/constants/api_constants.dart';
 import 'package:claim_ai/core/navigation/app_routes.dart';
+import 'package:claim_ai/core/network/dio_client.dart';
 import 'package:claim_ai/core/storage/chat_transcript_writer.dart';
 import 'package:claim_ai/services/chat_service.dart';
+import 'package:claim_ai/features/assistant/presentation/widgets/sample_images_dialog.dart';
 import 'package:claim_ai/features/chat/data/datasources/chat_remote_datasource.dart';
 import 'package:claim_ai/features/claims/data/datasources/claims_remote_datasource.dart';
 import 'package:claim_ai/injection_container.dart' as di;
+
+/// Hardcoded template id used to drive the per-angle summary section.
+/// Matches the seeded "default" template on the backend.
+const String _kSummaryTemplateId = '11111111-1111-1111-1111-111111111111';
 
 const _kDark = Color(0xFF1A1D3B);
 const _kBlue = Color(0xFF2A6FDB);
@@ -61,6 +68,15 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   // they were uploaded under. Category is needed so re-uploads for the same
   // AI prompt (e.g. a second batch of damage photos) can wipe the prior batch.
   final List<({String id, String category})> _uploadedDocumentIds = [];
+
+  // Per-(category, angle) thumbnail of the most recently uploaded image, used
+  // by the final-summary card to render uploaded photos inline. Documents go
+  // under angle == "" so the same map covers both flows.
+  final Map<String, _UploadedAsset> _uploadedAssetsByKey = {};
+
+  // Loaded once per screen — drives the "Required Photos / Documents" section
+  // in the final summary card. Null until the fetch resolves.
+  _TemplateSettings? _templateSettings;
   final List<DateTime> _messageTimestamps = [];
   final ChatTranscriptWriter _transcriptWriter = di.sl<ChatTranscriptWriter>();
 
@@ -85,6 +101,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   void initState() {
     super.initState();
     _threadId = const Uuid().v4();
+    _loadTemplateSettings();
 
     if (widget.initialMessages != null && widget.initialMessages!.isNotEmpty) {
       // Seed with messages carried over from voice mode
@@ -104,6 +121,69 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   Future<void> _initGreeting() async {
     setState(() => _botTyping = true);
     await _streamBotReply('hello');
+  }
+
+  /// Pulls the configured photo + document settings for the seed template so
+  /// the final-summary card can show "uploaded vs pending" per angle. Failure
+  /// is non-fatal — the summary just falls back to the legacy count rows.
+  Future<void> _loadTemplateSettings() async {
+    try {
+      final response = await di.sl<DioClient>().get(
+            ApiConstants.templateById.replaceFirst('{id}', _kSummaryTemplateId),
+          );
+      final data = response.data;
+      final payload = (data is Map && data['data'] is Map)
+          ? data['data'] as Map<String, dynamic>
+          : (data is Map<String, dynamic> ? data : null);
+      if (payload == null) return;
+      if (!mounted) return;
+      setState(() {
+        _templateSettings = _TemplateSettings.fromJson(payload);
+      });
+    } catch (e) {
+      debugPrint('[Template] failed to load settings: $e');
+    }
+  }
+
+  /// Maps a template `groupKey` (e.g. `vehicle_photos`) to the upload category
+  /// used by `_inferCategory` / `uploadClaimDocument`. Keeps both flows in
+  /// sync — when the chatbot prompts using free-text we still bucket the
+  /// upload under the same category the summary expects to read.
+  static const Map<String, String> _photoGroupKeyToCategory = {
+    'vehicle_photos': 'VehiclePhoto',
+    'damage_photos': 'DamagePhoto',
+    'driver_license': 'DriverLicense',
+  };
+
+  static const Map<String, String> _docKeyToCategory = {
+    'bill_invoice': 'BillInvoice',
+    'police_report': 'PoliceReport',
+    'insurance_policy': 'SupportingDocument',
+    'supporting_docs': 'SupportingDocument',
+  };
+
+  String _categoryForPhotoGroup(String groupKey) =>
+      _photoGroupKeyToCategory[groupKey] ?? groupKey;
+
+  String _categoryForDocKey(String docKey) =>
+      _docKeyToCategory[docKey] ?? docKey;
+
+  /// Composite key for `_uploadedAssetsByKey`. Empty-string angle covers the
+  /// document flow (no per-angle dimension).
+  String _assetKey(String category, String angle) => '$category::$angle';
+
+  void _recordUploadedAsset({
+    required String category,
+    required String angle,
+    required String? id,
+    required String? localPath,
+  }) {
+    _uploadedAssetsByKey[_assetKey(category, angle)] =
+        _UploadedAsset(id: id, localPath: localPath);
+  }
+
+  void _clearUploadedAssetsForCategory(String category) {
+    _uploadedAssetsByKey.removeWhere((k, _) => k.startsWith('$category::'));
   }
 
   @override
@@ -154,6 +234,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         // the Close button only has to write the local transcript file.
         if (msg.payloadType == 'save_summary') {
           _triggerAutoSaveOnSummary(msg.payload, msg.content);
+        }
+        if (msg.triggers.contains('AUTO_GET_LOCATION')) {
+          unawaited(_onUseCurrentLocation(auto: true));
         }
       }
     } catch (_) {
@@ -330,8 +413,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     _sendLocationReply(text);
   }
 
-  Future<void> _onUseCurrentLocation() async {
-    if (_botTyping || _fetchingLocation) return;
+  Future<void> _onUseCurrentLocation({bool auto = false}) async {
+    if (_fetchingLocation) return;
+    if (!auto && _botTyping) return;
     setState(() => _fetchingLocation = true);
 
     try {
@@ -673,40 +757,72 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   }
 
   // ─── Review Your Claim card (payload_type == "final_summary") ───────────
-  /// Keys that should appear under the INCIDENT DETAILS section header.
+  /// Lowercased keys that should appear under the INCIDENT DETAILS section.
   static const _incidentKeys = {
-    'Incident Date',
-    'Incident Time',
-    'Incident Location',
-    'Incident Description',
-    'Damage Details',
-    'Date',
-    'Time',
-    'Location',
-    'Description',
+    'incident date',
+    'incident time',
+    'incident location',
+    'incident description',
+    'damage details',
+    'date',
+    'time',
+    'location',
+    'description',
   };
 
-  /// Keys that should appear under the DOCUMENTS section header. Each value
-  /// is rendered as "N Files".
+  /// Lowercased keys that should appear under the DOCUMENTS section.
   static const _documentKeys = {
-    'Vehicle Photos Count',
-    'Damage Photos Count',
-    'License Photos Count',
-    'Police Report Count',
-    'Repair Bill Count',
-    'Invoice Count',
+    'vehicle photos',
+    'damage photos',
+    'driver license',
+    'driving license',
+    'license photos',
+    'supporting docs',
+    'supporting documents',
+    'police report',
+    'bill invoice',
+    'repair bill',
+    'invoice',
+    'vehicle photos count',
+    'damage photos count',
+    'license photos count',
+    'police report count',
+    'repair bill count',
+    'invoice count',
   };
 
   String _humanizeDocLabel(String key) {
-    switch (key) {
-      case 'Vehicle Photos Count': return 'Vehicle Photos';
-      case 'Damage Photos Count': return 'Damage Vehicle Photos';
-      case 'License Photos Count': return 'Driving License';
-      case 'Police Report Count': return 'Police Report';
-      case 'Repair Bill Count': return 'Repair Bill';
-      case 'Invoice Count': return 'Invoice';
+    final k = key.toLowerCase().trim();
+    switch (k) {
+      case 'vehicle photos':
+      case 'vehicle photos count': return 'Vehicle Photos';
+      case 'damage photos':
+      case 'damage photos count': return 'Damage Vehicle Photos';
+      case 'driver license':
+      case 'driving license':
+      case 'license photos':
+      case 'license photos count': return 'Driving License';
+      case 'supporting docs':
+      case 'supporting documents': return 'Uploaded Documents';
+      case 'police report':
+      case 'police report count': return 'Police Report';
+      case 'bill invoice':
+      case 'invoice':
+      case 'invoice count': return 'Invoice';
+      case 'repair bill':
+      case 'repair bill count': return 'Repair Bill';
       default: return key.replaceAll(' Count', '');
     }
+  }
+
+  /// Extracts a leading integer from values like "4 uploaded" or "2 Files".
+  /// Falls back to `_asInt` for plain numeric values.
+  int _extractCount(dynamic value) {
+    if (value is num) return value.toInt();
+    final raw = value.toString();
+    final match = RegExp(r'\d+').firstMatch(raw);
+    if (match != null) return int.parse(match.group(0)!);
+    return _asInt(value);
   }
 
   Widget _buildFinalSummaryCard({
@@ -722,10 +838,11 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       if (value == null) return;
       final formatted = _formatFieldValue(key, value);
       if (formatted.isEmpty) return;
-      if (_documentKeys.contains(key)) {
-        final count = _asInt(value);
+      final keyLc = key.toLowerCase().trim();
+      if (_documentKeys.contains(keyLc)) {
+        final count = _extractCount(value);
         documents.add(MapEntry(_humanizeDocLabel(key), '$count Files'));
-      } else if (_incidentKeys.contains(key)) {
+      } else if (_incidentKeys.contains(keyLc)) {
         incident.add(MapEntry(key, formatted));
       } else {
         basic.add(MapEntry(key, formatted));
@@ -846,6 +963,10 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                     const SizedBox(height: 10),
                     ..._reviewRows(documents),
                   ],
+                  if (_templateSettings != null) ...[
+                    ..._buildTemplatePhotoSections(_templateSettings!),
+                    ..._buildTemplateDocumentSection(_templateSettings!),
+                  ],
                   const SizedBox(height: 18),
                   SizedBox(
                     width: double.infinity,
@@ -959,6 +1080,343 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           ),
         ),
     ];
+  }
+
+  // ─── Template-driven uploaded vs pending sections ───────────────────────
+
+  /// One section per `PhotoSetting`. Renders a tile per allowed angle showing
+  /// either a thumbnail (uploaded) or an "Upload" button (pending). When the
+  /// template flags this group's `showSample == true` and the chat history
+  /// has cached `sample_images` for the same allowed angles, also surfaces a
+  /// "See Sample" button beside the section header.
+  List<Widget> _buildTemplatePhotoSections(_TemplateSettings settings) {
+    final widgets = <Widget>[];
+    for (final ps in settings.photoSettings) {
+      if (ps.allowedAngles.isEmpty) continue;
+      final category = _categoryForPhotoGroup(ps.groupKey);
+      final uploadedAngles = <String>{
+        for (final a in ps.allowedAngles)
+          if (_uploadedAssetsByKey.containsKey(_assetKey(category, a))) a,
+      };
+      final sampleSourceMsg =
+          ps.showSample ? _findSampleMessageForGroup(ps) : null;
+      widgets.addAll([
+        const SizedBox(height: 14),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: _reviewSectionHeader(
+                '${ps.label.toUpperCase()}  ${uploadedAngles.length}/${ps.minCount > 0 ? ps.minCount : ps.allowedAngles.length}',
+              ),
+            ),
+            if (sampleSourceMsg != null)
+              TextButton.icon(
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 4),
+                  backgroundColor: Colors.white.withValues(alpha: 0.18),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+                onPressed: () => _openSampleImagesViewer(sampleSourceMsg),
+                icon: const Icon(Icons.image_outlined, size: 14),
+                label: const Text(
+                  'See Sample',
+                  style:
+                      TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            for (final angle in ps.allowedAngles)
+              _buildAnglePhotoTile(
+                category: category,
+                angle: angle,
+              ),
+          ],
+        ),
+      ]);
+    }
+    return widgets;
+  }
+
+  /// Walks back through the chat history looking for a `GET_IMAGE` payload
+  /// whose `allowed_angles` overlap with the photo group's allowed angles —
+  /// that's the bot bubble whose `sample_images` we cached for this group.
+  _ChatMsg? _findSampleMessageForGroup(_PhotoSettingDto ps) {
+    final wanted = ps.allowedAngles.toSet();
+    for (var i = _messages.length - 1; i >= 0; i--) {
+      final m = _messages[i];
+      if (m.payloadType != 'GET_IMAGE') continue;
+      final samples = _sampleImagesOf(m);
+      if (samples.isEmpty) continue;
+      final msgAngles = _allowedAnglesOf(m).toSet();
+      if (msgAngles.intersection(wanted).isNotEmpty) return m;
+    }
+    return null;
+  }
+
+  /// One section listing every required document; uploaded ones get a check,
+  /// pending ones get an "Upload" button.
+  List<Widget> _buildTemplateDocumentSection(_TemplateSettings settings) {
+    if (settings.documentSettings.isEmpty) return const [];
+    return [
+      const SizedBox(height: 14),
+      _reviewSectionHeader('REQUIRED DOCUMENTS'),
+      const SizedBox(height: 10),
+      for (final ds in settings.documentSettings)
+        _buildDocumentRow(ds),
+    ];
+  }
+
+  Widget _buildAnglePhotoTile({
+    required String category,
+    required String angle,
+  }) {
+    final asset = _uploadedAssetsByKey[_assetKey(category, angle)];
+    final hasUpload = asset != null;
+    final disabled = _uploadingFiles || _botTyping;
+
+    Widget body;
+    if (hasUpload && asset.localPath != null) {
+      body = ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Image.file(
+          File(asset.localPath!),
+          width: 88,
+          height: 88,
+          fit: BoxFit.cover,
+        ),
+      );
+    } else if (hasUpload) {
+      body = Container(
+        width: 88,
+        height: 88,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.18),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        alignment: Alignment.center,
+        child: const Icon(Icons.check_circle, color: Colors.white, size: 28),
+      );
+    } else {
+      body = InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: disabled
+            ? null
+            : () => _onUploadPendingPhoto(category: category, angle: angle),
+        child: Container(
+          width: 88,
+          height: 88,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.4),
+              style: BorderStyle.solid,
+            ),
+          ),
+          alignment: Alignment.center,
+          child: const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.add_a_photo_outlined,
+                  color: Colors.white, size: 22),
+              SizedBox(height: 4),
+              Text(
+                'Upload',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return SizedBox(
+      width: 88,
+      child: Column(
+        children: [
+          body,
+          const SizedBox(height: 4),
+          Text(
+            _humanizeAngle(angle),
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.85),
+              fontSize: 11,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDocumentRow(_DocumentSettingDto ds) {
+    final category = _categoryForDocKey(ds.docKey);
+    final uploaded =
+        _uploadedAssetsByKey.keys.any((k) => k.startsWith('$category::'));
+    final disabled = _uploadingFiles || _botTyping;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Icon(
+            uploaded ? Icons.check_circle : Icons.radio_button_unchecked,
+            color: Colors.white.withValues(
+              alpha: uploaded ? 1.0 : 0.6,
+            ),
+            size: 18,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              ds.label + (ds.isRequired ? ' *' : ''),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          if (!uploaded)
+            TextButton(
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 4),
+                backgroundColor: Colors.white.withValues(alpha: 0.18),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+              ),
+              onPressed: disabled
+                  ? null
+                  : () => _onUploadPendingDocument(category: category),
+              child: const Text(
+                'Upload',
+                style:
+                    TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Picks a single image and uploads it with the given (category, angle) so
+  /// the backend can attach it to the right photo setting later.
+  Future<void> _onUploadPendingPhoto({
+    required String category,
+    required String angle,
+  }) async {
+    if (_uploadingFiles || _botTyping) return;
+    final picked = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+    );
+    if (picked == null || !mounted) return;
+
+    setState(() => _uploadingFiles = true);
+    try {
+      final ds = di.sl<ClaimsRemoteDataSource>();
+      final file = File(picked.path);
+      final bytes = await file.readAsBytes();
+      final name = file.path.split(RegExp(r'[\\/]')).last;
+      final response = await ds.uploadClaimDocument(
+        bytes: bytes,
+        fileName: name.isEmpty ? 'image.jpg' : name,
+        kind: 'Image',
+        category: category,
+        chatThreadId: _threadId,
+        angle: angle,
+      );
+      final id = (response['id'] ?? '').toString();
+      if (id.isNotEmpty) {
+        _uploadedDocumentIds.add((id: id, category: category));
+      }
+      if (!mounted) return;
+      setState(() {
+        _recordUploadedAsset(
+          category: category,
+          angle: angle,
+          id: id.isEmpty ? null : id,
+          localPath: file.path,
+        );
+        _uploadingFiles = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _uploadingFiles = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Upload failed: $e')),
+      );
+    }
+  }
+
+  /// Same as `_onUploadPendingPhoto` but for non-image documents (PDF, etc.).
+  Future<void> _onUploadPendingDocument({required String category}) async {
+    if (_uploadingFiles || _botTyping) return;
+    final result = await FilePicker.platform.pickFiles(
+      allowMultiple: false,
+      type: FileType.custom,
+      allowedExtensions: _allowedDocExtensions,
+    );
+    if (result == null || result.files.isEmpty || !mounted) return;
+    final doc = result.files.first;
+
+    setState(() => _uploadingFiles = true);
+    try {
+      List<int> bytes;
+      if (doc.bytes != null) {
+        bytes = doc.bytes!;
+      } else if (doc.path != null) {
+        bytes = await File(doc.path!).readAsBytes();
+      } else {
+        setState(() => _uploadingFiles = false);
+        return;
+      }
+      final ext = (doc.extension ?? '').toLowerCase();
+      final isImage = const {'jpg', 'jpeg', 'png'}.contains(ext);
+      final dataSource = di.sl<ClaimsRemoteDataSource>();
+      final response = await dataSource.uploadClaimDocument(
+        bytes: bytes,
+        fileName: doc.name,
+        kind: isImage ? 'Image' : 'Document',
+        category: category,
+        chatThreadId: _threadId,
+      );
+      final id = (response['id'] ?? '').toString();
+      if (id.isNotEmpty) {
+        _uploadedDocumentIds.add((id: id, category: category));
+      }
+      if (!mounted) return;
+      setState(() {
+        _recordUploadedAsset(
+          category: category,
+          angle: 'doc',
+          id: id.isEmpty ? null : id,
+          localPath: doc.path,
+        );
+        _uploadingFiles = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _uploadingFiles = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Upload failed: $e')),
+      );
+    }
   }
 
   // ─── Policy Verified Card ────────────────────────────────────────────────
@@ -1370,23 +1828,31 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                             height: 1.4,
                           ),
                         )
-                      : msg.animate
-                          ? _TypewriterText(
-                              text: msg.text,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: _kDark,
-                                height: 1.4,
-                              ),
-                              onComplete: _showNextPendingMessage,
-                            )
-                          : MarkdownBody(
-                              data: msg.text,
-                              selectable: true,
-                              fitContent: true,
-                              shrinkWrap: true,
-                              styleSheet: _botMarkdownStyle,
-                            ),
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            msg.animate
+                                ? _TypewriterText(
+                                    text: msg.text,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      color: _kDark,
+                                      height: 1.4,
+                                    ),
+                                    onComplete: _showNextPendingMessage,
+                                  )
+                                : MarkdownBody(
+                                    data: msg.text,
+                                    selectable: true,
+                                    fitContent: true,
+                                    shrinkWrap: true,
+                                    styleSheet: _botMarkdownStyle,
+                                  ),
+                            if (_sampleImagesOf(msg).isNotEmpty)
+                              _buildSeeSampleLink(msg),
+                          ],
+                        ),
                 ),
               ),
               if (isUser) ...[
@@ -1531,6 +1997,12 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           _uploadedDocumentIds.add((id: id, category: category));
           uploadedCount++;
         }
+        _recordUploadedAsset(
+          category: category,
+          angle: entry.key,
+          id: id.isEmpty ? null : id,
+          localPath: file.path,
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -1588,6 +2060,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       } else {
         _uploadedDocumentIds.removeWhere((d) => d.category == category);
       }
+      _clearUploadedAssetsForCategory(category);
     } catch (e) {
       debugPrint('[Upload] failed to clear prior $category uploads: $e');
     }
@@ -1606,7 +2079,8 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       // Re-upload semantics: a fresh batch for this category replaces any
       // prior unattached uploads in this thread under the same category.
       await _replacePriorUploads(category);
-      for (final file in files) {
+      for (var i = 0; i < files.length; i++) {
+        final file = files[i];
         final bytes = await file.readAsBytes();
         final name = file.path.split(RegExp(r'[\\/]')).last;
         final response = await ds.uploadClaimDocument(
@@ -1621,6 +2095,15 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           _uploadedDocumentIds.add((id: id, category: category));
           uploadedCount++;
         }
+        // Legacy bucket has no per-angle dimension — bucket each upload under
+        // a synthetic angle so multiple files in the same category don't
+        // overwrite each other in `_uploadedAssetsByKey`.
+        _recordUploadedAsset(
+          category: category,
+          angle: 'item_$i',
+          id: id.isEmpty ? null : id,
+          localPath: file.path,
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -1686,7 +2169,8 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       final category = _inferCategory(isImage: false);
       // Re-upload semantics — see _onSubmitImages.
       await _replacePriorUploads(category);
-      for (final doc in docs) {
+      for (var i = 0; i < docs.length; i++) {
+        final doc = docs[i];
         // `bytes` is populated when file_picker is used with withData: true
         // or on web. For mobile path, read the file from disk.
         List<int> bytes;
@@ -1709,6 +2193,12 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           _uploadedDocumentIds.add((id: id, category: category));
           uploadedCount++;
         }
+        _recordUploadedAsset(
+          category: category,
+          angle: 'item_$i',
+          id: id.isEmpty ? null : id,
+          localPath: doc.path,
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -1774,6 +2264,54 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     final raw = msg.payload?['allowed_angles'];
     if (raw is List) return raw.map((e) => e.toString()).toList(growable: false);
     return const [];
+  }
+
+  /// Returns the raw base64-encoded sample images carried in the bot's
+  /// `GET_IMAGE` payload (key `sample_images`). May include a leading
+  /// `data:image/png;base64,` prefix — strip with `_decodeBase64Image`.
+  List<String> _sampleImagesOf(_ChatMsg msg) {
+    final raw = msg.payload?['sample_images'];
+    if (raw is List) {
+      return raw
+          .map((e) => e.toString())
+          .where((s) => s.isNotEmpty)
+          .toList(growable: false);
+    }
+    return const [];
+  }
+
+  Widget _buildSeeSampleLink(_ChatMsg msg) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: GestureDetector(
+        onTap: () => _openSampleImagesViewer(msg),
+        child: const Text(
+          '(See sample)',
+          style: TextStyle(
+            fontSize: 13,
+            color: _kBlue,
+            decoration: TextDecoration.underline,
+            decorationColor: _kBlue,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openSampleImagesViewer(_ChatMsg msg) {
+    final samples = _sampleImagesOf(msg);
+    if (samples.isEmpty) return;
+    final angles = _allowedAnglesOf(msg);
+    final labels = <String>[
+      for (var i = 0; i < samples.length; i++)
+        i < angles.length ? _humanizeAngle(angles[i]) : 'Sample ${i + 1}',
+    ];
+    showSampleImagesDialog(
+      context: context,
+      base64Images: samples,
+      labels: labels,
+    );
   }
 
   int? _payloadInt(_ChatMsg msg, String key) {
@@ -1844,36 +2382,81 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
 
     summary.forEach((key, value) {
       if (value == null) return;
-      switch (key) {
-        case 'Policy Number':
+      // Match keys case-insensitively so the bot can vary casing without
+      // silently dropping fields onto AdditionalData.
+      switch (key.toLowerCase().trim()) {
+        case 'policy number':
           mapped['policyNumber'] = value;
           break;
-        case 'Policy Holder':
+        case 'policy holder':
+        case 'policyholder':
+        case 'full name':
+        case 'name':
           mapped['fullName'] = value;
           break;
-        case 'Vehicle Number':
-          mapped['vehicleNumber'] = value;
+        case 'claimant type':
+        case 'claimant':
+          mapped['claimantType'] = value.toString();
           break;
-        case 'VIN':
+        case 'plat number':
+        case 'plate number':
+        case 'vehicle number':
+        case 'vehicle registration number':
+        case 'registration number':
+          mapped['vehicleNumber'] = value;
+          mapped['vehicleRegistrationNumber'] = value;
+          break;
+        case 'vin':
+        case 'vin number':
+        case 'vehicle identification number':
           mapped['vinNumber'] = value;
           break;
-        case 'Claim Type':
+        case 'vehicle':
+        case 'vehicle model':
+          mapped['vehicleModel'] = value;
+          break;
+        case 'coverage':
+        case 'coverage type':
+          mapped['coverageType'] = value;
+          break;
+        case 'status':
+        case 'policy status':
+          mapped['policyStatus'] = value;
+          break;
+        case 'valid until':
+        case 'policy valid until':
+          {
+            final parsed = DateTime.tryParse(value.toString());
+            if (parsed != null) {
+              mapped['policyValidUntil'] = parsed.toUtc().toIso8601String();
+            } else {
+              mapped[key] = value;
+            }
+          }
+          break;
+        case 'claim type':
           mapped['claimType'] = value.toString();
           break;
-        case 'Incident Date':
+        case 'incident date':
+        case 'date':
           incidentDateRaw = value.toString();
           break;
-        case 'Incident Time':
+        case 'incident time':
+        case 'time':
           incidentTimeRaw = value.toString();
           break;
-        case 'Incident Location':
+        case 'incident location':
+        case 'location':
           mapped['incidentLocation'] = value;
           break;
-        case 'Incident Description':
+        case 'incident description':
+        case 'damage details':
+        case 'description':
           mapped['incidentDescription'] = value;
           mapped['description'] = value;
           break;
-        case 'Claim Amount':
+        case 'claim amount':
+        case 'amount':
           if (value is num) {
             mapped['amount'] = value;
           } else {
@@ -1881,20 +2464,34 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
             if (parsed != null) mapped['amount'] = parsed;
           }
           break;
-        case 'Vehicle Photos Count':
-          mapped['vehiclePhotosCount'] = _asInt(value);
+        case 'vehicle photos':
+        case 'vehicle photos count':
+          mapped['vehiclePhotosCount'] = _extractCount(value);
           break;
-        case 'Damage Photos Count':
-          mapped['damagePhotosCount'] = _asInt(value);
+        case 'damage photos':
+        case 'damage photos count':
+          mapped['damagePhotosCount'] = _extractCount(value);
           break;
-        case 'License Photos Count':
-          mapped['licensePhotosCount'] = _asInt(value);
+        case 'driver license':
+        case 'driving license':
+        case 'license photos':
+        case 'license photos count':
+          mapped['licensePhotosCount'] = _extractCount(value);
           break;
-        case 'Police Report Count':
-          mapped['policeReportCount'] = _asInt(value);
+        case 'police report':
+        case 'police report count':
+          mapped['policeReportCount'] = _extractCount(value);
           break;
-        case 'Repair Bill Count':
-          mapped['repairBillCount'] = _asInt(value);
+        case 'repair bill':
+        case 'bill invoice':
+        case 'invoice':
+        case 'invoice count':
+        case 'repair bill count':
+          mapped['repairBillCount'] = _extractCount(value);
+          break;
+        case 'supporting docs':
+        case 'supporting documents':
+          mapped['supportingDocsCount'] = _extractCount(value);
           break;
         default:
           // Keep unrecognised keys so the server stores them under AdditionalData.
@@ -3141,6 +3738,106 @@ class _ChatMsg {
   });
 }
 
+/// Snapshot of one upload kept for the final-summary tiles. We hold the local
+/// path so we can render a thumbnail even before the network round-trip
+/// returns a server-side URL.
+class _UploadedAsset {
+  final String? id;
+  final String? localPath;
+  const _UploadedAsset({this.id, this.localPath});
+}
+
+/// Subset of the backend `TemplateDetailDto` that the summary card cares
+/// about. Decoded from `/api/web/templates/{id}`.
+class _TemplateSettings {
+  final List<_PhotoSettingDto> photoSettings;
+  final List<_DocumentSettingDto> documentSettings;
+  const _TemplateSettings({
+    required this.photoSettings,
+    required this.documentSettings,
+  });
+
+  factory _TemplateSettings.fromJson(Map<String, dynamic> json) {
+    final photos = (json['photoSettings'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(_PhotoSettingDto.fromJson)
+        .toList()
+      ..sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
+    final docs = (json['documentSettings'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(_DocumentSettingDto.fromJson)
+        .toList()
+      ..sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
+    return _TemplateSettings(photoSettings: photos, documentSettings: docs);
+  }
+}
+
+class _PhotoSettingDto {
+  final String groupKey;
+  final String label;
+  final int minCount;
+  final int maxCount;
+  final bool isRequired;
+  final List<String> allowedAngles;
+  final bool showSample;
+  final int displayOrder;
+
+  const _PhotoSettingDto({
+    required this.groupKey,
+    required this.label,
+    required this.minCount,
+    required this.maxCount,
+    required this.isRequired,
+    required this.allowedAngles,
+    required this.showSample,
+    required this.displayOrder,
+  });
+
+  factory _PhotoSettingDto.fromJson(Map<String, dynamic> json) {
+    return _PhotoSettingDto(
+      groupKey: (json['groupKey'] ?? '').toString(),
+      label: (json['label'] ?? '').toString(),
+      minCount: (json['minCount'] as num?)?.toInt() ?? 0,
+      maxCount: (json['maxCount'] as num?)?.toInt() ?? 0,
+      isRequired: json['isRequired'] == true,
+      allowedAngles: (json['allowedAngles'] as List? ?? const [])
+          .map((e) => e.toString())
+          .toList(),
+      showSample: json['showSample'] == true,
+      displayOrder: (json['displayOrder'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class _DocumentSettingDto {
+  final String docKey;
+  final String label;
+  final int minCount;
+  final int maxCount;
+  final bool isRequired;
+  final int displayOrder;
+
+  const _DocumentSettingDto({
+    required this.docKey,
+    required this.label,
+    required this.minCount,
+    required this.maxCount,
+    required this.isRequired,
+    required this.displayOrder,
+  });
+
+  factory _DocumentSettingDto.fromJson(Map<String, dynamic> json) {
+    return _DocumentSettingDto(
+      docKey: (json['docKey'] ?? '').toString(),
+      label: (json['label'] ?? '').toString(),
+      minCount: (json['minCount'] as num?)?.toInt() ?? 0,
+      maxCount: (json['maxCount'] as num?)?.toInt() ?? 0,
+      isRequired: json['isRequired'] == true,
+      displayOrder: (json['displayOrder'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 class _ImageViewerPage extends StatefulWidget {
   const _ImageViewerPage({required this.paths, required this.initialIndex});
 
@@ -3233,3 +3930,4 @@ class _ImageViewerPageState extends State<_ImageViewerPage> {
     );
   }
 }
+

@@ -56,6 +56,7 @@ public class PhotoSettingDto
     public bool IsRequired { get; set; }
     public List<string> AllowedAngles { get; set; } = new();
     public List<string> SampleImageUrls { get; set; } = new();
+    public bool ShowSample { get; set; }
     public int MaxFileSizeMb { get; set; }
     public List<string> AllowedMimeTypes { get; set; } = new();
     public int DisplayOrder { get; set; }

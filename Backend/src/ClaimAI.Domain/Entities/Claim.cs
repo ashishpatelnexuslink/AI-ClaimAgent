@@ -45,6 +45,7 @@ public class Claim : BaseEntity
     public int LicensePhotosCount { get; set; }
     public int PoliceReportCount { get; set; }
     public int RepairBillCount { get; set; }
+    public int SupportingDocsCount { get; set; }
 
     // Chatbot thread reference
     public string? ChatThreadId { get; set; }
