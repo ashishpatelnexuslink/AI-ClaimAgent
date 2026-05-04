@@ -30,6 +30,7 @@ abstract class ClaimsRemoteDataSource {
     required String kind,
     String? category,
     String? chatThreadId,
+    String? angle,
   });
 
   /// Associates a list of previously-uploaded document ids with a claim
@@ -145,12 +146,14 @@ class ClaimsRemoteDataSourceImpl implements ClaimsRemoteDataSource {
     required String kind,
     String? category,
     String? chatThreadId,
+    String? angle,
   }) async {
     final formData = FormData.fromMap({
       'file': MultipartFile.fromBytes(bytes, filename: fileName),
       'kind': kind,
       'category': ?category,
       'chatThreadId': ?chatThreadId,
+      'angle': ?angle,
     });
     final response = await _client.uploadFile(
       ApiConstants.uploadClaimDocument,

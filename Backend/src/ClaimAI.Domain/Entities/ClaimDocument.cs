@@ -28,4 +28,10 @@ public class ClaimDocument : BaseEntity
     /// "BillInvoice", "SupportingDocument". Free-text so new categories
     /// can be added without a schema change.
     public string? Category { get; set; }
+
+    /// Optional angle/position tag for image uploads driven by the
+    /// `allowed_angles` payload from the chat stream (e.g. "front_left",
+    /// "rear_right"). Free-text so new angles can be added without a schema
+    /// change. Null for documents and for legacy uploads.
+    public string? Angle { get; set; }
 }

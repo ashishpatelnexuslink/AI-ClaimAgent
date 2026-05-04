@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:claim_ai/core/auth/session_event_bus.dart';
 import 'package:claim_ai/core/storage/local_storage.dart';
 import 'package:claim_ai/core/constants/api_constants.dart';
 import 'package:claim_ai/core/config/env_config.dart';
@@ -7,13 +8,16 @@ import 'package:logger/logger.dart';
 class ApiInterceptor extends Interceptor {
   final LocalStorage _localStorage;
   final Dio _dio;
+  final SessionEventBus _sessionBus;
   final Logger _logger = Logger();
 
   ApiInterceptor({
     required LocalStorage localStorage,
     required Dio dio,
+    required SessionEventBus sessionBus,
   })  : _localStorage = localStorage,
-        _dio = dio;
+        _dio = dio,
+        _sessionBus = sessionBus;
 
   @override
   Future<void> onRequest(
@@ -59,6 +63,8 @@ class ApiInterceptor extends Interceptor {
         final retryResponse = await _retryRequest(err.requestOptions);
         return handler.resolve(retryResponse);
       }
+      await _localStorage.clearTokens();
+      _sessionBus.emit(SessionEvent.expired);
     }
 
     handler.next(err);

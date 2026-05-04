@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:claim_ai/core/auth/session_event_bus.dart';
 import 'package:claim_ai/core/usecases/usecase.dart';
 import 'package:claim_ai/features/auth/presentation/cubit/auth_state.dart';
 import 'package:claim_ai/features/auth/domain/usecases/login_usecase.dart';
@@ -13,6 +16,7 @@ class AuthCubit extends Cubit<AuthState> {
   final VerifyOtpUseCase _verifyOtpUseCase;
   final GetUserProfileUseCase _getUserProfileUseCase;
   final LogoutUseCase _logoutUseCase;
+  final StreamSubscription<SessionEvent> _sessionSub;
 
   AuthCubit({
     required LoginUseCase loginUseCase,
@@ -20,12 +24,26 @@ class AuthCubit extends Cubit<AuthState> {
     required VerifyOtpUseCase verifyOtpUseCase,
     required GetUserProfileUseCase getUserProfileUseCase,
     required LogoutUseCase logoutUseCase,
+    required SessionEventBus sessionBus,
   })  : _loginUseCase = loginUseCase,
         _sendOtpUseCase = sendOtpUseCase,
         _verifyOtpUseCase = verifyOtpUseCase,
         _getUserProfileUseCase = getUserProfileUseCase,
         _logoutUseCase = logoutUseCase,
-        super(const AuthState());
+        _sessionSub = sessionBus.stream.listen((_) {}),
+        super(const AuthState()) {
+    _sessionSub.onData((event) {
+      if (event == SessionEvent.expired) {
+        emit(const AuthState(status: AuthStatus.unauthenticated));
+      }
+    });
+  }
+
+  @override
+  Future<void> close() {
+    _sessionSub.cancel();
+    return super.close();
+  }
 
   Future<void> login({required String email, required String password}) async {
     emit(state.copyWith(status: AuthStatus.loading, errorMessage: null));

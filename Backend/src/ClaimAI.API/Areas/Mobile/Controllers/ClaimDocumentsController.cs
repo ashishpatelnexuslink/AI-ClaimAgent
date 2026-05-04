@@ -43,7 +43,8 @@ public class ClaimDocumentsController : ControllerBase
         IFormFile file,
         [FromForm] string? kind,
         [FromForm] string? category,
-        [FromForm] string? chatThreadId)
+        [FromForm] string? chatThreadId,
+        [FromForm] string? angle)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (userId is null) return Unauthorized();
@@ -64,6 +65,7 @@ public class ClaimDocumentsController : ControllerBase
                 $"Content type '{file.ContentType}' is not allowed for {normalisedKind}."));
 
         var trimmedCategory = string.IsNullOrWhiteSpace(category) ? null : category.Trim();
+        var trimmedAngle = string.IsNullOrWhiteSpace(angle) ? null : angle.Trim();
         var categoryFolder = SanitizeCategoryFolder(trimmedCategory);
 
         var uploadsRoot = _env.WebRootPath
@@ -93,6 +95,7 @@ public class ClaimDocumentsController : ControllerBase
             FileSize = file.Length,
             Kind = normalisedKind,
             Category = trimmedCategory,
+            Angle = trimmedAngle,
         };
         _context.ClaimDocuments.Add(doc);
         await _context.SaveChangesAsync();
@@ -107,6 +110,7 @@ public class ClaimDocumentsController : ControllerBase
             FileSize = doc.FileSize,
             Kind = doc.Kind,
             Category = doc.Category,
+            Angle = doc.Angle,
             CreatedAt = doc.CreatedAt,
         };
 
@@ -139,6 +143,7 @@ public class ClaimDocumentsController : ControllerBase
             FileSize = d.FileSize,
             Kind = d.Kind,
             Category = d.Category,
+            Angle = d.Angle,
             CreatedAt = d.CreatedAt,
         }).ToList();
 

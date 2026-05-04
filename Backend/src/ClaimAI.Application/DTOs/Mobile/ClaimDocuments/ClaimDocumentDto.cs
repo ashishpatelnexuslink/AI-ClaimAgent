@@ -10,6 +10,7 @@ public class ClaimDocumentDto
     public long FileSize { get; set; }
     public string Kind { get; set; } = string.Empty;
     public string? Category { get; set; }
+    public string? Angle { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 
