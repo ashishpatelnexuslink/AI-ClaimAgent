@@ -16,6 +16,13 @@ public class TemplatePhotoSetting : BaseEntity
     public List<string> AllowedAngles { get; set; } = new();
     public List<string> SampleImageUrls { get; set; } = new();
 
+    /// <summary>
+    /// Toggles the "See Sample" affordance on the mobile claim summary for
+    /// this photo group. When false the mobile UI hides the button even if
+    /// <see cref="SampleImageUrls"/> is populated.
+    /// </summary>
+    public bool ShowSample { get; set; }
+
     public int MaxFileSizeMb { get; set; } = 10;
     public List<string> AllowedMimeTypes { get; set; } = new() { "image/jpeg", "image/png" };
 

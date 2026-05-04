@@ -43,6 +43,7 @@ public class CreateClaimFromChatDto
     public int? LicensePhotosCount { get; set; }
     public int? PoliceReportCount { get; set; }
     public int? RepairBillCount { get; set; }
+    public int? SupportingDocsCount { get; set; }
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtraData { get; set; }

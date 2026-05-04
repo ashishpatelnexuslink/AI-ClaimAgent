@@ -154,6 +154,7 @@ public class ClaimsController : ControllerBase
             LicensePhotosCount = row.Claim.LicensePhotosCount,
             PoliceReportCount = row.Claim.PoliceReportCount,
             RepairBillCount = row.Claim.RepairBillCount,
+            SupportingDocsCount = row.Claim.SupportingDocsCount,
             AdditionalData = row.Claim.AdditionalData,
         };
 
