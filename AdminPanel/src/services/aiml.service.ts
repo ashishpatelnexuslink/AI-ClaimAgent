@@ -104,6 +104,7 @@ function buildConfigBody(t: Template) {
           is_required: p.isRequired,
           allowed_angles: p.allowedAngles,
           sample_image_urls: p.sampleImageUrls,
+          show_sample: p.showSample,
           max_file_size_mb: p.maxFileSizeMb,
           allowed_mime_types: p.allowedMimeTypes,
           display_order: p.displayOrder,

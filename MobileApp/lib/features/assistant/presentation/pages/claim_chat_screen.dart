@@ -11,19 +11,13 @@ import 'package:geocoding/geocoding.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
-import 'package:claim_ai/core/constants/api_constants.dart';
 import 'package:claim_ai/core/navigation/app_routes.dart';
-import 'package:claim_ai/core/network/dio_client.dart';
 import 'package:claim_ai/core/storage/chat_transcript_writer.dart';
 import 'package:claim_ai/services/chat_service.dart';
 import 'package:claim_ai/features/assistant/presentation/widgets/sample_images_dialog.dart';
 import 'package:claim_ai/features/chat/data/datasources/chat_remote_datasource.dart';
 import 'package:claim_ai/features/claims/data/datasources/claims_remote_datasource.dart';
 import 'package:claim_ai/injection_container.dart' as di;
-
-/// Hardcoded template id used to drive the per-angle summary section.
-/// Matches the seeded "default" template on the backend.
-const String _kSummaryTemplateId = '11111111-1111-1111-1111-111111111111';
 
 const _kDark = Color(0xFF1A1D3B);
 const _kBlue = Color(0xFF2A6FDB);
@@ -69,14 +63,18 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   // AI prompt (e.g. a second batch of damage photos) can wipe the prior batch.
   final List<({String id, String category})> _uploadedDocumentIds = [];
 
+  // Per-GET_DOCUMENT-trigger upload progress. Lets the user satisfy `min_count`
+  // across multiple separate uploads instead of picking everything at once.
+  // Keyed by the bot message that owns the trigger; cleared after the bot
+  // advances. Holds a running count plus the names/paths to use for the final
+  // cumulative user bubble.
+  final Map<_ChatMsg, _DocTriggerProgress> _docTriggerProgress = {};
+
   // Per-(category, angle) thumbnail of the most recently uploaded image, used
   // by the final-summary card to render uploaded photos inline. Documents go
   // under angle == "" so the same map covers both flows.
   final Map<String, _UploadedAsset> _uploadedAssetsByKey = {};
 
-  // Loaded once per screen — drives the "Required Photos / Documents" section
-  // in the final summary card. Null until the fetch resolves.
-  _TemplateSettings? _templateSettings;
   final List<DateTime> _messageTimestamps = [];
   final ChatTranscriptWriter _transcriptWriter = di.sl<ChatTranscriptWriter>();
 
@@ -101,7 +99,6 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   void initState() {
     super.initState();
     _threadId = const Uuid().v4();
-    _loadTemplateSettings();
 
     if (widget.initialMessages != null && widget.initialMessages!.isNotEmpty) {
       // Seed with messages carried over from voice mode
@@ -123,51 +120,6 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     await _streamBotReply('hello');
   }
 
-  /// Pulls the configured photo + document settings for the seed template so
-  /// the final-summary card can show "uploaded vs pending" per angle. Failure
-  /// is non-fatal — the summary just falls back to the legacy count rows.
-  Future<void> _loadTemplateSettings() async {
-    try {
-      final response = await di.sl<DioClient>().get(
-            ApiConstants.templateById.replaceFirst('{id}', _kSummaryTemplateId),
-          );
-      final data = response.data;
-      final payload = (data is Map && data['data'] is Map)
-          ? data['data'] as Map<String, dynamic>
-          : (data is Map<String, dynamic> ? data : null);
-      if (payload == null) return;
-      if (!mounted) return;
-      setState(() {
-        _templateSettings = _TemplateSettings.fromJson(payload);
-      });
-    } catch (e) {
-      debugPrint('[Template] failed to load settings: $e');
-    }
-  }
-
-  /// Maps a template `groupKey` (e.g. `vehicle_photos`) to the upload category
-  /// used by `_inferCategory` / `uploadClaimDocument`. Keeps both flows in
-  /// sync — when the chatbot prompts using free-text we still bucket the
-  /// upload under the same category the summary expects to read.
-  static const Map<String, String> _photoGroupKeyToCategory = {
-    'vehicle_photos': 'VehiclePhoto',
-    'damage_photos': 'DamagePhoto',
-    'driver_license': 'DriverLicense',
-  };
-
-  static const Map<String, String> _docKeyToCategory = {
-    'bill_invoice': 'BillInvoice',
-    'police_report': 'PoliceReport',
-    'insurance_policy': 'SupportingDocument',
-    'supporting_docs': 'SupportingDocument',
-  };
-
-  String _categoryForPhotoGroup(String groupKey) =>
-      _photoGroupKeyToCategory[groupKey] ?? groupKey;
-
-  String _categoryForDocKey(String docKey) =>
-      _docKeyToCategory[docKey] ?? docKey;
-
   /// Composite key for `_uploadedAssetsByKey`. Empty-string angle covers the
   /// document flow (no per-angle dimension).
   String _assetKey(String category, String angle) => '$category::$angle';
@@ -175,11 +127,12 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   void _recordUploadedAsset({
     required String category,
     required String angle,
+    required String kind,
     required String? id,
     required String? localPath,
   }) {
     _uploadedAssetsByKey[_assetKey(category, angle)] =
-        _UploadedAsset(id: id, localPath: localPath);
+        _UploadedAsset(id: id, localPath: localPath, kind: kind);
   }
 
   void _clearUploadedAssetsForCategory(String category) {
@@ -963,10 +916,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                     const SizedBox(height: 10),
                     ..._reviewRows(documents),
                   ],
-                  if (_templateSettings != null) ...[
-                    ..._buildTemplatePhotoSections(_templateSettings!),
-                    ..._buildTemplateDocumentSection(_templateSettings!),
-                  ],
+                  ..._buildUploadCountRows(),
                   const SizedBox(height: 18),
                   SizedBox(
                     width: double.infinity,
@@ -1082,342 +1032,32 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     ];
   }
 
-  // ─── Template-driven uploaded vs pending sections ───────────────────────
+  // ─── Upload counts in the review card ───────────────────────────────────
 
-  /// One section per `PhotoSetting`. Renders a tile per allowed angle showing
-  /// either a thumbnail (uploaded) or an "Upload" button (pending). When the
-  /// template flags this group's `showSample == true` and the chat history
-  /// has cached `sample_images` for the same allowed angles, also surfaces a
-  /// "See Sample" button beside the section header.
-  List<Widget> _buildTemplatePhotoSections(_TemplateSettings settings) {
-    final widgets = <Widget>[];
-    for (final ps in settings.photoSettings) {
-      if (ps.allowedAngles.isEmpty) continue;
-      final category = _categoryForPhotoGroup(ps.groupKey);
-      final uploadedAngles = <String>{
-        for (final a in ps.allowedAngles)
-          if (_uploadedAssetsByKey.containsKey(_assetKey(category, a))) a,
-      };
-      final sampleSourceMsg =
-          ps.showSample ? _findSampleMessageForGroup(ps) : null;
-      widgets.addAll([
-        const SizedBox(height: 14),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Expanded(
-              child: _reviewSectionHeader(
-                '${ps.label.toUpperCase()}  ${uploadedAngles.length}/${ps.minCount > 0 ? ps.minCount : ps.allowedAngles.length}',
-              ),
-            ),
-            if (sampleSourceMsg != null)
-              TextButton.icon(
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 4),
-                  backgroundColor: Colors.white.withValues(alpha: 0.18),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                ),
-                onPressed: () => _openSampleImagesViewer(sampleSourceMsg),
-                icon: const Icon(Icons.image_outlined, size: 14),
-                label: const Text(
-                  'See Sample',
-                  style:
-                      TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            for (final angle in ps.allowedAngles)
-              _buildAnglePhotoTile(
-                category: category,
-                angle: angle,
-              ),
-          ],
-        ),
-      ]);
+  /// Two rows showing total photos and total documents the user has uploaded
+  /// in this thread. Skipped entirely when nothing has been uploaded yet.
+  List<Widget> _buildUploadCountRows() {
+    var photos = 0;
+    var documents = 0;
+    for (final asset in _uploadedAssetsByKey.values) {
+      if (asset.kind == 'Image') {
+        photos++;
+      } else if (asset.kind == 'Document') {
+        documents++;
+      }
     }
-    return widgets;
-  }
-
-  /// Walks back through the chat history looking for a `GET_IMAGE` payload
-  /// whose `allowed_angles` overlap with the photo group's allowed angles —
-  /// that's the bot bubble whose `sample_images` we cached for this group.
-  _ChatMsg? _findSampleMessageForGroup(_PhotoSettingDto ps) {
-    final wanted = ps.allowedAngles.toSet();
-    for (var i = _messages.length - 1; i >= 0; i--) {
-      final m = _messages[i];
-      if (m.payloadType != 'GET_IMAGE') continue;
-      final samples = _sampleImagesOf(m);
-      if (samples.isEmpty) continue;
-      final msgAngles = _allowedAnglesOf(m).toSet();
-      if (msgAngles.intersection(wanted).isNotEmpty) return m;
-    }
-    return null;
-  }
-
-  /// One section listing every required document; uploaded ones get a check,
-  /// pending ones get an "Upload" button.
-  List<Widget> _buildTemplateDocumentSection(_TemplateSettings settings) {
-    if (settings.documentSettings.isEmpty) return const [];
+    if (photos == 0 && documents == 0) return const [];
     return [
       const SizedBox(height: 14),
-      _reviewSectionHeader('REQUIRED DOCUMENTS'),
+      _reviewSectionHeader('UPLOADS'),
       const SizedBox(height: 10),
-      for (final ds in settings.documentSettings)
-        _buildDocumentRow(ds),
+      ..._reviewRows([
+        MapEntry('Photos', photos.toString()),
+        MapEntry('Documents', documents.toString()),
+      ]),
     ];
   }
 
-  Widget _buildAnglePhotoTile({
-    required String category,
-    required String angle,
-  }) {
-    final asset = _uploadedAssetsByKey[_assetKey(category, angle)];
-    final hasUpload = asset != null;
-    final disabled = _uploadingFiles || _botTyping;
-
-    Widget body;
-    if (hasUpload && asset.localPath != null) {
-      body = ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: Image.file(
-          File(asset.localPath!),
-          width: 88,
-          height: 88,
-          fit: BoxFit.cover,
-        ),
-      );
-    } else if (hasUpload) {
-      body = Container(
-        width: 88,
-        height: 88,
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.18),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        alignment: Alignment.center,
-        child: const Icon(Icons.check_circle, color: Colors.white, size: 28),
-      );
-    } else {
-      body = InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: disabled
-            ? null
-            : () => _onUploadPendingPhoto(category: category, angle: angle),
-        child: Container(
-          width: 88,
-          height: 88,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.4),
-              style: BorderStyle.solid,
-            ),
-          ),
-          alignment: Alignment.center,
-          child: const Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.add_a_photo_outlined,
-                  color: Colors.white, size: 22),
-              SizedBox(height: 4),
-              Text(
-                'Upload',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return SizedBox(
-      width: 88,
-      child: Column(
-        children: [
-          body,
-          const SizedBox(height: 4),
-          Text(
-            _humanizeAngle(angle),
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.85),
-              fontSize: 11,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDocumentRow(_DocumentSettingDto ds) {
-    final category = _categoryForDocKey(ds.docKey);
-    final uploaded =
-        _uploadedAssetsByKey.keys.any((k) => k.startsWith('$category::'));
-    final disabled = _uploadingFiles || _botTyping;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Icon(
-            uploaded ? Icons.check_circle : Icons.radio_button_unchecked,
-            color: Colors.white.withValues(
-              alpha: uploaded ? 1.0 : 0.6,
-            ),
-            size: 18,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              ds.label + (ds.isRequired ? ' *' : ''),
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          if (!uploaded)
-            TextButton(
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 4),
-                backgroundColor: Colors.white.withValues(alpha: 0.18),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14)),
-              ),
-              onPressed: disabled
-                  ? null
-                  : () => _onUploadPendingDocument(category: category),
-              child: const Text(
-                'Upload',
-                style:
-                    TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  /// Picks a single image and uploads it with the given (category, angle) so
-  /// the backend can attach it to the right photo setting later.
-  Future<void> _onUploadPendingPhoto({
-    required String category,
-    required String angle,
-  }) async {
-    if (_uploadingFiles || _botTyping) return;
-    final picked = await _imagePicker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 80,
-    );
-    if (picked == null || !mounted) return;
-
-    setState(() => _uploadingFiles = true);
-    try {
-      final ds = di.sl<ClaimsRemoteDataSource>();
-      final file = File(picked.path);
-      final bytes = await file.readAsBytes();
-      final name = file.path.split(RegExp(r'[\\/]')).last;
-      final response = await ds.uploadClaimDocument(
-        bytes: bytes,
-        fileName: name.isEmpty ? 'image.jpg' : name,
-        kind: 'Image',
-        category: category,
-        chatThreadId: _threadId,
-        angle: angle,
-      );
-      final id = (response['id'] ?? '').toString();
-      if (id.isNotEmpty) {
-        _uploadedDocumentIds.add((id: id, category: category));
-      }
-      if (!mounted) return;
-      setState(() {
-        _recordUploadedAsset(
-          category: category,
-          angle: angle,
-          id: id.isEmpty ? null : id,
-          localPath: file.path,
-        );
-        _uploadingFiles = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _uploadingFiles = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Upload failed: $e')),
-      );
-    }
-  }
-
-  /// Same as `_onUploadPendingPhoto` but for non-image documents (PDF, etc.).
-  Future<void> _onUploadPendingDocument({required String category}) async {
-    if (_uploadingFiles || _botTyping) return;
-    final result = await FilePicker.platform.pickFiles(
-      allowMultiple: false,
-      type: FileType.custom,
-      allowedExtensions: _allowedDocExtensions,
-    );
-    if (result == null || result.files.isEmpty || !mounted) return;
-    final doc = result.files.first;
-
-    setState(() => _uploadingFiles = true);
-    try {
-      List<int> bytes;
-      if (doc.bytes != null) {
-        bytes = doc.bytes!;
-      } else if (doc.path != null) {
-        bytes = await File(doc.path!).readAsBytes();
-      } else {
-        setState(() => _uploadingFiles = false);
-        return;
-      }
-      final ext = (doc.extension ?? '').toLowerCase();
-      final isImage = const {'jpg', 'jpeg', 'png'}.contains(ext);
-      final dataSource = di.sl<ClaimsRemoteDataSource>();
-      final response = await dataSource.uploadClaimDocument(
-        bytes: bytes,
-        fileName: doc.name,
-        kind: isImage ? 'Image' : 'Document',
-        category: category,
-        chatThreadId: _threadId,
-      );
-      final id = (response['id'] ?? '').toString();
-      if (id.isNotEmpty) {
-        _uploadedDocumentIds.add((id: id, category: category));
-      }
-      if (!mounted) return;
-      setState(() {
-        _recordUploadedAsset(
-          category: category,
-          angle: 'doc',
-          id: id.isEmpty ? null : id,
-          localPath: doc.path,
-        );
-        _uploadingFiles = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _uploadingFiles = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Upload failed: $e')),
-      );
-    }
-  }
 
   // ─── Policy Verified Card ────────────────────────────────────────────────
   Widget _buildPolicyCard({
@@ -1988,7 +1628,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           bytes: bytes,
           fileName: name.isEmpty ? 'image.jpg' : name,
           kind: 'Image',
-          category: category,
+          groupKey: category,
           chatThreadId: _threadId,
           angle: entry.key,
         );
@@ -2000,6 +1640,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         _recordUploadedAsset(
           category: category,
           angle: entry.key,
+          kind: 'Image',
           id: id.isEmpty ? null : id,
           localPath: file.path,
         );
@@ -2052,7 +1693,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       final deleted = await di.sl<ClaimsRemoteDataSource>()
           .deleteClaimDocumentsByThread(
             threadId: _threadId,
-            category: category,
+            groupKey: category,
           );
       if (deleted.isNotEmpty) {
         final deletedSet = deleted.toSet();
@@ -2087,7 +1728,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           bytes: bytes,
           fileName: name.isEmpty ? 'image.jpg' : name,
           kind: 'Image',
-          category: category,
+          groupKey: category,
           chatThreadId: _threadId,
         );
         final id = (response['id'] ?? '').toString();
@@ -2101,6 +1742,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         _recordUploadedAsset(
           category: category,
           angle: 'item_$i',
+          kind: 'Image',
           id: id.isEmpty ? null : id,
           localPath: file.path,
         );
@@ -2157,18 +1799,27 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     setState(() => _pickedDocuments.removeAt(index));
   }
 
-  Future<void> _onSubmitDocuments() async {
+  Future<void> _onSubmitDocuments(_ChatMsg msg) async {
     if (_pickedDocuments.isEmpty || _botTyping || _uploadingFiles) return;
 
     final docs = List<PlatformFile>.from(_pickedDocuments);
+    final progress =
+        _docTriggerProgress.putIfAbsent(msg, () => _DocTriggerProgress());
+    final isFirstBatch = progress.count == 0;
+    final minCount = _payloadInt(msg, 'min_count') ?? 1;
+
     setState(() => _uploadingFiles = true);
 
     int uploadedCount = 0;
     try {
       final ds = di.sl<ClaimsRemoteDataSource>();
       final category = _inferCategory(isImage: false);
-      // Re-upload semantics — see _onSubmitImages.
-      await _replacePriorUploads(category);
+      // Re-upload semantics — see _onSubmitImages. Only on the first batch:
+      // subsequent batches in the same trigger ADD to the prior uploads to
+      // satisfy `min_count`, so we must not delete what we just uploaded.
+      if (isFirstBatch) {
+        await _replacePriorUploads(category);
+      }
       for (var i = 0; i < docs.length; i++) {
         final doc = docs[i];
         // `bytes` is populated when file_picker is used with withData: true
@@ -2185,7 +1836,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           bytes: bytes,
           fileName: doc.name,
           kind: 'Document',
-          category: category,
+          groupKey: category,
           chatThreadId: _threadId,
         );
         final id = (response['id'] ?? '').toString();
@@ -2195,7 +1846,8 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         }
         _recordUploadedAsset(
           category: category,
-          angle: 'item_$i',
+          angle: 'item_${progress.count + i}',
+          kind: 'Document',
           id: id.isEmpty ? null : id,
           localPath: doc.path,
         );
@@ -2210,22 +1862,39 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     }
 
     if (!mounted) return;
-    final count = uploadedCount == 0 ? docs.length : uploadedCount;
-    final bubble = '$count document${count > 1 ? 's' : ''} uploaded';
-    final imagePaths = <String>[];
-    final docNames = <String>[];
+    final batchCount = uploadedCount == 0 ? docs.length : uploadedCount;
     for (final d in docs) {
       final ext = d.extension?.toLowerCase() ?? '';
       final isImage = const {'jpg', 'jpeg', 'png'}.contains(ext);
       if (isImage && d.path != null) {
-        imagePaths.add(d.path!);
+        progress.imagePaths.add(d.path!);
       } else {
-        docNames.add(d.name);
+        progress.docNames.add(d.name);
       }
     }
+    progress.count += batchCount;
+
+    // Below `min_count` — stay on the trigger card so the user can upload
+    // another batch. No user bubble yet; the trigger UI shows running progress.
+    if (progress.count < minCount) {
+      setState(() {
+        _pickedDocuments.clear();
+        _uploadingFiles = false;
+      });
+      _scrollToBottom();
+      return;
+    }
+
+    // `min_count` reached — emit a single cumulative user bubble covering
+    // every batch and let the bot advance.
+    final total = progress.count;
+    final imagePaths = List<String>.from(progress.imagePaths);
+    final docNames = List<String>.from(progress.docNames);
     if (imagePaths.isEmpty && docNames.isEmpty) {
       docNames.addAll(docs.map((d) => d.name));
     }
+    final bubble = '$total document${total > 1 ? 's' : ''} uploaded';
+    _docTriggerProgress.remove(msg);
     setState(() {
       _pickedDocuments.clear();
       _uploadingFiles = false;
@@ -2238,7 +1907,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       _botTyping = true;
     });
     _scrollToBottom();
-    _streamBotReply(count.toString());
+    _streamBotReply(total.toString());
   }
 
   // ─── Trigger Widgets ─────────────────────────────────────────────────────
@@ -2251,7 +1920,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       case 'GET_IMAGE':
         return _buildImageTrigger(msg);
       case 'GET_DOCUMENT':
-        return _buildDocumentTrigger();
+        return _buildDocumentTrigger(msg);
       case 'SUBMIT_CLAIM':
         return _buildSubmitClaimTrigger();
       default:
@@ -2300,17 +1969,11 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   }
 
   void _openSampleImagesViewer(_ChatMsg msg) {
-    final samples = _sampleImagesOf(msg);
-    if (samples.isEmpty) return;
-    final angles = _allowedAnglesOf(msg);
-    final labels = <String>[
-      for (var i = 0; i < samples.length; i++)
-        i < angles.length ? _humanizeAngle(angles[i]) : 'Sample ${i + 1}',
-    ];
+    if (_sampleImagesOf(msg).isEmpty) return;
     showSampleImagesDialog(
       context: context,
-      base64Images: samples,
-      labels: labels,
+      assetPaths: const ['assets/images/damage_photos_sample.png'],
+      labels: const [],
     );
   }
 
@@ -2525,20 +2188,20 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         break;
       }
     }
-    if (text.contains('damage')) return 'DamagePhoto';
+    if (text.contains('damage')) return 'damage_photos';
     if (text.contains('license') || text.contains('licence')) {
-      return 'DriverLicense';
+      return 'driver_license';
     }
-    if (text.contains('police')) return 'PoliceReport';
+    if (text.contains('police')) return 'police_report';
     if (text.contains('repair') ||
         text.contains('bill') ||
         text.contains('invoice')) {
-      return 'BillInvoice';
+      return 'bill_invoice';
     }
     if (text.contains('vehicle') || text.contains('car')) {
-      return isImage ? 'VehiclePhoto' : 'SupportingDocument';
+      return isImage ? 'vehicle_photos' : 'supporting_docs';
     }
-    return isImage ? 'VehiclePhoto' : 'SupportingDocument';
+    return isImage ? 'vehicle_photos' : 'supporting_docs';
   }
 
   /// Coerces a payload value to an `int` (best-effort). Returns 0 on failure
@@ -3445,7 +3108,11 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   }
 
   // ─── GET_DOCUMENT trigger UI ────────────────────────────────────────────
-  Widget _buildDocumentTrigger() {
+  Widget _buildDocumentTrigger(_ChatMsg msg) {
+    final minCount = _payloadInt(msg, 'min_count') ?? 1;
+    final maxCount = _payloadInt(msg, 'max_count') ?? _maxDocuments;
+    final alreadyUploaded = _docTriggerProgress[msg]?.count ?? 0;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -3476,7 +3143,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                'You can upload photos or PDF files.',
+                minCount > 1
+                    ? '$alreadyUploaded of $maxCount uploaded · min $minCount'
+                    : 'You can upload photos or PDF files.',
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
               ),
               if (_pickedDocuments.isNotEmpty) ...[
@@ -3543,10 +3212,12 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
               const SizedBox(height: 12),
               // Upload button
               GestureDetector(
-                onTap: _pickedDocuments.isNotEmpty &&
-                        _pickedDocuments.length <= _maxDocuments
-                    ? _onSubmitDocuments
-                    : _onPickDocuments,
+                onTap: _uploadingFiles
+                    ? null
+                    : (_pickedDocuments.isNotEmpty &&
+                            _pickedDocuments.length <= _maxDocuments
+                        ? () => _onSubmitDocuments(msg)
+                        : _onPickDocuments),
                 child: Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 10),
@@ -3738,104 +3409,25 @@ class _ChatMsg {
   });
 }
 
+/// Running progress for a single GET_DOCUMENT trigger so the user can satisfy
+/// `min_count` across multiple separate uploads. Accumulates the count and the
+/// names/paths used for the final cumulative user bubble.
+class _DocTriggerProgress {
+  int count = 0;
+  final List<String> imagePaths = [];
+  final List<String> docNames = [];
+}
+
 /// Snapshot of one upload kept for the final-summary tiles. We hold the local
 /// path so we can render a thumbnail even before the network round-trip
 /// returns a server-side URL.
 class _UploadedAsset {
   final String? id;
   final String? localPath;
-  const _UploadedAsset({this.id, this.localPath});
-}
-
-/// Subset of the backend `TemplateDetailDto` that the summary card cares
-/// about. Decoded from `/api/web/templates/{id}`.
-class _TemplateSettings {
-  final List<_PhotoSettingDto> photoSettings;
-  final List<_DocumentSettingDto> documentSettings;
-  const _TemplateSettings({
-    required this.photoSettings,
-    required this.documentSettings,
-  });
-
-  factory _TemplateSettings.fromJson(Map<String, dynamic> json) {
-    final photos = (json['photoSettings'] as List? ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .map(_PhotoSettingDto.fromJson)
-        .toList()
-      ..sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
-    final docs = (json['documentSettings'] as List? ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .map(_DocumentSettingDto.fromJson)
-        .toList()
-      ..sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
-    return _TemplateSettings(photoSettings: photos, documentSettings: docs);
-  }
-}
-
-class _PhotoSettingDto {
-  final String groupKey;
-  final String label;
-  final int minCount;
-  final int maxCount;
-  final bool isRequired;
-  final List<String> allowedAngles;
-  final bool showSample;
-  final int displayOrder;
-
-  const _PhotoSettingDto({
-    required this.groupKey,
-    required this.label,
-    required this.minCount,
-    required this.maxCount,
-    required this.isRequired,
-    required this.allowedAngles,
-    required this.showSample,
-    required this.displayOrder,
-  });
-
-  factory _PhotoSettingDto.fromJson(Map<String, dynamic> json) {
-    return _PhotoSettingDto(
-      groupKey: (json['groupKey'] ?? '').toString(),
-      label: (json['label'] ?? '').toString(),
-      minCount: (json['minCount'] as num?)?.toInt() ?? 0,
-      maxCount: (json['maxCount'] as num?)?.toInt() ?? 0,
-      isRequired: json['isRequired'] == true,
-      allowedAngles: (json['allowedAngles'] as List? ?? const [])
-          .map((e) => e.toString())
-          .toList(),
-      showSample: json['showSample'] == true,
-      displayOrder: (json['displayOrder'] as num?)?.toInt() ?? 0,
-    );
-  }
-}
-
-class _DocumentSettingDto {
-  final String docKey;
-  final String label;
-  final int minCount;
-  final int maxCount;
-  final bool isRequired;
-  final int displayOrder;
-
-  const _DocumentSettingDto({
-    required this.docKey,
-    required this.label,
-    required this.minCount,
-    required this.maxCount,
-    required this.isRequired,
-    required this.displayOrder,
-  });
-
-  factory _DocumentSettingDto.fromJson(Map<String, dynamic> json) {
-    return _DocumentSettingDto(
-      docKey: (json['docKey'] ?? '').toString(),
-      label: (json['label'] ?? '').toString(),
-      minCount: (json['minCount'] as num?)?.toInt() ?? 0,
-      maxCount: (json['maxCount'] as num?)?.toInt() ?? 0,
-      isRequired: json['isRequired'] == true,
-      displayOrder: (json['displayOrder'] as num?)?.toInt() ?? 0,
-    );
-  }
+  /// 'Image' or 'Document'. Drives the photo-vs-document split in the review
+  /// card's upload counts.
+  final String kind;
+  const _UploadedAsset({this.id, this.localPath, required this.kind});
 }
 
 class _ImageViewerPage extends StatefulWidget {

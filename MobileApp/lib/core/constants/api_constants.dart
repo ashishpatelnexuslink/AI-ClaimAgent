@@ -38,6 +38,8 @@ class ApiConstants {
   static const String claimById = '/mobile/claims/{id}';
   static const String claimSummary = '/mobile/claims/{id}/summary';
   static const String claimStatus = '/mobile/claims/{id}/status';
+  static const String updateClaimAccidentInfo =
+      '/mobile/claims/{id}/accident-info';
   static const String claimHistory = '/mobile/claims/{id}/history';
 
   // Chat / AI
@@ -50,8 +52,8 @@ class ApiConstants {
   static const String pendingActions = '/mobile/notifications/pending-actions';
   static const String notificationRead = '/mobile/notifications/{id}/read';
 
-  // Templates (shared with web area; mobile uses GET only).
-  static const String templateById = '/web/templates/{id}';
+  // Templates
+  static const String activeTemplate = '/mobile/templates/active';
 
   // Documents
   static const String documents = '/documents';

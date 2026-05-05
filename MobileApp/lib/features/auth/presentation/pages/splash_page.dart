@@ -224,6 +224,13 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
       }
     } catch (e, st) {
       debugPrint('[splash] _checkAuth: ERROR $e\n$st');
+      if (!mounted) return;
+      // Any unexpected failure (network down, dead tokens, parse error) must
+      // not leave the user stranded on splash — fall through to login.
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        AppRoutes.login,
+        (_) => false,
+      );
     }
   }
 

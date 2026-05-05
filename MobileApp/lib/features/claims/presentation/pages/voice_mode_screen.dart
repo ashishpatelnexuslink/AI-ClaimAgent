@@ -67,6 +67,14 @@ class _SpeechEntry {
   const _SpeechEntry(this.messageIndex, this.totalChars);
 }
 
+/// Running progress for a single GET_DOCUMENT trigger so the user can satisfy
+/// `min_count` across multiple separate uploads.
+class _DocTriggerProgress {
+  int count = 0;
+  final List<String> imagePaths = [];
+  final List<String> docNames = [];
+}
+
 class VoiceModeScreen extends StatefulWidget {
   const VoiceModeScreen({super.key});
 
@@ -96,6 +104,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     'pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx',
   ];
   final List<String> _uploadedDocumentIds = [];
+
+  // Per-GET_DOCUMENT-trigger upload progress. Lets the user satisfy
+  // `min_count` across multiple separate uploads instead of picking everything
+  // at once. Cleared once the min is reached and the bot advances.
+  final Map<_ChatMessage, _DocTriggerProgress> _docTriggerProgress = {};
   final List<DateTime> _messageTimestamps = [];
   String? _submittedClaimId;
   bool _fetchingLocation = false;
@@ -920,7 +933,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           bytes: bytes,
           fileName: name.isEmpty ? 'image.jpg' : name,
           kind: 'Image',
-          category: category,
+          groupKey: category,
           chatThreadId: _threadId,
           angle: entry.key,
         );
@@ -976,7 +989,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           bytes: bytes,
           fileName: name.isEmpty ? 'image.jpg' : name,
           kind: 'Image',
-          category: category,
+          groupKey: category,
           chatThreadId: _threadId,
         );
         final id = (response['id'] ?? '').toString();
@@ -1034,7 +1047,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     setState(() => _pickedDocuments.removeAt(index));
   }
 
-  Future<void> _onSubmitDocuments() async {
+  Future<void> _onSubmitDocuments(_ChatMessage msg) async {
     debugPrint('[Upload] _onSubmitDocuments enter '
         'picked=${_pickedDocuments.length} '
         'botTyping=$_botTyping uploading=$_uploadingFiles');
@@ -1044,6 +1057,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     }
 
     final docs = List<PlatformFile>.from(_pickedDocuments);
+    final progress =
+        _docTriggerProgress.putIfAbsent(msg, () => _DocTriggerProgress());
+    final minCount = _payloadInt(msg, 'min_count') ?? 1;
     setState(() => _uploadingFiles = true);
 
     int uploadedCount = 0;
@@ -1063,7 +1079,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           bytes: bytes,
           fileName: doc.name,
           kind: 'Document',
-          category: category,
+          groupKey: category,
           chatThreadId: _threadId,
         );
         final id = (response['id'] ?? '').toString();
@@ -1082,35 +1098,47 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     }
 
     if (!mounted) return;
-    final count = uploadedCount == 0 ? docs.length : uploadedCount;
-    final names = docs.map((d) => d.name).toList();
-    final imagePaths = <String>[];
-    final docNames = <String>[];
+    final batchCount = uploadedCount == 0 ? docs.length : uploadedCount;
     for (final d in docs) {
       final ext = d.extension?.toLowerCase() ?? '';
       final isImage = const {'jpg', 'jpeg', 'png'}.contains(ext);
       if (isImage && d.path != null) {
-        imagePaths.add(d.path!);
+        progress.imagePaths.add(d.path!);
       } else {
-        docNames.add(d.name);
+        progress.docNames.add(d.name);
       }
     }
-    // Fall back to names list if no classification happened (e.g., web path-less files).
-    if (imagePaths.isEmpty && docNames.isEmpty) {
-      docNames.addAll(names);
+    progress.count += batchCount;
+
+    // Below `min_count` — keep the trigger card visible so the user can
+    // upload another batch. No user bubble yet; the trigger UI shows progress.
+    if (progress.count < minCount) {
+      setState(() {
+        _pickedDocuments.clear();
+        _uploadingFiles = false;
+      });
+      return;
     }
+
+    final total = progress.count;
+    final imagePaths = List<String>.from(progress.imagePaths);
+    final docNames = List<String>.from(progress.docNames);
+    if (imagePaths.isEmpty && docNames.isEmpty) {
+      docNames.addAll(docs.map((d) => d.name));
+    }
+    _docTriggerProgress.remove(msg);
     setState(() {
       _pickedDocuments.clear();
       _uploadingFiles = false;
     });
     debugPrint('[Upload] docs submit → uploadedCount=$uploadedCount '
-        'fallbackCount=${docs.length} sending="${count.toString()}"');
+        'fallbackCount=${docs.length} sending="${total.toString()}"');
     _addUserAttachmentMessage(
-      text: '$count document${count > 1 ? 's' : ''} uploaded',
+      text: '$total document${total > 1 ? 's' : ''} uploaded',
       imagePaths: imagePaths,
       documentNames: docNames,
     );
-    _streamBotReply(count.toString());
+    _streamBotReply(total.toString());
   }
 
   void _onSkipDocuments() {
@@ -1371,20 +1399,20 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         break;
       }
     }
-    if (text.contains('damage')) return 'DamagePhoto';
+    if (text.contains('damage')) return 'damage_photos';
     if (text.contains('license') || text.contains('licence')) {
-      return 'DriverLicense';
+      return 'driver_license';
     }
-    if (text.contains('police')) return 'PoliceReport';
+    if (text.contains('police')) return 'police_report';
     if (text.contains('repair') ||
         text.contains('bill') ||
         text.contains('invoice')) {
-      return 'BillInvoice';
+      return 'bill_invoice';
     }
     if (text.contains('vehicle') || text.contains('car')) {
-      return isImage ? 'VehiclePhoto' : 'SupportingDocument';
+      return isImage ? 'vehicle_photos' : 'supporting_docs';
     }
-    return isImage ? 'VehiclePhoto' : 'SupportingDocument';
+    return isImage ? 'vehicle_photos' : 'supporting_docs';
   }
 
   List<Map<String, dynamic>> _buildConversationMessagesPayload() {
@@ -2245,7 +2273,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       case 'GET_IMAGE':
         return _buildImageTrigger(msg);
       case 'GET_DOCUMENT':
-        return _buildDocumentTrigger();
+        return _buildDocumentTrigger(msg);
       case 'SUBMIT_CLAIM':
         return _buildSubmitClaimTrigger();
       default:
@@ -2274,17 +2302,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   }
 
   void _openSampleImagesViewer(_ChatMessage msg) {
-    final samples = _sampleImagesOf(msg);
-    if (samples.isEmpty) return;
-    final angles = _allowedAnglesOf(msg);
-    final labels = <String>[
-      for (var i = 0; i < samples.length; i++)
-        i < angles.length ? _humanizeAngle(angles[i]) : 'Sample ${i + 1}',
-    ];
+    if (_sampleImagesOf(msg).isEmpty) return;
     showSampleImagesDialog(
       context: context,
-      base64Images: samples,
-      labels: labels,
+      assetPaths: const ['assets/images/damage_photos_sample.png'],
+      labels: const [],
     );
   }
 
@@ -2814,7 +2836,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     );
   }
 
-  Widget _buildDocumentTrigger() {
+  Widget _buildDocumentTrigger(_ChatMessage msg) {
+    final minCount = _payloadInt(msg, 'min_count') ?? 1;
+    final maxCount = _payloadInt(msg, 'max_count') ?? _maxDocuments;
+    final alreadyUploaded = _docTriggerProgress[msg]?.count ?? 0;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2844,7 +2870,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
               ),
               const SizedBox(height: 4),
               Text(
-                'You can upload photos or PDF files.',
+                minCount > 1
+                    ? '$alreadyUploaded of $maxCount uploaded · min $minCount'
+                    : 'You can upload photos or PDF files.',
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
               ),
               if (_pickedDocuments.isNotEmpty) ...[
@@ -2914,7 +2942,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                     ? null
                     : (_pickedDocuments.isEmpty
                         ? _onPickDocuments
-                        : _onSubmitDocuments),
+                        : () => _onSubmitDocuments(msg)),
                 child: Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 10),
