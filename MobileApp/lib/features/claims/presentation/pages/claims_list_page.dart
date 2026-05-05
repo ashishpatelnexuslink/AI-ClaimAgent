@@ -24,9 +24,7 @@ class ClaimsListPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: const Text('Claims'),
-      ),
+      appBar: AppBar(title: const Text('Claims')),
       body: BlocBuilder<ClaimsCubit, ClaimsState>(
         builder: (context, state) {
           if (state.isLoading && state.claims.isEmpty) {
@@ -51,9 +49,7 @@ class ClaimsListPage extends StatelessWidget {
           final selected = state.selectedStatus;
           final visibleClaims = selected == null
               ? state.claims
-              : state.claims
-                  .where((c) => c.status.name == selected)
-                  .toList();
+              : state.claims.where((c) => c.status.name == selected).toList();
 
           final showLoader = state.hasMore && selected == null;
           return Column(
@@ -84,7 +80,8 @@ class ClaimsListPage extends StatelessWidget {
                               return const Padding(
                                 padding: EdgeInsets.all(AppSpacing.md),
                                 child: Center(
-                                    child: CircularProgressIndicator()),
+                                  child: CircularProgressIndicator(),
+                                ),
                               );
                             }
 
@@ -112,31 +109,30 @@ class ClaimsListPage extends StatelessWidget {
       buildWhen: (prev, curr) => prev.selectedStatus != curr.selectedStatus,
       builder: (context, state) {
         return Padding(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.md,
-            AppSpacing.sm,
-            AppSpacing.md,
-            AppSpacing.sm,
-          ),
-          child: Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.sm,
-            children: [
-              for (final filter in _quickFilters)
-                _FilterChipPill(
-                  label: filter.label,
-                  selected: state.selectedStatus == filter.value,
-                  onTap: () => context
-                      .read<ClaimsCubit>()
-                      .onFilterByStatus(filter.value),
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+          child: SizedBox(
+            height: 40,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+            itemCount: _quickFilters.length,
+            separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.sm),
+            itemBuilder: (context, index) {
+              final filter = _quickFilters[index];
+              return _FilterChipPill(
+                label: filter.label,
+                selected: state.selectedStatus == filter.value,
+                onTap: () => context.read<ClaimsCubit>().onFilterByStatus(
+                  filter.value,
                 ),
-            ],
+              );
+            },
+            ),
           ),
         );
       },
     );
   }
-
 }
 
 class _StatusFilter {

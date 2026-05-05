@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -89,11 +90,23 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   // Dynamic per-angle flow driven by `payload.allowed_angles` — keyed by
   // angle name (e.g. "front_left"). Cleared after each successful submit.
   final Map<String, File> _angleImages = {};
+  // For each angle that `/validate-images` flagged as invalid, the path of
+  // the image at the time of failure. Used to decide whether the user has
+  // since picked a different image (enabling re-submit). Cleared on a
+  // successful validate + upload pass.
+  final Map<String, String> _failedAnglePaths = {};
 
   // GET_DOCUMENT state.
   final List<PlatformFile> _pickedDocuments = [];
   final int _maxDocuments = 10;
-  final List<String> _allowedDocExtensions = const ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'];
+  final List<String> _allowedDocExtensions = const [
+    'pdf',
+    'jpg',
+    'jpeg',
+    'png',
+    'doc',
+    'docx',
+  ];
 
   @override
   void initState() {
@@ -103,10 +116,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     if (widget.initialMessages != null && widget.initialMessages!.isNotEmpty) {
       // Seed with messages carried over from voice mode
       for (final m in widget.initialMessages!) {
-        _messages.add(_ChatMsg(
-          text: m['text'] as String,
-          isUser: m['isUser'] as bool,
-        ));
+        _messages.add(
+          _ChatMsg(text: m['text'] as String, isUser: m['isUser'] as bool),
+        );
       }
     } else {
       // Fetch a real greeting from the API
@@ -131,8 +143,11 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     required String? id,
     required String? localPath,
   }) {
-    _uploadedAssetsByKey[_assetKey(category, angle)] =
-        _UploadedAsset(id: id, localPath: localPath, kind: kind);
+    _uploadedAssetsByKey[_assetKey(category, angle)] = _UploadedAsset(
+      id: id,
+      localPath: localPath,
+      kind: kind,
+    );
   }
 
   void _clearUploadedAssetsForCategory(String category) {
@@ -171,17 +186,19 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         threadId: _threadId,
       )) {
         if (!mounted) return;
-        _pendingBotMessages.add(_ChatMsg(
-          text: msg.content,
-          isUser: false,
-          animate: true,
-          messageType: msg.messageType,
-          suggestions: msg.suggestions,
-          triggers: msg.triggers,
-          claimData: msg.claimData,
-          payloadType: msg.payloadType,
-          payload: msg.payload,
-        ));
+        _pendingBotMessages.add(
+          _ChatMsg(
+            text: msg.content,
+            isUser: false,
+            animate: true,
+            messageType: msg.messageType,
+            suggestions: msg.suggestions,
+            triggers: msg.triggers,
+            claimData: msg.claimData,
+            payloadType: msg.payloadType,
+            payload: msg.payload,
+          ),
+        );
         // Bot has streamed the final summary — fire-and-forget the save
         // (claim row + doc attach + conversation transcript) right away so
         // the Close button only has to write the local transcript file.
@@ -194,10 +211,12 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       }
     } catch (_) {
       if (!mounted) return;
-      _pendingBotMessages.add(const _ChatMsg(
-        text: 'Sorry, something went wrong. Please try again.',
-        isUser: false,
-      ));
+      _pendingBotMessages.add(
+        const _ChatMsg(
+          text: 'Sorry, something went wrong. Please try again.',
+          isUser: false,
+        ),
+      );
     }
     if (!mounted) return;
     _showNextPendingMessage();
@@ -250,7 +269,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     unawaited(_writeTranscriptSilently(snapshot));
   }
 
-  Future<void> _writeTranscriptSilently(List<TranscriptMessage> snapshot) async {
+  Future<void> _writeTranscriptSilently(
+    List<TranscriptMessage> snapshot,
+  ) async {
     try {
       await _transcriptWriter.writeTranscript(
         threadId: _threadId,
@@ -307,9 +328,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       firstDate: DateTime(2020),
       lastDate: DateTime(2030),
       builder: (context, child) => Theme(
-        data: Theme.of(context).copyWith(
-          colorScheme: const ColorScheme.light(primary: _kBlue),
-        ),
+        data: Theme.of(
+          context,
+        ).copyWith(colorScheme: const ColorScheme.light(primary: _kBlue)),
         child: child!,
       ),
     );
@@ -326,9 +347,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       context: context,
       initialTime: initial,
       builder: (context, child) => Theme(
-        data: Theme.of(context).copyWith(
-          colorScheme: const ColorScheme.light(primary: _kBlue),
-        ),
+        data: Theme.of(
+          context,
+        ).copyWith(colorScheme: const ColorScheme.light(primary: _kBlue)),
         child: child!,
       ),
     );
@@ -341,8 +362,13 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     final now = DateTime.now();
     final date = _dtDate ?? now;
     final time = _dtTime ?? TimeOfDay.fromDateTime(now);
-    final selected =
-        DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    final selected = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
     final formatted = DateFormat('dd MMM yyyy, hh:mm a').format(selected);
 
     _inputFocusNode.unfocus();
@@ -378,7 +404,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Please enable location services (GPS) in device settings'),
+            content: Text(
+              'Please enable location services (GPS) in device settings',
+            ),
           ),
         );
         // Prompt user to open location settings
@@ -402,7 +430,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Location permission is permanently denied. Please enable it in app settings.'),
+            content: Text(
+              'Location permission is permanently denied. Please enable it in app settings.',
+            ),
           ),
         );
         await Geolocator.openAppSettings();
@@ -429,8 +459,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           final parts = <String>[
             if (p.subLocality != null && p.subLocality!.isNotEmpty)
               p.subLocality!,
-            if (p.locality != null && p.locality!.isNotEmpty)
-              p.locality!,
+            if (p.locality != null && p.locality!.isNotEmpty) p.locality!,
             if (p.administrativeArea != null &&
                 p.administrativeArea!.isNotEmpty)
               p.administrativeArea!,
@@ -460,9 +489,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not get location: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not get location: $e')));
     } finally {
       if (mounted) setState(() => _fetchingLocation = false);
     }
@@ -507,7 +536,11 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                 shape: BoxShape.circle,
                 border: Border.all(color: Colors.grey.shade300),
               ),
-              child: const Icon(Icons.arrow_back_ios_new, size: 16, color: _kDark),
+              child: const Icon(
+                Icons.arrow_back_ios_new,
+                size: 16,
+                color: _kDark,
+              ),
             ),
           ),
         ),
@@ -516,13 +549,19 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           children: [
             CircleAvatar(
               radius: 16,
-              backgroundImage: const AssetImage('assets/images/avatar_assistant.png'),
+              backgroundImage: const AssetImage(
+                'assets/images/avatar_assistant.png',
+              ),
               backgroundColor: Colors.grey.shade200,
             ),
             const SizedBox(width: 10),
             const Text(
               'Claim Assistant',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _kDark),
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: _kDark,
+              ),
             ),
           ],
         ),
@@ -534,7 +573,8 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
             child: ListView.builder(
               controller: _scrollController,
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              itemCount: _messages.length + (_botTyping && !_isAnimating ? 1 : 0),
+              itemCount:
+                  _messages.length + (_botTyping && !_isAnimating ? 1 : 0),
               itemBuilder: (context, index) {
                 if (index == _messages.length && _botTyping && !_isAnimating) {
                   return _buildTypingIndicator();
@@ -569,14 +609,20 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                       onSubmitted: (_) => _send(),
                       decoration: InputDecoration(
                         hintText: 'Type your message...',
-                        hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+                        hintStyle: TextStyle(
+                          color: Colors.grey.shade400,
+                          fontSize: 14,
+                        ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(24),
                           borderSide: BorderSide.none,
                         ),
                         filled: true,
                         fillColor: _kBg,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 10,
+                        ),
                       ),
                       style: const TextStyle(fontSize: 14, color: _kDark),
                     ),
@@ -651,9 +697,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     return raw;
   }
 
-  static final _policyFieldPattern = RegExp(
-    r'\*\*(.+?):\*\*\s*(.+)',
-  );
+  static final _policyFieldPattern = RegExp(r'\*\*(.+?):\*\*\s*(.+)');
 
   /// Returns parsed policy fields if the message contains policy details.
   Map<String, String>? _parsePolicyFields(String text) {
@@ -748,23 +792,31 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     final k = key.toLowerCase().trim();
     switch (k) {
       case 'vehicle photos':
-      case 'vehicle photos count': return 'Vehicle Photos';
+      case 'vehicle photos count':
+        return 'Vehicle Photos';
       case 'damage photos':
-      case 'damage photos count': return 'Damage Vehicle Photos';
+      case 'damage photos count':
+        return 'Damage Vehicle Photos';
       case 'driver license':
       case 'driving license':
       case 'license photos':
-      case 'license photos count': return 'Driving License';
+      case 'license photos count':
+        return 'Driving License';
       case 'supporting docs':
-      case 'supporting documents': return 'Uploaded Documents';
+      case 'supporting documents':
+        return 'Uploaded Documents';
       case 'police report':
-      case 'police report count': return 'Police Report';
+      case 'police report count':
+        return 'Police Report';
       case 'bill invoice':
       case 'invoice':
-      case 'invoice count': return 'Invoice';
+      case 'invoice count':
+        return 'Invoice';
       case 'repair bill':
-      case 'repair bill count': return 'Repair Bill';
-      default: return key.replaceAll(' Count', '');
+      case 'repair bill count':
+        return 'Repair Bill';
+      default:
+        return key.replaceAll(' Count', '');
     }
   }
 
@@ -819,7 +871,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                 Flexible(
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: const BorderRadius.only(
@@ -921,20 +975,19 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: (!isLastBot ||
-                              _confirmingFinalSummary ||
-                              _botTyping)
+                      onPressed:
+                          (!isLastBot || _confirmingFinalSummary || _botTyping)
                           ? null
                           : () => _onConfirmFinalSummary(msg),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.white,
                         foregroundColor: _kBlue,
-                        disabledBackgroundColor:
-                            Colors.white.withValues(alpha: 0.7),
+                        disabledBackgroundColor: Colors.white.withValues(
+                          alpha: 0.7,
+                        ),
                         disabledForegroundColor: _kBlue.withValues(alpha: 0.6),
                         elevation: 0,
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 14),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(28),
                         ),
@@ -970,10 +1023,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          height: 1,
-          color: Colors.white.withValues(alpha: 0.2),
-        ),
+        Container(height: 1, color: Colors.white.withValues(alpha: 0.2)),
         const SizedBox(height: 12),
         Text(
           label,
@@ -1019,11 +1069,11 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                     fontWeight: FontWeight.w600,
                     height: 1.45,
                   ),
-                  textAlign:
-                      multiline ? TextAlign.left : TextAlign.right,
+                  textAlign: multiline ? TextAlign.left : TextAlign.right,
                   maxLines: multiline ? null : 2,
-                  overflow:
-                      multiline ? TextOverflow.visible : TextOverflow.ellipsis,
+                  overflow: multiline
+                      ? TextOverflow.visible
+                      : TextOverflow.ellipsis,
                 ),
               ),
             ],
@@ -1058,7 +1108,6 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     ];
   }
 
-
   // ─── Policy Verified Card ────────────────────────────────────────────────
   Widget _buildPolicyCard({
     required _ChatMsg msg,
@@ -1074,8 +1123,8 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         .where((e) => e.key.toLowerCase() == 'status')
         .map((e) => e.value)
         .firstOrNull;
-    final isActive = statusValue != null &&
-        statusValue.toLowerCase().contains('active');
+    final isActive =
+        statusValue != null && statusValue.toLowerCase().contains('active');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1092,10 +1141,12 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                 Flexible(
                   child: Container(
                     constraints: BoxConstraints(
-                        maxWidth:
-                            MediaQuery.of(context).size.width * 0.70),
+                      maxWidth: MediaQuery.of(context).size.width * 0.70,
+                    ),
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: const BorderRadius.only(
@@ -1131,7 +1182,8 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           alignment: Alignment.centerLeft,
           child: Container(
             constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.82),
+              maxWidth: MediaQuery.of(context).size.width * 0.82,
+            ),
             margin: const EdgeInsets.only(bottom: 10),
             decoration: BoxDecoration(
               color: Colors.white,
@@ -1151,7 +1203,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 14),
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
                   decoration: const BoxDecoration(
                     color: Color(0xFFF7F8FA),
                     borderRadius: BorderRadius.only(
@@ -1190,12 +1244,13 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                 // Fields
                 Padding(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 4),
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
                   child: Column(
                     children: List.generate(fields.length, (i) {
                       final entry = fields.entries.elementAt(i);
-                      final isStatus =
-                          entry.key.toLowerCase() == 'status';
+                      final isStatus = entry.key.toLowerCase() == 'status';
                       final isLast = i == fields.length - 1;
                       return Container(
                         padding: const EdgeInsets.symmetric(vertical: 10),
@@ -1210,8 +1265,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                                 ),
                         ),
                         child: Row(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             SizedBox(
                               width: 110,
@@ -1253,24 +1307,22 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                       spacing: 10,
                       runSpacing: 8,
                       children: msg.suggestions.map((s) {
-                        final isConfirm = s.toLowerCase().contains('correct') ||
+                        final isConfirm =
+                            s.toLowerCase().contains('correct') ||
                             s.toLowerCase().contains('yes') ||
                             s.toLowerCase().contains('confirm');
                         return GestureDetector(
                           onTap: () => _onSuggestionTap(s),
                           child: Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 20, vertical: 10),
+                              horizontal: 20,
+                              vertical: 10,
+                            ),
                             decoration: BoxDecoration(
-                              color: isConfirm
-                                  ? _kBlue
-                                  : Colors.white,
-                              borderRadius:
-                                  BorderRadius.circular(8),
+                              color: isConfirm ? _kBlue : Colors.white,
+                              borderRadius: BorderRadius.circular(8),
                               border: Border.all(
-                                color: isConfirm
-                                    ? _kBlue
-                                    : _kDark,
+                                color: isConfirm ? _kBlue : _kDark,
                               ),
                             ),
                             child: Text(
@@ -1278,9 +1330,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
-                                color: isConfirm
-                                    ? Colors.white
-                                    : _kDark,
+                                color: isConfirm ? Colors.white : _kDark,
                               ),
                             ),
                           ),
@@ -1300,8 +1350,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
             child: Wrap(
               spacing: 8,
               runSpacing: 8,
-              children:
-                  msg.triggers.map((t) => _buildTriggerButton(t, msg)).toList(),
+              children: msg.triggers
+                  .map((t) => _buildTriggerButton(t, msg))
+                  .toList(),
             ),
           ),
       ],
@@ -1380,10 +1431,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       if (msg.payloadType == 'final_summary' &&
           msg.payload != null &&
           msg.payload!.isNotEmpty) {
-        return _buildFinalSummaryCard(
-          msg: msg,
-          isLastBot: isLastBot,
-        );
+        return _buildFinalSummaryCard(msg: msg, isLastBot: isLastBot);
       }
       // Structured payload (triggers: SHOW_TABLE + verified_summary / final_summary)
       final structured = _tableFields(msg);
@@ -1414,12 +1462,13 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       }
     }
 
-    final hasAttachments = isUser &&
-        (msg.imagePaths.isNotEmpty || msg.documentNames.isNotEmpty);
+    final hasAttachments =
+        isUser && (msg.imagePaths.isNotEmpty || msg.documentNames.isNotEmpty);
 
     return Column(
-      crossAxisAlignment:
-          isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      crossAxisAlignment: isUser
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
       children: [
         if (hasAttachments)
           Padding(
@@ -1429,20 +1478,21 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         Padding(
           padding: const EdgeInsets.only(bottom: 10),
           child: Row(
-            mainAxisAlignment:
-                isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+            mainAxisAlignment: isUser
+                ? MainAxisAlignment.end
+                : MainAxisAlignment.start,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (!isUser) ...[
-                _buildBotAvatar(),
-                const SizedBox(width: 10),
-              ],
+              if (!isUser) ...[_buildBotAvatar(), const SizedBox(width: 10)],
               Flexible(
                 child: Container(
                   constraints: BoxConstraints(
-                      maxWidth: MediaQuery.of(context).size.width * 0.70),
+                    maxWidth: MediaQuery.of(context).size.width * 0.70,
+                  ),
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 12),
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   decoration: BoxDecoration(
                     color: isUser ? _kBlue : Colors.white,
                     borderRadius: BorderRadius.only(
@@ -1489,16 +1539,16 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                                     shrinkWrap: true,
                                     styleSheet: _botMarkdownStyle,
                                   ),
-                            if (_sampleImagesOf(msg).isNotEmpty)
-                              _buildSeeSampleLink(msg),
+                            if (_showSampleOf(msg)) _buildSeeSampleLink(msg),
+                            if (msg.validationFailedAngles.isNotEmpty)
+                              _buildValidationFailureList(
+                                msg.validationFailedAngles,
+                              ),
                           ],
                         ),
                 ),
               ),
-              if (isUser) ...[
-                const SizedBox(width: 10),
-                _buildUserAvatar(),
-              ],
+              if (isUser) ...[const SizedBox(width: 10), _buildUserAvatar()],
             ],
           ),
         ),
@@ -1509,28 +1559,36 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
             child: Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: msg.suggestions.map((s) {
-                return GestureDetector(
-                  onTap: () => _onSuggestionTap(s),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: _kBlue),
-                    ),
-                    child: Text(
-                      s,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: _kBlue,
-                        fontWeight: FontWeight.w500,
+              children: msg.suggestions
+                  .where(
+                    (s) =>
+                        s != 'Skip' || !msg.triggers.contains('GET_DOCUMENT'),
+                  )
+                  .map((s) {
+                    return GestureDetector(
+                      onTap: () => _onSuggestionTap(s),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: _kBlue),
+                        ),
+                        child: Text(
+                          s,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: _kBlue,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                );
-              }).toList(),
+                    );
+                  })
+                  .toList(),
             ),
           ),
         // Trigger actions
@@ -1540,7 +1598,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
             child: Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: msg.triggers.map((t) => _buildTriggerButton(t, msg)).toList(),
+              children: msg.triggers
+                  .map((t) => _buildTriggerButton(t, msg))
+                  .toList(),
             ),
           ),
         // Close button — appears on `message_type == 'done'`
@@ -1613,24 +1673,49 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     final entries = _angleImages.entries.toList(growable: false);
     setState(() => _uploadingFiles = true);
 
+    final category = _inferCategory(isImage: true);
+
+    // Read bytes once; reused for both upload + validation.
+    final List<({String angle, String name, List<int> bytes, String path})>
+        prepared = [];
+    for (final entry in entries) {
+      final bytes = await entry.value.readAsBytes();
+      final name = entry.value.path.split(RegExp(r'[\\/]')).last;
+      prepared.add((
+        angle: entry.key,
+        name: name.isEmpty ? 'image.jpg' : name,
+        bytes: bytes,
+        path: entry.value.path,
+      ));
+    }
+
+    // ── Validate first (AI image validation) ───────────────────────────
+    final validation = await _runImageValidation(
+      questionLabel: category,
+      images: {
+        for (final p in prepared) p.angle: base64Encode(p.bytes),
+      },
+    );
+    if (!validation.valid) {
+      if (!mounted) return;
+      setState(() => _uploadingFiles = false);
+      return;
+    }
+
     int uploadedCount = 0;
     try {
       final ds = di.sl<ClaimsRemoteDataSource>();
-      final category = _inferCategory(isImage: true);
       // Re-upload semantics: a fresh batch replaces any prior unattached
       // uploads in this thread under the same category.
       await _replacePriorUploads(category);
-      for (final entry in entries) {
-        final file = entry.value;
-        final bytes = await file.readAsBytes();
-        final name = file.path.split(RegExp(r'[\\/]')).last;
+      for (final p in prepared) {
         final response = await ds.uploadClaimDocument(
-          bytes: bytes,
-          fileName: name.isEmpty ? 'image.jpg' : name,
+          bytes: Uint8List.fromList(p.bytes),
+          fileName: p.name,
           kind: 'Image',
           groupKey: category,
           chatThreadId: _threadId,
-          angle: entry.key,
+          angle: p.angle,
         );
         final id = (response['id'] ?? '').toString();
         if (id.isNotEmpty) {
@@ -1639,17 +1724,17 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         }
         _recordUploadedAsset(
           category: category,
-          angle: entry.key,
+          angle: p.angle,
           kind: 'Image',
           id: id.isEmpty ? null : id,
-          localPath: file.path,
+          localPath: p.path,
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Image upload failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Image upload failed: $e')));
       }
       debugPrint('[Upload] angle image upload failed: $e');
     }
@@ -1657,19 +1742,243 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     if (!mounted) return;
     final count = uploadedCount == 0 ? entries.length : uploadedCount;
     final bubble = '$count photo${count > 1 ? 's' : ''} uploaded';
-    final paths = entries.map((e) => e.value.path).toList();
+    final paths = prepared.map((p) => p.path).toList();
     setState(() {
       _angleImages.clear();
       _uploadingFiles = false;
-      _messages.add(_ChatMsg(
-        text: bubble,
-        isUser: true,
-        imagePaths: paths,
-      ));
+      _messages.add(_ChatMsg(text: bubble, isUser: true, imagePaths: paths));
       _botTyping = true;
     });
     _scrollToBottom();
     _streamBotReply(count.toString());
+  }
+
+  /// Calls `/validate-images` and renders a transient "validating…" bot
+  /// bubble that's swapped out for either nothing (on success) or the
+  /// failure reason (on failure). Returns the validation outcome so callers
+  /// can decide whether to continue with the upload + chat flow.
+  Future<ImageValidationResult> _runImageValidation({
+    required String questionLabel,
+    required Map<String, String> images,
+  }) async {
+    final waitingMsg = _ChatMsg(
+      text: 'Please wait while we validate your images...',
+      isUser: false,
+    );
+    setState(() => _messages.add(waitingMsg));
+    _scrollToBottom();
+
+    ImageValidationResult result;
+    try {
+      result = await ChatService.validateImages(
+        questionLabel: questionLabel,
+        threadId: _threadId,
+        images: images,
+      );
+    } catch (e) {
+      debugPrint('[Validate] image validation failed: $e');
+      result = ImageValidationResult(
+        valid: false,
+        failureReason: 'Could not validate images. Please try again.',
+      );
+    }
+
+    if (!mounted) return result;
+
+    final failedAngles = _extractFailedAngles(result.raw);
+
+    setState(() {
+      _messages.remove(waitingMsg);
+      if (!result.valid) {
+        // Snapshot the rejected images' paths so the failure card can detect
+        // when the user picks a replacement (and re-enable Submit). The
+        // images themselves stay in `_angleImages` so their thumbnails
+        // remain visible alongside the "image is not correct" status.
+        _failedAnglePaths.clear();
+        for (final a in failedAngles) {
+          final f = _angleImages[a];
+          if (f != null) _failedAnglePaths[a] = f.path;
+        }
+        _messages.add(
+          _ChatMsg(
+            text: failedAngles.isEmpty
+                ? 'Image validation failed. Please re-upload.'
+                : '',
+            isUser: false,
+            validationFailedAngles: failedAngles,
+          ),
+        );
+      } else {
+        _failedAnglePaths.clear();
+      }
+    });
+    _scrollToBottom();
+    return result;
+  }
+
+  /// Pulls the angle keys whose `angle_matches` is `false` out of the
+  /// `/validate-images` response. The `details` map mixes per-angle objects
+  /// with scalars (`is_same_car`, `failure_reason`), so we only treat entries
+  /// that are themselves Maps containing `angle_matches`.
+  List<String> _extractFailedAngles(Map<String, dynamic> raw) {
+    final details = raw['details'];
+    if (details is! Map) return const [];
+    final out = <String>[];
+    details.forEach((key, value) {
+      if (value is Map && value['angle_matches'] == false) {
+        out.add(key.toString());
+      }
+    });
+    return out;
+  }
+
+  /// Renders the validation-failure card: header, one row per failed angle
+  /// (thumbnail of the re-picked image when present, angle label, status,
+  /// Upload/Replace button), and a Submit button that re-runs the validate +
+  /// upload flow. Self-contained because the original GET_IMAGE trigger card
+  /// is no longer the "last bot message" once this bubble is added.
+  Widget _buildValidationFailureList(List<String> angles) {
+    bool isStillRejected(String a) =>
+        _failedAnglePaths[a] != null &&
+        _angleImages[a]?.path == _failedAnglePaths[a];
+    final allReplaced = angles.every((a) => !isStillRejected(a));
+    final canSubmit = allReplaced && !_uploadingFiles && !_botTyping;
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'Some images need to be re-uploaded',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFFB00020),
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...angles.map((angle) {
+            final picked = _angleImages[angle];
+            final stillRejected = isStillRejected(angle);
+            return Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                children: [
+                  if (picked != null) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.file(
+                        picked,
+                        width: 48,
+                        height: 48,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                  ] else ...[
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0F2F7),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        Icons.broken_image_outlined,
+                        color: Colors.grey.shade500,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                  ],
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _humanizeAngle(angle),
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: _kDark,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          stillRejected
+                              ? 'image is not correct'
+                              : 'Ready to submit',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: stillRejected
+                                ? const Color(0xFFB00020)
+                                : _kBlue,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: _uploadingFiles
+                        ? null
+                        : () => _onPickAngleImage(angle),
+                    icon: Icon(
+                      stillRejected
+                          ? Icons.camera_alt_outlined
+                          : Icons.refresh,
+                      size: 16,
+                    ),
+                    label: Text(
+                      stillRejected ? 'Upload' : 'Replace',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    style: TextButton.styleFrom(
+                      foregroundColor: _kBlue,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: canSubmit ? _onSubmitAngleImages : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _kBlue,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: Colors.grey.shade300,
+                disabledForegroundColor: Colors.grey.shade600,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              child: _uploadingFiles
+                  ? const SizedBox(
+                      height: 16,
+                      width: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text(
+                      'Submit',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _openImageViewer(List<String> paths, int initialIndex) {
@@ -1690,7 +1999,8 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     final hadPrior = _uploadedDocumentIds.any((d) => d.category == category);
     if (!hadPrior) return;
     try {
-      final deleted = await di.sl<ClaimsRemoteDataSource>()
+      final deleted = await di
+          .sl<ClaimsRemoteDataSource>()
           .deleteClaimDocumentsByThread(
             threadId: _threadId,
             groupKey: category,
@@ -1713,20 +2023,45 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     final files = List<File>.from(_pickedImages);
     setState(() => _uploadingFiles = true);
 
+    final category = _inferCategory(isImage: true);
+
+    // Read bytes once so we can both validate and upload.
+    final List<({String name, Uint8List bytes, String path})> prepared = [];
+    for (var i = 0; i < files.length; i++) {
+      final file = files[i];
+      final bytes = await file.readAsBytes();
+      final name = file.path.split(RegExp(r'[\\/]')).last;
+      prepared.add((
+        name: name.isEmpty ? 'image.jpg' : name,
+        bytes: bytes,
+        path: file.path,
+      ));
+    }
+
+    final validation = await _runImageValidation(
+      questionLabel: category,
+      images: {
+        for (var i = 0; i < prepared.length; i++)
+          'image_$i': base64Encode(prepared[i].bytes),
+      },
+    );
+    if (!validation.valid) {
+      if (!mounted) return;
+      setState(() => _uploadingFiles = false);
+      return;
+    }
+
     int uploadedCount = 0;
     try {
       final ds = di.sl<ClaimsRemoteDataSource>();
-      final category = _inferCategory(isImage: true);
       // Re-upload semantics: a fresh batch for this category replaces any
       // prior unattached uploads in this thread under the same category.
       await _replacePriorUploads(category);
-      for (var i = 0; i < files.length; i++) {
-        final file = files[i];
-        final bytes = await file.readAsBytes();
-        final name = file.path.split(RegExp(r'[\\/]')).last;
+      for (var i = 0; i < prepared.length; i++) {
+        final p = prepared[i];
         final response = await ds.uploadClaimDocument(
-          bytes: bytes,
-          fileName: name.isEmpty ? 'image.jpg' : name,
+          bytes: p.bytes,
+          fileName: p.name,
           kind: 'Image',
           groupKey: category,
           chatThreadId: _threadId,
@@ -1744,30 +2079,26 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           angle: 'item_$i',
           kind: 'Image',
           id: id.isEmpty ? null : id,
-          localPath: file.path,
+          localPath: p.path,
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Image upload failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Image upload failed: $e')));
       }
       debugPrint('[Upload] image upload failed: $e');
     }
 
     if (!mounted) return;
-    final count = uploadedCount == 0 ? files.length : uploadedCount;
+    final count = uploadedCount == 0 ? prepared.length : uploadedCount;
     final bubble = '$count photo${count > 1 ? 's' : ''} uploaded';
     final paths = files.map((f) => f.path).toList();
     setState(() {
       _pickedImages.clear();
       _uploadingFiles = false;
-      _messages.add(_ChatMsg(
-        text: bubble,
-        isUser: true,
-        imagePaths: paths,
-      ));
+      _messages.add(_ChatMsg(text: bubble, isUser: true, imagePaths: paths));
       _botTyping = true;
     });
     _scrollToBottom();
@@ -1803,8 +2134,10 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     if (_pickedDocuments.isEmpty || _botTyping || _uploadingFiles) return;
 
     final docs = List<PlatformFile>.from(_pickedDocuments);
-    final progress =
-        _docTriggerProgress.putIfAbsent(msg, () => _DocTriggerProgress());
+    final progress = _docTriggerProgress.putIfAbsent(
+      msg,
+      () => _DocTriggerProgress(),
+    );
     final isFirstBatch = progress.count == 0;
     final minCount = _payloadInt(msg, 'min_count') ?? 1;
 
@@ -1854,9 +2187,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Document upload failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Document upload failed: $e')));
       }
       debugPrint('[Upload] document upload failed: $e');
     }
@@ -1898,12 +2231,14 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     setState(() {
       _pickedDocuments.clear();
       _uploadingFiles = false;
-      _messages.add(_ChatMsg(
-        text: bubble,
-        isUser: true,
-        imagePaths: imagePaths,
-        documentNames: docNames,
-      ));
+      _messages.add(
+        _ChatMsg(
+          text: bubble,
+          isUser: true,
+          imagePaths: imagePaths,
+          documentNames: docNames,
+        ),
+      );
       _botTyping = true;
     });
     _scrollToBottom();
@@ -1923,6 +2258,8 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         return _buildDocumentTrigger(msg);
       case 'SUBMIT_CLAIM':
         return _buildSubmitClaimTrigger();
+      case 'SKIP':
+        return _buildSkipTrigger();
       default:
         return const SizedBox.shrink();
     }
@@ -1931,22 +2268,19 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   // Helpers to read GET_IMAGE constraints from a message payload.
   List<String> _allowedAnglesOf(_ChatMsg msg) {
     final raw = msg.payload?['allowed_angles'];
-    if (raw is List) return raw.map((e) => e.toString()).toList(growable: false);
+    if (raw is List)
+      return raw.map((e) => e.toString()).toList(growable: false);
     return const [];
   }
 
-  /// Returns the raw base64-encoded sample images carried in the bot's
-  /// `GET_IMAGE` payload (key `sample_images`). May include a leading
-  /// `data:image/png;base64,` prefix — strip with `_decodeBase64Image`.
-  List<String> _sampleImagesOf(_ChatMsg msg) {
-    final raw = msg.payload?['sample_images'];
-    if (raw is List) {
-      return raw
-          .map((e) => e.toString())
-          .where((s) => s.isNotEmpty)
-          .toList(growable: false);
-    }
-    return const [];
+  /// Whether the bot's `GET_IMAGE` payload requested showing the bundled
+  /// sample-photos affordance (`payload.show_sample == true`).
+  bool _showSampleOf(_ChatMsg msg) {
+    if (!msg.triggers.contains('GET_IMAGE')) return false;
+    final raw = msg.payload?['show_sample'];
+    if (raw is bool) return raw;
+    if (raw is String) return raw.toLowerCase() == 'true';
+    return false;
   }
 
   Widget _buildSeeSampleLink(_ChatMsg msg) {
@@ -1969,7 +2303,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   }
 
   void _openSampleImagesViewer(_ChatMsg msg) {
-    if (_sampleImagesOf(msg).isEmpty) return;
+    if (!_showSampleOf(msg)) return;
     showSampleImagesDialog(
       context: context,
       assetPaths: const ['assets/images/damage_photos_sample.png'],
@@ -2259,8 +2593,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         'role': m.isUser ? 'User' : 'Assistant',
         'content': m.text,
         'timestamp': ts.toUtc().toIso8601String(),
-        if (metadata.isNotEmpty)
-          'metadata': jsonEncode(metadata),
+        if (metadata.isNotEmpty) 'metadata': jsonEncode(metadata),
       });
     }
     return payload;
@@ -2274,7 +2607,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   /// per chat session does any work; the rest short-circuit. The Close button
   /// awaits [_autoSaveFuture] so it can decide whether to retry on failure.
   void _triggerAutoSaveOnSummary(
-      Map<String, dynamic>? saveSummaryPayload, String doneText) {
+    Map<String, dynamic>? saveSummaryPayload,
+    String doneText,
+  ) {
     if (_savedOnSummary || _autoSaveFuture != null) return;
     final externalRef = _extractClaimReference(doneText);
     final future = _runSaveClaimAndConversation(
@@ -2282,13 +2617,17 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       externalRef: externalRef,
     );
     _autoSaveFuture = future;
-    future.then((_) {
-      _savedOnSummary = true;
-    }).catchError((Object e) {
-      debugPrint('[AutoSave] save_summary save failed (will retry on Close): $e');
-      // Clear the future so the Close-button fallback can run a fresh attempt.
-      _autoSaveFuture = null;
-    });
+    future
+        .then((_) {
+          _savedOnSummary = true;
+        })
+        .catchError((Object e) {
+          debugPrint(
+            '[AutoSave] save_summary save failed (will retry on Close): $e',
+          );
+          // Clear the future so the Close-button fallback can run a fresh attempt.
+          _autoSaveFuture = null;
+        });
   }
 
   /// Performs the full server-side save: create claim row (if not already
@@ -2329,20 +2668,23 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
 
     if (_uploadedDocumentIds.isNotEmpty) {
       final result = await di.sl<ClaimsRemoteDataSource>().attachClaimDocuments(
-            claimId: finalClaimId,
-            documentIds: _uploadedDocumentIds.map((d) => d.id).toList(),
-          );
+        claimId: finalClaimId,
+        documentIds: _uploadedDocumentIds.map((d) => d.id).toList(),
+      );
       debugPrint(
-          '[AutoSave] attached ${result['attachedCount']} document(s) to $finalClaimId');
+        '[AutoSave] attached ${result['attachedCount']} document(s) to $finalClaimId',
+      );
     }
 
     final convResult = await di.sl<ChatRemoteDataSource>().saveConversation(
-          threadId: _threadId,
-          claimId: finalClaimId,
-          externalReference: externalRef,
-          messages: _buildConversationMessagesPayload(),
-        );
-    debugPrint('[AutoSave] conversation saved: ${convResult['conversationId']}');
+      threadId: _threadId,
+      claimId: finalClaimId,
+      externalReference: externalRef,
+      messages: _buildConversationMessagesPayload(),
+    );
+    debugPrint(
+      '[AutoSave] conversation saved: ${convResult['conversationId']}',
+    );
   }
 
   Future<void> _onCloseConversation(_ChatMsg doneMsg) async {
@@ -2425,9 +2767,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       // Treat the final_summary payload as the authoritative source so
       // _runSaveClaimAndConversation maps the human-readable keys via
       // _mapSaveSummaryToDto and creates a proper claim row.
-      await _runSaveClaimAndConversation(
-        saveSummaryPayload: msg.payload,
-      );
+      await _runSaveClaimAndConversation(saveSummaryPayload: msg.payload);
       _savedOnSummary = true;
     } catch (e) {
       errorMessage = 'Failed to save claim: $e';
@@ -2482,10 +2822,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
 
     try {
       // Add the chat thread ID so the claim is linked to this conversation
-      final payload = {
-        ...claimData,
-        'chatThreadId': _threadId,
-      };
+      final payload = {...claimData, 'chatThreadId': _threadId};
 
       final dataSource = di.sl<ClaimsRemoteDataSource>();
       final response = await dataSource.createClaim(payload);
@@ -2493,14 +2830,17 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       if (!mounted) return;
 
       final claimNumber = response['claimNumber'] as String? ?? '';
-      _submittedClaimId = (response['id'] ?? response['claimId'] ?? claimNumber).toString();
+      _submittedClaimId = (response['id'] ?? response['claimId'] ?? claimNumber)
+          .toString();
 
       setState(() {
-        _messages.add(_ChatMsg(
-          text: 'Claim **$claimNumber** has been submitted successfully!',
-          isUser: false,
-          animate: true,
-        ));
+        _messages.add(
+          _ChatMsg(
+            text: 'Claim **$claimNumber** has been submitted successfully!',
+            isUser: false,
+            animate: true,
+          ),
+        );
         _submittingClaim = false;
       });
       _scrollToBottom();
@@ -2508,10 +2848,12 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _messages.add(_ChatMsg(
-          text: 'Failed to submit claim. Please try again.',
-          isUser: false,
-        ));
+        _messages.add(
+          _ChatMsg(
+            text: 'Failed to submit claim. Please try again.',
+            isUser: false,
+          ),
+        );
         _submittingClaim = false;
       });
       _scrollToBottom();
@@ -2572,7 +2914,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                 return Container(
                   margin: const EdgeInsets.only(bottom: 6),
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 10),
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(12),
@@ -2777,12 +3121,19 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           decoration: InputDecoration(
             hintText: 'Enter street, city or zip code',
             hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade400),
-            prefixIcon: Icon(Icons.location_on_outlined,
-                size: 18, color: Colors.grey.shade400),
-            prefixIconConstraints:
-                const BoxConstraints(minWidth: 40, minHeight: 0),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            prefixIcon: Icon(
+              Icons.location_on_outlined,
+              size: 18,
+              color: Colors.grey.shade400,
+            ),
+            prefixIconConstraints: const BoxConstraints(
+              minWidth: 40,
+              minHeight: 0,
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 12,
+            ),
             isDense: true,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(22),
@@ -2882,13 +3233,17 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                           height: 16,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(Colors.white),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
                           ),
                         )
                       else
-                        const Icon(Icons.check_circle_outline,
-                            size: 18, color: Colors.white),
+                        const Icon(
+                          Icons.check_circle_outline,
+                          size: 18,
+                          color: Colors.white,
+                        ),
                       const SizedBox(width: 8),
                       const Text(
                         'DONE',
@@ -2918,8 +3273,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         if (picked != null) ...[
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: Image.file(picked,
-                width: 48, height: 48, fit: BoxFit.cover),
+            child: Image.file(picked, width: 48, height: 48, fit: BoxFit.cover),
           ),
           const SizedBox(width: 10),
         ] else ...[
@@ -2930,8 +3284,11 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
               color: const Color(0xFFF0F2F7),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(Icons.image_outlined,
-                color: Colors.grey.shade500, size: 22),
+            child: Icon(
+              Icons.image_outlined,
+              color: Colors.grey.shade500,
+              size: 22,
+            ),
           ),
           const SizedBox(width: 10),
         ],
@@ -2969,10 +3326,14 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           onPressed: (atCap || _uploadingFiles)
               ? null
               : () => _onPickAngleImage(angle),
-          icon: Icon(picked == null ? Icons.camera_alt_outlined : Icons.refresh,
-              size: 16),
-          label: Text(picked == null ? 'Upload' : 'Replace',
-              style: const TextStyle(fontSize: 12)),
+          icon: Icon(
+            picked == null ? Icons.camera_alt_outlined : Icons.refresh,
+            size: 16,
+          ),
+          label: Text(
+            picked == null ? 'Upload' : 'Replace',
+            style: const TextStyle(fontSize: 12),
+          ),
           style: TextButton.styleFrom(
             foregroundColor: _kBlue,
             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -3157,15 +3518,20 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                   return Container(
                     margin: const EdgeInsets.only(bottom: 8),
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: Colors.grey.shade200),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.description_outlined,
-                            size: 20, color: _kBlue),
+                        const Icon(
+                          Icons.description_outlined,
+                          size: 20,
+                          color: _kBlue,
+                        ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Column(
@@ -3193,8 +3559,11 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                         ),
                         GestureDetector(
                           onTap: () => _onRemoveDocument(index),
-                          child: Icon(Icons.close,
-                              size: 18, color: Colors.grey.shade500),
+                          child: Icon(
+                            Icons.close,
+                            size: 18,
+                            color: Colors.grey.shade500,
+                          ),
                         ),
                       ],
                     ),
@@ -3210,48 +3579,110 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                 ),
               ],
               const SizedBox(height: 12),
-              // Upload button
-              GestureDetector(
-                onTap: _uploadingFiles
-                    ? null
-                    : (_pickedDocuments.isNotEmpty &&
-                            _pickedDocuments.length <= _maxDocuments
-                        ? () => _onSubmitDocuments(msg)
-                        : _onPickDocuments),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+              // Upload / action buttons
+              Builder(
+                builder: (_) {
+                  final pickedCount = _pickedDocuments.length;
+                  final totalCount = pickedCount + alreadyUploaded;
+                  final canAddMore = pickedCount < _maxDocuments;
+                  final minReached = totalCount >= minCount;
+
+                  if (pickedCount == 0) {
+                    return _docActionButton(
+                      label: 'UPLOAD',
+                      icon: Icons.camera_alt_outlined,
+                      enabled: !_uploadingFiles,
+                      onTap: _onPickDocuments,
+                    );
+                  }
+
+                  return Row(
                     children: [
-                      Icon(
-                        _pickedDocuments.isNotEmpty
-                            ? Icons.check_circle_outline
-                            : Icons.camera_alt_outlined,
-                        size: 18,
-                        color: _kDark,
+                      Expanded(
+                        child: _docActionButton(
+                          label: 'ADD',
+                          icon: Icons.add,
+                          enabled: !_uploadingFiles && canAddMore,
+                          onTap: _onPickDocuments,
+                        ),
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        _pickedDocuments.isNotEmpty ? 'DONE' : 'UPLOAD',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: _kDark,
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _docActionButton(
+                          label: 'DONE',
+                          icon: Icons.check_circle_outline,
+                          enabled: !_uploadingFiles && minReached,
+                          onTap: () => _onSubmitDocuments(msg),
                         ),
                       ),
                     ],
-                  ),
-                ),
+                  );
+                },
               ),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  Widget _docActionButton({
+    required String label,
+    required IconData icon,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
+    final color = enabled ? _kDark : Colors.grey.shade400;
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: enabled ? Colors.grey.shade300 : Colors.grey.shade200,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 18, color: color),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─── SKIP trigger UI ─────────────────────────────────────────────────────
+  Widget _buildSkipTrigger() {
+    return GestureDetector(
+      onTap: () => _onSuggestionTap('Skip'),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _kBlue),
+        ),
+        child: const Text(
+          'Skip',
+          style: TextStyle(
+            fontSize: 13,
+            color: _kBlue,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ),
     );
   }
 
@@ -3273,21 +3704,21 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: List.generate(3, (i) {
-            return TweenAnimationBuilder<double>(
-              tween: Tween(begin: 0, end: 1),
-              duration: Duration(milliseconds: 600 + (i * 200)),
-              builder: (context, value, _) {
-                return Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 2),
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.grey.shade400,
-                  ),
+                return TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0, end: 1),
+                  duration: Duration(milliseconds: 600 + (i * 200)),
+                  builder: (context, value, _) {
+                    return Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 2),
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.grey.shade400,
+                      ),
+                    );
+                  },
                 );
-              },
-            );
               }),
             ),
           ),
@@ -3302,10 +3733,15 @@ final _botMarkdownStyle = MarkdownStyleSheet(
   p: const TextStyle(fontSize: 14, color: _kDark, height: 1.4),
   pPadding: EdgeInsets.zero,
   strong: const TextStyle(
-    fontSize: 14, color: _kDark, fontWeight: FontWeight.bold, height: 1.4,
+    fontSize: 14,
+    color: _kDark,
+    fontWeight: FontWeight.bold,
+    height: 1.4,
   ),
   tableHead: const TextStyle(
-    fontSize: 13, fontWeight: FontWeight.bold, color: _kDark,
+    fontSize: 13,
+    fontWeight: FontWeight.bold,
+    color: _kDark,
   ),
   tableBody: const TextStyle(fontSize: 13, color: _kDark),
   tableBorder: TableBorder.all(color: Colors.grey.shade300, width: 0.5),
@@ -3394,6 +3830,11 @@ class _ChatMsg {
   final List<String> imagePaths;
   final List<String> documentNames;
 
+  /// Angles flagged as `angle_matches: false` by `/validate-images`. When
+  /// non-empty, the bubble renders a per-angle "Upload `<angle>`" button that
+  /// re-picks just that slot in `_angleImages`.
+  final List<String> validationFailedAngles;
+
   const _ChatMsg({
     required this.text,
     required this.isUser,
@@ -3406,6 +3847,7 @@ class _ChatMsg {
     this.payload,
     this.imagePaths = const [],
     this.documentNames = const [],
+    this.validationFailedAngles = const [],
   });
 }
 
@@ -3424,6 +3866,7 @@ class _DocTriggerProgress {
 class _UploadedAsset {
   final String? id;
   final String? localPath;
+
   /// 'Image' or 'Document'. Drives the photo-vs-document split in the review
   /// card's upload counts.
   final String kind;
@@ -3522,4 +3965,3 @@ class _ImageViewerPageState extends State<_ImageViewerPage> {
     );
   }
 }
-

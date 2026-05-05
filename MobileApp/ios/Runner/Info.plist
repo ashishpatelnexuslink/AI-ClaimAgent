@@ -72,6 +72,12 @@
 	<string>ClaimAI needs microphone access for voice-based claim filing.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>ClaimAI uses speech recognition to convert your voice input into text for filing claims.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>ClaimAI needs camera access to capture photos of vehicle damage and supporting documents for your claim.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>ClaimAI needs access to your photo library so you can attach existing images of the incident or documents to your claim.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>ClaimAI needs permission to save claim-related photos to your library.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>ClaimAI needs your location to record where the incident occurred.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
