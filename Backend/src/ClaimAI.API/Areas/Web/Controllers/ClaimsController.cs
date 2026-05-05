@@ -182,7 +182,9 @@ public class ClaimsController : ControllerBase
             ContentType = d.ContentType,
             FileSize = d.FileSize,
             Kind = d.Kind,
-            Category = d.Category,
+            GroupKey = d.GroupKey,
+            Label = d.Label,
+            Angle = d.Angle,
             CreatedAt = d.CreatedAt,
         }).ToList();
 

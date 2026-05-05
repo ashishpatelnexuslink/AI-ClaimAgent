@@ -77,6 +77,16 @@ public class TemplateService : ITemplateService
     }
 
     /// <inheritdoc />
+    public async Task<Result<TemplateDetailDto>> GetSingleActiveAsync(CancellationToken cancellationToken = default)
+    {
+        var template = await _templates.GetSingleActiveAsync(cancellationToken);
+        if (template is null)
+            return Result<TemplateDetailDto>.Failure("No active template found.");
+
+        return Result<TemplateDetailDto>.Success(ToDetailDto(template));
+    }
+
+    /// <inheritdoc />
     public async Task<Result<TemplateDetailDto>> CreateAsync(CreateTemplateDto dto, CancellationToken cancellationToken = default)
     {
         await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);

@@ -42,7 +42,8 @@ public class ClaimDocumentsController : ControllerBase
     public async Task<IActionResult> Upload(
         IFormFile file,
         [FromForm] string? kind,
-        [FromForm] string? category,
+        [FromForm] string? groupKey,
+        [FromForm] string? label,
         [FromForm] string? chatThreadId,
         [FromForm] string? angle)
     {
@@ -64,13 +65,14 @@ public class ClaimDocumentsController : ControllerBase
             return BadRequest(ApiResponse<object>.FailResponse(
                 $"Content type '{file.ContentType}' is not allowed for {normalisedKind}."));
 
-        var trimmedCategory = string.IsNullOrWhiteSpace(category) ? null : category.Trim();
+        var trimmedGroupKey = string.IsNullOrWhiteSpace(groupKey) ? null : groupKey.Trim();
+        var trimmedLabel = string.IsNullOrWhiteSpace(label) ? null : label.Trim();
         var trimmedAngle = string.IsNullOrWhiteSpace(angle) ? null : angle.Trim();
-        var categoryFolder = SanitizeCategoryFolder(trimmedCategory);
+        var groupFolder = SanitizeGroupFolder(trimmedGroupKey);
 
         var uploadsRoot = _env.WebRootPath
             ?? Path.Combine(_env.ContentRootPath, "wwwroot");
-        var uploadsDir = Path.Combine(uploadsRoot, "uploads", "claim-documents", categoryFolder);
+        var uploadsDir = Path.Combine(uploadsRoot, "uploads", "claim-documents", groupFolder);
         Directory.CreateDirectory(uploadsDir);
 
         var ext = Path.GetExtension(file.FileName);
@@ -82,7 +84,7 @@ public class ClaimDocumentsController : ControllerBase
             await file.CopyToAsync(stream);
         }
 
-        var relativeUrl = $"/uploads/claim-documents/{categoryFolder}/{storedName}";
+        var relativeUrl = $"/uploads/claim-documents/{groupFolder}/{storedName}";
 
         var doc = new ClaimDocument
         {
@@ -94,7 +96,8 @@ public class ClaimDocumentsController : ControllerBase
             ContentType = file.ContentType,
             FileSize = file.Length,
             Kind = normalisedKind,
-            Category = trimmedCategory,
+            GroupKey = trimmedGroupKey,
+            Label = trimmedLabel,
             Angle = trimmedAngle,
         };
         _context.ClaimDocuments.Add(doc);
@@ -109,7 +112,8 @@ public class ClaimDocumentsController : ControllerBase
             ContentType = doc.ContentType,
             FileSize = doc.FileSize,
             Kind = doc.Kind,
-            Category = doc.Category,
+            GroupKey = doc.GroupKey,
+            Label = doc.Label,
             Angle = doc.Angle,
             CreatedAt = doc.CreatedAt,
         };
@@ -142,7 +146,8 @@ public class ClaimDocumentsController : ControllerBase
             ContentType = d.ContentType,
             FileSize = d.FileSize,
             Kind = d.Kind,
-            Category = d.Category,
+            GroupKey = d.GroupKey,
+            Label = d.Label,
             Angle = d.Angle,
             CreatedAt = d.CreatedAt,
         }).ToList();
@@ -171,13 +176,13 @@ public class ClaimDocumentsController : ControllerBase
 
     /// <summary>
     /// Deletes every unattached (ClaimId == null) document for the current user
-    /// in the given chat thread, optionally narrowed by category. Used by the
+    /// in the given chat thread, optionally narrowed by groupKey. Used by the
     /// mobile chat flow to wipe a previous batch of uploads when the user
     /// re-uploads images for the same prompt (e.g. AI asks to retake the
     /// damage photo). Already-attached docs are left untouched.
     /// </summary>
     [HttpDelete("by-thread/{threadId}")]
-    public async Task<IActionResult> DeleteByThread(string threadId, [FromQuery] string? category)
+    public async Task<IActionResult> DeleteByThread(string threadId, [FromQuery] string? groupKey)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (userId is null) return Unauthorized();
@@ -185,15 +190,15 @@ public class ClaimDocumentsController : ControllerBase
         if (string.IsNullOrWhiteSpace(threadId))
             return BadRequest(ApiResponse<object>.FailResponse("threadId is required."));
 
-        var trimmedCategory = string.IsNullOrWhiteSpace(category) ? null : category.Trim();
+        var trimmedGroupKey = string.IsNullOrWhiteSpace(groupKey) ? null : groupKey.Trim();
 
         var query = _context.ClaimDocuments
             .Where(d => d.UserId == userId
                         && d.ChatThreadId == threadId
                         && d.ClaimId == null);
 
-        if (trimmedCategory != null)
-            query = query.Where(d => d.Category == trimmedCategory);
+        if (trimmedGroupKey != null)
+            query = query.Where(d => d.GroupKey == trimmedGroupKey);
 
         var docs = await query.ToListAsync();
         if (docs.Count == 0)
@@ -210,15 +215,14 @@ public class ClaimDocumentsController : ControllerBase
     }
 
     /// <summary>
-    /// Maps an arbitrary user-supplied category to a safe folder name. Anything
+    /// Maps an arbitrary user-supplied group key to a safe folder name. Anything
     /// outside [A-Za-z0-9_-] is dropped; empty input falls back to
-    /// "Uncategorized" so we never write into the parent claim-documents folder
-    /// (which would mix back into the legacy flat-storage shape).
+    /// "Uncategorized" so we never write into the parent claim-documents folder.
     /// </summary>
-    private static string SanitizeCategoryFolder(string? category)
+    private static string SanitizeGroupFolder(string? groupKey)
     {
-        if (string.IsNullOrWhiteSpace(category)) return "Uncategorized";
-        var cleaned = new string(category
+        if (string.IsNullOrWhiteSpace(groupKey)) return "Uncategorized";
+        var cleaned = new string(groupKey
             .Where(c => char.IsLetterOrDigit(c) || c == '_' || c == '-')
             .ToArray());
         return string.IsNullOrEmpty(cleaned) ? "Uncategorized" : cleaned;
@@ -227,7 +231,7 @@ public class ClaimDocumentsController : ControllerBase
     /// <summary>
     /// Resolves a stored <see cref="ClaimDocument.RelativeUrl"/> to its on-disk
     /// path under wwwroot and deletes the file. Tolerant of legacy rows that
-    /// were saved before the category-subfolder layout existed. Errors are
+    /// were saved before the group-subfolder layout existed. Errors are
     /// swallowed — the DB row is the source of truth.
     /// </summary>
     private void TryDeletePhysicalFile(string? relativeUrl)

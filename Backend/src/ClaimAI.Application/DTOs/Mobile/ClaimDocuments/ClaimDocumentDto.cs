@@ -9,7 +9,8 @@ public class ClaimDocumentDto
     public string ContentType { get; set; } = string.Empty;
     public long FileSize { get; set; }
     public string Kind { get; set; } = string.Empty;
-    public string? Category { get; set; }
+    public string? GroupKey { get; set; }
+    public string? Label { get; set; }
     public string? Angle { get; set; }
     public DateTime CreatedAt { get; set; }
 }
