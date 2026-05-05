@@ -67,6 +67,14 @@ class _SpeechEntry {
   const _SpeechEntry(this.messageIndex, this.totalChars);
 }
 
+/// Running progress for a single GET_DOCUMENT trigger so the user can satisfy
+/// `min_count` across multiple separate uploads.
+class _DocTriggerProgress {
+  int count = 0;
+  final List<String> imagePaths = [];
+  final List<String> docNames = [];
+}
+
 class VoiceModeScreen extends StatefulWidget {
   const VoiceModeScreen({super.key});
 
@@ -96,6 +104,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     'pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx',
   ];
   final List<String> _uploadedDocumentIds = [];
+
+  // Per-GET_DOCUMENT-trigger upload progress. Lets the user satisfy
+  // `min_count` across multiple separate uploads instead of picking everything
+  // at once. Cleared once the min is reached and the bot advances.
+  final Map<_ChatMessage, _DocTriggerProgress> _docTriggerProgress = {};
   final List<DateTime> _messageTimestamps = [];
   String? _submittedClaimId;
   bool _fetchingLocation = false;
@@ -133,6 +146,12 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   final List<_SpeechEntry> _pendingSpeech = [];
   _SpeechEntry? _currentSpeech;
   int _spokenChars = 0;
+  // Bot message indices that have been added to `_messages` but whose TTS
+  // utterance hasn't started yet. The list view hides these so back-to-back
+  // bot replies appear one at a time, in lockstep with what the avatar is
+  // actually saying — no more "second bubble + buttons appear while the first
+  // is still being typed out".
+  final Set<int> _pendingRevealIndices = {};
 
   // ─── Auto-listen after bot finishes speaking ───────────────────────────
   Timer? _autoListenTimer;
@@ -258,6 +277,29 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   }
 
   Future<void> _initTts() async {
+    // iOS-only: opt into a shared `playAndRecord` audio session so the mic
+    // stays usable after TTS playback. flutter_tts defaults to `playback`,
+    // which is exclusive — once it has been activated, SFSpeechRecognizer
+    // can't acquire the input route, so on iPhone the listening UI silently
+    // does nothing after the first bot reply.
+    if (Platform.isIOS) {
+      try {
+        await _tts.setSharedInstance(true);
+        await _tts.setIosAudioCategory(
+          IosTextToSpeechAudioCategory.playAndRecord,
+          [
+            IosTextToSpeechAudioCategoryOptions.defaultToSpeaker,
+            IosTextToSpeechAudioCategoryOptions.allowBluetooth,
+            IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
+            IosTextToSpeechAudioCategoryOptions.mixWithOthers,
+          ],
+          IosTextToSpeechAudioMode.voicePrompt,
+        );
+      } catch (_) {
+        // Older flutter_tts builds may lack one of these APIs — fall through
+        // and accept whatever the default session is.
+      }
+    }
     await _tts.setLanguage('en-US');
     await _tts.setSpeechRate(0.5);
     await _tts.setPitch(1.0);
@@ -275,8 +317,13 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         _currentSpeech =
             _pendingSpeech.isNotEmpty ? _pendingSpeech.removeAt(0) : null;
         _spokenChars = 0;
+        if (_currentSpeech != null) {
+          _pendingRevealIndices.remove(_currentSpeech!.messageIndex);
+        }
       });
       _speakController.repeat(reverse: true);
+      // A queued bubble just became visible — keep it in view.
+      _scrollToBottom();
     });
     _tts.setProgressHandler((text, start, end, word) {
       if (!mounted || _currentSpeech == null) return;
@@ -291,6 +338,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       });
       _speakController.stop();
       _speakController.reset();
+      // Trigger widgets (date picker, upload card, final-summary card,
+      // suggestion chips) only render once speech finishes — scroll so the
+      // newly-revealed control is visible without a manual swipe.
+      _scrollToBottom();
       _scheduleAutoListen();
     });
     _tts.setCancelHandler(() {
@@ -300,6 +351,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         _currentSpeech = null;
         _spokenChars = 0;
         _pendingSpeech.clear();
+        // Reveal anything that was waiting on a now-cancelled utterance so
+        // those bubbles don't stay hidden forever.
+        _pendingRevealIndices.clear();
       });
       _speakController.stop();
       _speakController.reset();
@@ -311,6 +365,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         _currentSpeech = null;
         _spokenChars = 0;
         _pendingSpeech.clear();
+        _pendingRevealIndices.clear();
       });
       _speakController.stop();
       _speakController.reset();
@@ -391,6 +446,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     if (spoken.isEmpty) return;
     if (messageIndex != null) {
       _pendingSpeech.add(_SpeechEntry(messageIndex, spoken.length));
+      _pendingRevealIndices.add(messageIndex);
     }
     await _tts.speak(spoken);
   }
@@ -920,7 +976,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           bytes: bytes,
           fileName: name.isEmpty ? 'image.jpg' : name,
           kind: 'Image',
-          category: category,
+          groupKey: category,
           chatThreadId: _threadId,
           angle: entry.key,
         );
@@ -976,7 +1032,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           bytes: bytes,
           fileName: name.isEmpty ? 'image.jpg' : name,
           kind: 'Image',
-          category: category,
+          groupKey: category,
           chatThreadId: _threadId,
         );
         final id = (response['id'] ?? '').toString();
@@ -1034,7 +1090,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     setState(() => _pickedDocuments.removeAt(index));
   }
 
-  Future<void> _onSubmitDocuments() async {
+  Future<void> _onSubmitDocuments(_ChatMessage msg) async {
     debugPrint('[Upload] _onSubmitDocuments enter '
         'picked=${_pickedDocuments.length} '
         'botTyping=$_botTyping uploading=$_uploadingFiles');
@@ -1044,6 +1100,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     }
 
     final docs = List<PlatformFile>.from(_pickedDocuments);
+    final progress =
+        _docTriggerProgress.putIfAbsent(msg, () => _DocTriggerProgress());
+    final minCount = _payloadInt(msg, 'min_count') ?? 1;
     setState(() => _uploadingFiles = true);
 
     int uploadedCount = 0;
@@ -1063,7 +1122,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           bytes: bytes,
           fileName: doc.name,
           kind: 'Document',
-          category: category,
+          groupKey: category,
           chatThreadId: _threadId,
         );
         final id = (response['id'] ?? '').toString();
@@ -1082,35 +1141,47 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     }
 
     if (!mounted) return;
-    final count = uploadedCount == 0 ? docs.length : uploadedCount;
-    final names = docs.map((d) => d.name).toList();
-    final imagePaths = <String>[];
-    final docNames = <String>[];
+    final batchCount = uploadedCount == 0 ? docs.length : uploadedCount;
     for (final d in docs) {
       final ext = d.extension?.toLowerCase() ?? '';
       final isImage = const {'jpg', 'jpeg', 'png'}.contains(ext);
       if (isImage && d.path != null) {
-        imagePaths.add(d.path!);
+        progress.imagePaths.add(d.path!);
       } else {
-        docNames.add(d.name);
+        progress.docNames.add(d.name);
       }
     }
-    // Fall back to names list if no classification happened (e.g., web path-less files).
-    if (imagePaths.isEmpty && docNames.isEmpty) {
-      docNames.addAll(names);
+    progress.count += batchCount;
+
+    // Below `min_count` — keep the trigger card visible so the user can
+    // upload another batch. No user bubble yet; the trigger UI shows progress.
+    if (progress.count < minCount) {
+      setState(() {
+        _pickedDocuments.clear();
+        _uploadingFiles = false;
+      });
+      return;
     }
+
+    final total = progress.count;
+    final imagePaths = List<String>.from(progress.imagePaths);
+    final docNames = List<String>.from(progress.docNames);
+    if (imagePaths.isEmpty && docNames.isEmpty) {
+      docNames.addAll(docs.map((d) => d.name));
+    }
+    _docTriggerProgress.remove(msg);
     setState(() {
       _pickedDocuments.clear();
       _uploadingFiles = false;
     });
     debugPrint('[Upload] docs submit → uploadedCount=$uploadedCount '
-        'fallbackCount=${docs.length} sending="${count.toString()}"');
+        'fallbackCount=${docs.length} sending="${total.toString()}"');
     _addUserAttachmentMessage(
-      text: '$count document${count > 1 ? 's' : ''} uploaded',
+      text: '$total document${total > 1 ? 's' : ''} uploaded',
       imagePaths: imagePaths,
       documentNames: docNames,
     );
-    _streamBotReply(count.toString());
+    _streamBotReply(total.toString());
   }
 
   void _onSkipDocuments() {
@@ -1371,20 +1442,20 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         break;
       }
     }
-    if (text.contains('damage')) return 'DamagePhoto';
+    if (text.contains('damage')) return 'damage_photos';
     if (text.contains('license') || text.contains('licence')) {
-      return 'DriverLicense';
+      return 'driver_license';
     }
-    if (text.contains('police')) return 'PoliceReport';
+    if (text.contains('police')) return 'police_report';
     if (text.contains('repair') ||
         text.contains('bill') ||
         text.contains('invoice')) {
-      return 'BillInvoice';
+      return 'bill_invoice';
     }
     if (text.contains('vehicle') || text.contains('car')) {
-      return isImage ? 'VehiclePhoto' : 'SupportingDocument';
+      return isImage ? 'vehicle_photos' : 'supporting_docs';
     }
-    return isImage ? 'VehiclePhoto' : 'SupportingDocument';
+    return isImage ? 'vehicle_photos' : 'supporting_docs';
   }
 
   List<Map<String, dynamic>> _buildConversationMessagesPayload() {
@@ -1607,6 +1678,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                       final msg = _messages[index];
                       if (msg.isTyping) return _buildTypingIndicator();
                       if (msg.type == 'bot') {
+                        // Hide bot bubbles whose TTS hasn't started yet — the
+                        // queued speech entries reveal them one at a time.
+                        if (_pendingRevealIndices.contains(index)) {
+                          return const SizedBox.shrink();
+                        }
                         return _buildBotBubble(msg, index);
                       }
                       return _buildUserBubble(msg);
@@ -1843,9 +1919,20 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   int _lastBotIndex() {
     for (int i = _messages.length - 1; i >= 0; i--) {
       final m = _messages[i];
-      if (m.type == 'bot' && !m.isTyping) return i;
+      if (m.type == 'bot' &&
+          !m.isTyping &&
+          !_pendingRevealIndices.contains(i)) {
+        return i;
+      }
     }
     return -1;
+  }
+
+  /// True while the bot bubble at [index] is mid-utterance — chips, trigger
+  /// buttons and other interactive affordances are suppressed during speech
+  /// so the user sees them only after the message has finished being read.
+  bool _isCurrentlySpeaking(int index) {
+    return _currentSpeech?.messageIndex == index;
   }
 
   Widget _buildBotAvatar({bool animate = false}) {
@@ -1893,13 +1980,22 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   Widget _buildBotBubble(_ChatMessage msg, int index) {
     final isLastBot = index == _lastBotIndex();
     final visibleText = _visibleBotText(index, msg.text);
+    // The GET_DOCUMENT trigger renders its own Skip control inside the upload
+    // card, so suppress a duplicate "Skip" chip on the same turn.
+    final List<String> visibleChips = (msg.chips ?? [])
+        .where((s) => s != 'Skip' || !msg.triggers.contains('GET_DOCUMENT'))
+        .toList();
 
     // Final summary uses the dedicated "Review Your Claim" card with a
     // "Confirm & Submit Claim" CTA that persists to the database.
     if (msg.payloadType == 'final_summary' &&
         msg.payload != null &&
         msg.payload!.isNotEmpty) {
-      return _buildFinalSummaryCard(msg: msg, isLastBot: isLastBot);
+      return _buildFinalSummaryCard(
+        msg: msg,
+        isLastBot: isLastBot,
+        index: index,
+      );
     }
 
     // Structured summary payload → render as a card (matches chat mode).
@@ -1911,6 +2007,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         fields: structured,
         introText: visibleText,
         isLastBot: isLastBot,
+        index: index,
       );
     }
 
@@ -1923,6 +2020,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         fields: policyFields,
         introText: _policyIntroText(visibleText),
         isLastBot: isLastBot,
+        index: index,
       );
     }
 
@@ -1966,7 +2064,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                           height: 1.4,
                         ),
                       ),
-                      if (_sampleImagesOf(msg).isNotEmpty)
+                      if (_showSampleOf(msg))
                         Padding(
                           padding: const EdgeInsets.only(top: 6),
                           child: GestureDetector(
@@ -1990,17 +2088,26 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
             ],
           ),
 
-          // Suggestion chips — only on the latest bot message with chips.
-          if (msg.chips != null && isLastBot && !_botTyping) ...[
+          // Suggestion chips — only on the latest bot message with chips,
+          // and only after its speech has finished playing. When the same
+          // turn carries a GET_DOCUMENT trigger, drop the "Skip" chip since
+          // the document trigger renders its own Skip control.
+          if (visibleChips.isNotEmpty &&
+              isLastBot &&
+              !_botTyping &&
+              !_isCurrentlySpeaking(index)) ...[
             const SizedBox(height: 10),
             Padding(
               padding: const EdgeInsets.only(left: 46),
-              child: _buildChips(msg.chips!),
+              child: _buildChips(visibleChips),
             ),
           ],
 
-          // Trigger widgets — only on the latest bot message.
-          if (isLastBot && !_botTyping && msg.triggers.isNotEmpty) ...[
+          // Trigger widgets — only on the latest bot message, after speech.
+          if (isLastBot &&
+              !_botTyping &&
+              !_isCurrentlySpeaking(index) &&
+              msg.triggers.isNotEmpty) ...[
             const SizedBox(height: 10),
             Padding(
               padding: const EdgeInsets.only(left: 46),
@@ -2016,7 +2123,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           ],
 
           // Close button on terminal (done) message.
-          if (isLastBot && !_botTyping && msg.messageType == 'done') ...[
+          if (isLastBot &&
+              !_botTyping &&
+              !_isCurrentlySpeaking(index) &&
+              msg.messageType == 'done') ...[
             const SizedBox(height: 10),
             Padding(
               padding: const EdgeInsets.only(left: 46),
@@ -2217,16 +2327,24 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       spacing: 8,
       runSpacing: 8,
       children: options.map((option) {
-        return OutlinedButton(
-          onPressed: () => _handleChipSelection(option),
-          style: OutlinedButton.styleFrom(
-            side: const BorderSide(color: _kBlue),
-            shape: const StadiumBorder(),
-            foregroundColor: _kBlue,
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        return GestureDetector(
+          onTap: () => _handleChipSelection(option),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: _kBlue),
+            ),
+            child: Text(
+              option,
+              style: const TextStyle(
+                fontSize: 13,
+                color: _kBlue,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
-          child: Text(option, style: const TextStyle(fontSize: 13)),
         );
       }).toList(),
     );
@@ -2245,7 +2363,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       case 'GET_IMAGE':
         return _buildImageTrigger(msg);
       case 'GET_DOCUMENT':
-        return _buildDocumentTrigger();
+        return _buildDocumentTrigger(msg);
       case 'SUBMIT_CLAIM':
         return _buildSubmitClaimTrigger();
       default:
@@ -2260,31 +2378,22 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     return const [];
   }
 
-  /// Returns the raw base64-encoded sample images from a `GET_IMAGE` payload
-  /// (key `sample_images`). Empty when the bot did not include samples.
-  List<String> _sampleImagesOf(_ChatMessage msg) {
-    final raw = msg.payload?['sample_images'];
-    if (raw is List) {
-      return raw
-          .map((e) => e.toString())
-          .where((s) => s.isNotEmpty)
-          .toList(growable: false);
-    }
-    return const [];
+  /// Whether the bot's `GET_IMAGE` payload requested showing the bundled
+  /// sample-photos affordance (`payload.show_sample == true`).
+  bool _showSampleOf(_ChatMessage msg) {
+    if (!msg.triggers.contains('GET_IMAGE')) return false;
+    final raw = msg.payload?['show_sample'];
+    if (raw is bool) return raw;
+    if (raw is String) return raw.toLowerCase() == 'true';
+    return false;
   }
 
   void _openSampleImagesViewer(_ChatMessage msg) {
-    final samples = _sampleImagesOf(msg);
-    if (samples.isEmpty) return;
-    final angles = _allowedAnglesOf(msg);
-    final labels = <String>[
-      for (var i = 0; i < samples.length; i++)
-        i < angles.length ? _humanizeAngle(angles[i]) : 'Sample ${i + 1}',
-    ];
+    if (!_showSampleOf(msg)) return;
     showSampleImagesDialog(
       context: context,
-      base64Images: samples,
-      labels: labels,
+      assetPaths: const ['assets/images/damage_photos_sample.png'],
+      labels: const [],
     );
   }
 
@@ -2814,7 +2923,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     );
   }
 
-  Widget _buildDocumentTrigger() {
+  Widget _buildDocumentTrigger(_ChatMessage msg) {
+    final minCount = _payloadInt(msg, 'min_count') ?? 1;
+    final maxCount = _payloadInt(msg, 'max_count') ?? _maxDocuments;
+    final alreadyUploaded = _docTriggerProgress[msg]?.count ?? 0;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2844,7 +2957,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
               ),
               const SizedBox(height: 4),
               Text(
-                'You can upload photos or PDF files.',
+                minCount > 1
+                    ? '$alreadyUploaded of $maxCount uploaded · min $minCount'
+                    : 'You can upload photos or PDF files.',
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
               ),
               if (_pickedDocuments.isNotEmpty) ...[
@@ -2914,7 +3029,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                     ? null
                     : (_pickedDocuments.isEmpty
                         ? _onPickDocuments
-                        : _onSubmitDocuments),
+                        : () => _onSubmitDocuments(msg)),
                 child: Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 10),
@@ -3064,6 +3179,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   Widget _buildFinalSummaryCard({
     required _ChatMessage msg,
     required bool isLastBot,
+    required int index,
   }) {
     final payload = msg.payload!;
     final basic = <MapEntry<String, String>>[];
@@ -3092,7 +3208,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Bot avatar + intro bubble.
+          // Bot avatar + intro bubble. The intro reveals progressively in
+          // sync with TTS playback; the summary card below is held back until
+          // speech finishes so the user never sees the table while the
+          // sentence above it is still typing out.
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -3118,7 +3237,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                       ],
                     ),
                     child: _buildFormattedText(
-                      msg.text,
+                      _visibleBotText(index, msg.text),
                       const TextStyle(
                         fontSize: 14,
                         color: _kDark,
@@ -3129,6 +3248,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                 ),
             ],
           ),
+          if (!_isCurrentlySpeaking(index)) ...[
           const SizedBox(height: 10),
           Padding(
             padding: const EdgeInsets.only(left: 46),
@@ -3200,7 +3320,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                       child: ElevatedButton(
                         onPressed: (!isLastBot ||
                                 _confirmingFinalSummary ||
-                                _botTyping)
+                                _botTyping ||
+                                _isCurrentlySpeaking(index))
                             ? null
                             : () => _onConfirmFinalSummary(msg),
                         style: ElevatedButton.styleFrom(
@@ -3241,6 +3362,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
               ),
             ),
           ),
+          ],
         ],
       ),
     );
@@ -3319,6 +3441,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     required Map<String, String> fields,
     required String introText,
     required bool isLastBot,
+    required int index,
   }) {
     final statusValue = fields.entries
         .where((e) => e.key.toLowerCase() == 'status')
@@ -3372,7 +3495,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
             ],
           ),
 
-          // Card itself (indented under the avatar).
+          // Card itself (indented under the avatar). Hidden while the intro
+          // bubble is still being read aloud — we wait for the typewriter to
+          // finish before revealing the structured fields, so the user never
+          // sees the table while the message above it is mid-typing.
+          if (!_isCurrentlySpeaking(index))
           Padding(
             padding: const EdgeInsets.only(left: 46, top: 10),
             child: ConstrainedBox(
@@ -3495,9 +3622,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
             ),
           ),
 
-          // Suggestion chips on last bot message.
+          // Suggestion chips on last bot message — only after speech ends.
           if (isLastBot &&
               !_botTyping &&
+              !_isCurrentlySpeaking(index) &&
               msg.chips != null &&
               msg.chips!.isNotEmpty) ...[
             const SizedBox(height: 10),
@@ -3508,7 +3636,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           ],
 
           // Trigger widgets on last bot message.
-          if (isLastBot && !_botTyping && msg.triggers.isNotEmpty) ...[
+          if (isLastBot &&
+              !_botTyping &&
+              !_isCurrentlySpeaking(index) &&
+              msg.triggers.isNotEmpty) ...[
             const SizedBox(height: 10),
             Padding(
               padding: const EdgeInsets.only(left: 46),
@@ -3524,7 +3655,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           ],
 
           // Close button on terminal message.
-          if (isLastBot && !_botTyping && msg.messageType == 'done') ...[
+          if (isLastBot &&
+              !_botTyping &&
+              !_isCurrentlySpeaking(index) &&
+              msg.messageType == 'done') ...[
             const SizedBox(height: 10),
             Padding(
               padding: const EdgeInsets.only(left: 46),

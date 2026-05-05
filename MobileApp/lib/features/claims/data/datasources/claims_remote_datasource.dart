@@ -1,8 +1,42 @@
 import 'package:dio/dio.dart';
+import 'package:http_parser/http_parser.dart' show MediaType;
 import 'package:claim_ai/core/constants/api_constants.dart';
 import 'package:claim_ai/core/network/dio_client.dart';
 import 'package:claim_ai/features/claims/data/models/claim_model.dart';
 import 'package:claim_ai/features/claims/data/models/claim_summary_model.dart';
+
+/// Maps a file extension to the multipart Content-Type the backend expects.
+/// iOS's networking stack does not infer MIME from the extension, so without
+/// this every upload from an iPhone goes out as `application/octet-stream`
+/// — which the API's IFormFile validator rejects as "Server error".
+MediaType _mediaTypeFor(String fileName) {
+  final ext = fileName.contains('.')
+      ? fileName.split('.').last.toLowerCase()
+      : '';
+  switch (ext) {
+    case 'jpg':
+    case 'jpeg':
+      return MediaType('image', 'jpeg');
+    case 'png':
+      return MediaType('image', 'png');
+    case 'heic':
+    case 'heif':
+      return MediaType('image', 'heic');
+    case 'webp':
+      return MediaType('image', 'webp');
+    case 'pdf':
+      return MediaType('application', 'pdf');
+    case 'doc':
+      return MediaType('application', 'msword');
+    case 'docx':
+      return MediaType(
+        'application',
+        'vnd.openxmlformats-officedocument.wordprocessingml.document',
+      );
+    default:
+      return MediaType('application', 'octet-stream');
+  }
+}
 
 abstract class ClaimsRemoteDataSource {
   Future<List<ClaimModel>> getClaims({
@@ -17,18 +51,30 @@ abstract class ClaimsRemoteDataSource {
     required String id,
     required String status,
   });
+
+  /// Updates incident date / location / description on a Pending claim. The
+  /// backend rejects the update when the claim has progressed past Pending.
+  Future<ClaimModel> updateAccidentInfo({
+    required String id,
+    DateTime? incidentDate,
+    String? incidentLocation,
+    String? incidentDescription,
+  });
   Future<ClaimSummaryModel> getDashboardSummary();
   Future<Map<String, dynamic>> createClaim(Map<String, dynamic> claimData);
   Future<Map<String, dynamic>> createClaimFromChat(Map<String, dynamic> claimData);
 
   /// Uploads a single file to `/mobile/claim-documents` and returns the row
   /// that was created (including its `id`). [claimId] is always null on
-  /// upload — we attach later via [attachClaimDocuments].
+  /// upload — we attach later via [attachClaimDocuments]. [groupKey] / [label]
+  /// come from the active template's PhotoSetting / DocumentSetting and get
+  /// stored verbatim on the resulting `ClaimDocument` row.
   Future<Map<String, dynamic>> uploadClaimDocument({
     required List<int> bytes,
     required String fileName,
     required String kind,
-    String? category,
+    String? groupKey,
+    String? label,
     String? chatThreadId,
     String? angle,
   });
@@ -47,11 +93,11 @@ abstract class ClaimsRemoteDataSource {
   Future<void> deleteClaimDocument(String documentId);
 
   /// Deletes every unattached document the current user uploaded for the
-  /// given chat thread, optionally narrowed by category. Returns the ids of
+  /// given chat thread, optionally narrowed by groupKey. Returns the ids of
   /// the rows that were actually deleted so the caller can prune local state.
   Future<List<String>> deleteClaimDocumentsByThread({
     required String threadId,
-    String? category,
+    String? groupKey,
   });
 }
 
@@ -114,6 +160,25 @@ class ClaimsRemoteDataSourceImpl implements ClaimsRemoteDataSource {
   }
 
   @override
+  Future<ClaimModel> updateAccidentInfo({
+    required String id,
+    DateTime? incidentDate,
+    String? incidentLocation,
+    String? incidentDescription,
+  }) async {
+    final response = await _client.put(
+      ApiConstants.updateClaimAccidentInfo.replaceFirst('{id}', id),
+      data: {
+        'incidentDate': incidentDate?.toUtc().toIso8601String(),
+        'incidentLocation': incidentLocation,
+        'incidentDescription': incidentDescription,
+      },
+    );
+    return ClaimModel.fromJson(
+        response.data['data'] as Map<String, dynamic>);
+  }
+
+  @override
   Future<ClaimSummaryModel> getDashboardSummary() async {
     final response = await _client.get('${ApiConstants.claims}/summary');
     return ClaimSummaryModel.fromJson(
@@ -144,14 +209,20 @@ class ClaimsRemoteDataSourceImpl implements ClaimsRemoteDataSource {
     required List<int> bytes,
     required String fileName,
     required String kind,
-    String? category,
+    String? groupKey,
+    String? label,
     String? chatThreadId,
     String? angle,
   }) async {
     final formData = FormData.fromMap({
-      'file': MultipartFile.fromBytes(bytes, filename: fileName),
+      'file': MultipartFile.fromBytes(
+        bytes,
+        filename: fileName,
+        contentType: _mediaTypeFor(fileName),
+      ),
       'kind': kind,
-      'category': ?category,
+      'groupKey': ?groupKey,
+      'label': ?label,
       'chatThreadId': ?chatThreadId,
       'angle': ?angle,
     });
@@ -196,13 +267,13 @@ class ClaimsRemoteDataSourceImpl implements ClaimsRemoteDataSource {
   @override
   Future<List<String>> deleteClaimDocumentsByThread({
     required String threadId,
-    String? category,
+    String? groupKey,
   }) async {
     final response = await _client.delete(
       ApiConstants.deleteClaimDocumentsByThread
           .replaceFirst('{threadId}', threadId),
       queryParameters: {
-        if (category != null && category.isNotEmpty) 'category': category,
+        if (groupKey != null && groupKey.isNotEmpty) 'groupKey': groupKey,
       },
     );
     final data = response.data['data'];

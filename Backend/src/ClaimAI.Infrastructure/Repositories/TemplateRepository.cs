@@ -39,6 +39,19 @@ public class TemplateRepository : GenericRepository<Template>, ITemplateReposito
     }
 
     /// <inheritdoc />
+    public async Task<Template?> GetSingleActiveAsync(CancellationToken cancellationToken = default)
+    {
+        return await _dbSet
+            .Include(t => t.IdentityFields)
+            .Include(t => t.GroupRules)
+            .Include(t => t.PhotoSettings)
+            .Include(t => t.DocumentSettings)
+            .Where(t => t.Status == TemplateStatus.Active)
+            .OrderByDescending(t => t.UpdatedAt ?? t.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<(IReadOnlyList<Template> Items, int TotalCount)> ListAsync(
         string? companyName,
         InsuranceType? insuranceType,

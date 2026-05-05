@@ -24,6 +24,14 @@ public interface ITemplateRepository : IGenericRepository<Template>
     Task<Template?> GetActiveAsync(string companyName, InsuranceType insuranceType, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns the single active template (with children), regardless of
+    /// company / insurance type. Used by the mobile claim-summary page which
+    /// only knows there's "the active template" without a tenant filter. If
+    /// multiple Active rows exist, the most recently updated wins.
+    /// </summary>
+    Task<Template?> GetSingleActiveAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Lists templates (flat, no children) filtered by the supplied optional
     /// predicates and paged. Returns total count (before paging) for UI paging.
     /// </summary>

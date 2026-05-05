@@ -32,12 +32,24 @@ Uint8List? decodeBase64Image(String value) {
 /// the "See Sample" affordance.
 Future<void> showSampleImagesDialog({
   required BuildContext context,
-  required List<String> base64Images,
+  List<String> base64Images = const [],
+  List<String> imageUrls = const [],
+  List<String> assetPaths = const [],
   required List<String> labels,
   Uint8List? Function(String)? decoder,
 }) {
-  if (base64Images.isEmpty) return Future.value();
+  final useAssets = assetPaths.isNotEmpty;
+  final useUrls = !useAssets && imageUrls.isNotEmpty;
+  final count = useAssets
+      ? assetPaths.length
+      : useUrls
+          ? imageUrls.length
+          : base64Images.length;
+  if (count == 0) return Future.value();
   final decode = decoder ?? decodeBase64Image;
+  // A single composite sample image renders better full-width than in a
+  // 2-column grid with a colored label overlay.
+  final singleAsset = useAssets && count == 1;
   return showDialog<void>(
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.55),
@@ -78,29 +90,44 @@ Future<void> showSampleImagesDialog({
                   ],
                 ),
                 const SizedBox(height: 12),
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate:
-                      const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 10,
-                    mainAxisSpacing: 10,
-                    childAspectRatio: 1,
+                if (singleAsset)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: Image.asset(
+                      assetPaths.first,
+                      fit: BoxFit.contain,
+                    ),
+                  )
+                else
+                  GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 10,
+                      mainAxisSpacing: 10,
+                      childAspectRatio: 1,
+                    ),
+                    itemCount: count,
+                    itemBuilder: (_, i) {
+                      final bytes = (useAssets || useUrls)
+                          ? null
+                          : decode(base64Images[i]);
+                      final url = useUrls ? imageUrls[i] : null;
+                      final asset = useAssets ? assetPaths[i] : null;
+                      final label =
+                          i < labels.length ? labels[i] : 'Sample ${i + 1}';
+                      final color = _kLabelColors[i % _kLabelColors.length];
+                      return _SampleTile(
+                        bytes: bytes,
+                        url: url,
+                        assetPath: asset,
+                        label: label,
+                        color: color,
+                      );
+                    },
                   ),
-                  itemCount: base64Images.length,
-                  itemBuilder: (_, i) {
-                    final bytes = decode(base64Images[i]);
-                    final label =
-                        i < labels.length ? labels[i] : 'Sample ${i + 1}';
-                    final color = _kLabelColors[i % _kLabelColors.length];
-                    return _SampleTile(
-                      bytes: bytes,
-                      label: label,
-                      color: color,
-                    );
-                  },
-                ),
               ],
             ),
           ),
@@ -115,9 +142,13 @@ class _SampleTile extends StatelessWidget {
     required this.bytes,
     required this.label,
     required this.color,
+    this.url,
+    this.assetPath,
   });
 
   final Uint8List? bytes;
+  final String? url;
+  final String? assetPath;
   final String label;
   final Color color;
 
@@ -130,6 +161,34 @@ class _SampleTile extends StatelessWidget {
         children: [
           if (bytes != null)
             Image.memory(bytes!, fit: BoxFit.cover)
+          else if (assetPath != null && assetPath!.isNotEmpty)
+            Image.asset(assetPath!, fit: BoxFit.cover)
+          else if (url != null && url!.isNotEmpty)
+            Image.network(
+              url!,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => Container(
+                color: const Color(0xFFEEF1F7),
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.broken_image_outlined,
+                  color: Colors.black26,
+                  size: 36,
+                ),
+              ),
+              loadingBuilder: (_, child, progress) {
+                if (progress == null) return child;
+                return Container(
+                  color: const Color(0xFFEEF1F7),
+                  alignment: Alignment.center,
+                  child: const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                );
+              },
+            )
           else
             Container(
               color: const Color(0xFFEEF1F7),

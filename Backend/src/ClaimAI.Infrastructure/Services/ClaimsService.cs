@@ -186,6 +186,34 @@ public class ClaimsService : IClaimsService
         return Result<ClaimResponseDto>.Success(MapToDto(claim));
     }
 
+    public async Task<Result<ClaimResponseDto>> UpdateAccidentInfoAsync(
+        Guid claimId,
+        string userId,
+        UpdateAccidentInfoDto dto)
+    {
+        var claim = await _context.Claims
+            .FirstOrDefaultAsync(c => c.Id == claimId && c.UserId == userId);
+
+        if (claim is null)
+            return Result<ClaimResponseDto>.Failure("Claim not found.");
+
+        if (claim.Status != ClaimStatus.Pending)
+            return Result<ClaimResponseDto>.Failure(
+                "Accident information can only be edited while the claim is pending.");
+
+        claim.IncidentDate = dto.IncidentDate;
+        claim.IncidentLocation = string.IsNullOrWhiteSpace(dto.IncidentLocation)
+            ? null
+            : dto.IncidentLocation.Trim();
+        claim.IncidentDescription = string.IsNullOrWhiteSpace(dto.IncidentDescription)
+            ? null
+            : dto.IncidentDescription.Trim();
+
+        await _context.SaveChangesAsync();
+
+        return Result<ClaimResponseDto>.Success(MapToDto(claim));
+    }
+
     private async Task<string> GenerateClaimNumberAsync()
     {
         var today = DateTime.UtcNow;

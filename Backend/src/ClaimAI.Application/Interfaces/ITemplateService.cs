@@ -17,6 +17,12 @@ public interface ITemplateService
     /// <summary>Returns the currently Active template for (<paramref name="companyName"/>, <paramref name="insuranceType"/>).</summary>
     Task<Result<TemplateDetailDto>> GetActiveAsync(string companyName, InsuranceType insuranceType, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Returns the single active template (no tenant filter). Used by the
+    /// mobile claim-summary page which has no company/insurance-type context.
+    /// </summary>
+    Task<Result<TemplateDetailDto>> GetSingleActiveAsync(CancellationToken cancellationToken = default);
+
     /// <summary>Creates a new template tree. The new row is always persisted as <c>Draft, Version=1</c> (first version for that company + type) or <c>maxVersion+1</c> if an existing row already occupies version 1.</summary>
     Task<Result<TemplateDetailDto>> CreateAsync(CreateTemplateDto dto, CancellationToken cancellationToken = default);
 

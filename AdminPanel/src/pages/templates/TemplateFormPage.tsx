@@ -97,6 +97,7 @@ export default function TemplateFormPage({ mode }: Props) {
           isRequired: p.isRequired,
           allowedAngles: p.allowedAngles,
           sampleImageUrls: p.sampleImageUrls,
+          showSample: p.showSample,
           maxFileSizeMb: p.maxFileSizeMb,
           allowedMimeTypes: p.allowedMimeTypes,
           displayOrder: p.displayOrder,

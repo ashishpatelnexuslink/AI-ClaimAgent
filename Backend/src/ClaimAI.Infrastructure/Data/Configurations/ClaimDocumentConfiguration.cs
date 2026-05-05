@@ -14,7 +14,8 @@ public class ClaimDocumentConfiguration : IEntityTypeConfiguration<ClaimDocument
         builder.Property(d => d.RelativeUrl).IsRequired().HasMaxLength(512);
         builder.Property(d => d.ContentType).IsRequired().HasMaxLength(100);
         builder.Property(d => d.Kind).IsRequired().HasMaxLength(20);
-        builder.Property(d => d.Category).HasMaxLength(40);
+        builder.Property(d => d.GroupKey).HasMaxLength(60);
+        builder.Property(d => d.Label).HasMaxLength(120);
         builder.Property(d => d.Angle).HasMaxLength(40);
         builder.Property(d => d.ChatThreadId).HasMaxLength(64);
 
