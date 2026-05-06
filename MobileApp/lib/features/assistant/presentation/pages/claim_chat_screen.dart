@@ -410,7 +410,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
 
     try {
       // 1. Check if location services (GPS) are enabled
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -420,9 +420,31 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
             ),
           ),
         );
-        // Prompt user to open location settings
+        // Send the user to settings, then wait (with a timeout) for the OS
+        // to broadcast that location services are now enabled. Without this,
+        // `openLocationSettings()` returns immediately and the fetch silently
+        // gives up, leaving the chat stuck on "Fetching your current
+        // location…".
         await Geolocator.openLocationSettings();
-        return;
+        try {
+          await Geolocator.getServiceStatusStream()
+              .firstWhere((s) => s == ServiceStatus.enabled)
+              .timeout(const Duration(seconds: 60));
+        } on TimeoutException {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Location services were not enabled. Please try again.',
+              ),
+            ),
+          );
+          return;
+        }
+        if (!mounted) return;
+        // Re-check in case the stream emitted but the user toggled off again.
+        serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        if (!serviceEnabled) return;
       }
 
       // 2. Check & request permission
@@ -1361,13 +1383,23 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
             child: Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: msg.triggers
+              children: _effectiveTriggers(msg)
                   .map((t) => _buildTriggerButton(t, msg))
                   .toList(),
             ),
           ),
       ],
     );
+  }
+
+  /// Returns `msg.triggers` plus an implicit `SKIP` when the AI flags the
+  /// question as skippable via `payload.is_skippable` but didn't emit the
+  /// trigger itself. De-duplicated.
+  List<String> _effectiveTriggers(_ChatMsg msg) {
+    if (!_isSkippable(msg) || msg.triggers.contains('SKIP')) {
+      return msg.triggers;
+    }
+    return [...msg.triggers, 'SKIP'];
   }
 
   Widget _buildBotAvatar() {
@@ -1432,7 +1464,8 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     final isUser = msg.isUser;
     final isLastBot = !isUser && _messages.last == msg && !_botTyping;
     final showSuggestions = isLastBot && msg.suggestions.isNotEmpty;
-    final showTriggers = isLastBot && msg.triggers.isNotEmpty;
+    final showTriggers =
+        isLastBot && (msg.triggers.isNotEmpty || _isSkippable(msg));
     final showCloseButton = isLastBot && msg.messageType == 'done';
 
     // Check if this is a policy detail message
@@ -1612,7 +1645,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
             child: Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: msg.triggers
+              children: _effectiveTriggers(msg)
                   .map((t) => _buildTriggerButton(t, msg))
                   .toList(),
             ),
@@ -1703,13 +1736,10 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       category = _inferCategory(isImage: true);
     }
 
-    // Block re-submission of a group that already validated + uploaded.
-    if (_uploadedGroupKeys.contains(category)) {
-      debugPrint(
-        '[Validate] skipping re-submit for already-uploaded group: $category',
-      );
-      return;
-    }
+    // Stale failure cards are guarded at the UI layer (their Submit button is
+    // disabled when the group is in `_uploadedGroupKeys`). The fresh GET_IMAGE
+    // trigger card must remain submittable because the AI can re-ask for the
+    // same group after a "No, re-upload" — so no early return here.
 
     // Scope the entries to the full allowed-angles set for this card. On a
     // retry, the failure card carries `validationAllowedAngles` (forwarded
@@ -1748,6 +1778,14 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     // ── Validate first (AI image validation) ───────────────────────────
     // Only `vehicle_photos` goes through `/validate-images` — every other
     // group (damage_photos, driver_license, …) uploads directly.
+    // Only forward the originating msg for removal if it's a failure card
+    // (not the original GET_IMAGE trigger card — that one stays in chat).
+    final _ChatMsg? failureCardToReplace =
+        (originatingMsg != null &&
+                (originatingMsg.validationFailedAngles.isNotEmpty ||
+                    originatingMsg.validationFailedLegacy))
+            ? originatingMsg
+            : null;
     if (category == 'vehicle_photos') {
       final validation = await _runImageValidation(
         questionLabel: category,
@@ -1755,6 +1793,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           for (final p in prepared) p.angle: base64Encode(p.bytes),
         },
         allowedAngles: allowedAngles,
+        previousFailureMsg: failureCardToReplace,
       );
       if (!validation.valid) {
         if (!mounted) return;
@@ -1828,6 +1867,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     required Map<String, String> images,
     bool isLegacy = false,
     List<String> allowedAngles = const [],
+    _ChatMsg? previousFailureMsg,
   }) async {
     final waitingMsg = _ChatMsg(
       text: 'Please wait while we validate your images...',
@@ -1857,6 +1897,11 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
 
     setState(() {
       _messages.remove(waitingMsg);
+      // Drop the previous failure card for this group so retries don't stack
+      // multiple "Some images need to be re-uploaded" cards in the chat.
+      if (previousFailureMsg != null) {
+        _messages.remove(previousFailureMsg);
+      }
       if (!result.valid) {
         // Snapshot the rejected images' paths so the failure card can detect
         // when the user picks a replacement (and re-enable Submit). The
@@ -2364,6 +2409,17 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     return false;
   }
 
+  /// Whether the bot's payload marks this question as skippable
+  /// (`payload.is_skippable == true`). Drives an inline Skip pill alongside
+  /// GET_IMAGE / GET_DOCUMENT trigger cards when the AI didn't already emit
+  /// a standalone `SKIP` trigger.
+  bool _isSkippable(_ChatMsg msg) {
+    final raw = msg.payload?['is_skippable'];
+    if (raw is bool) return raw;
+    if (raw is String) return raw.toLowerCase() == 'true';
+    return false;
+  }
+
   Widget _buildSeeSampleLink(_ChatMsg msg) {
     return Padding(
       padding: const EdgeInsets.only(top: 6),
@@ -2615,6 +2671,12 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
 
   String _inferCategoryFromText(String raw, {required bool isImage}) {
     final text = raw.toLowerCase();
+    // `supporting` must be checked first: the supporting-docs prompt enumerates
+    // examples ("insurance policy, accident photos, or police reports") that
+    // would otherwise match the police_report / bill_invoice branches and route
+    // the upload to the wrong groupKey, leaving the Claim Summary's
+    // "Supporting Documents" section empty.
+    if (text.contains('supporting')) return 'supporting_docs';
     if (text.contains('damage')) return 'damage_photos';
     if (text.contains('license') || text.contains('licence')) {
       return 'driver_license';
@@ -3231,13 +3293,10 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     // Count only the angles this trigger owns. The global map can carry stray
     // entries from a different group's still-open failure card.
     final filledCount = angles.where(_angleImages.containsKey).length;
-    final triggerCategory = _inferCategoryFromText(msg.text, isImage: true);
-    final groupAlreadyDone = _uploadedGroupKeys.contains(triggerCategory);
     final canSubmit =
         filledCount >= minCount &&
         !_uploadingFiles &&
-        !_botTyping &&
-        !groupAlreadyDone;
+        !_botTyping;
 
     return Container(
       width: double.infinity,
