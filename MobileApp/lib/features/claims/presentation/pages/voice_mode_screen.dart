@@ -11,7 +11,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:permission_handler/permission_handler.dart' hide ServiceStatus;
 import 'package:uuid/uuid.dart';
 
 import 'package:claim_ai/core/navigation/app_routes.dart';
@@ -864,7 +864,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     setState(() => _fetchingLocation = true);
 
     try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -874,8 +874,29 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
             ),
           ),
         );
+        // Send the user to settings, then wait (with a timeout) for the OS
+        // to broadcast that location services are now enabled. Without this,
+        // `openLocationSettings()` returns immediately and the fetch silently
+        // gives up.
         await Geolocator.openLocationSettings();
-        return;
+        try {
+          await Geolocator.getServiceStatusStream()
+              .firstWhere((s) => s == ServiceStatus.enabled)
+              .timeout(const Duration(seconds: 60));
+        } on TimeoutException {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Location services were not enabled. Please try again.',
+              ),
+            ),
+          );
+          return;
+        }
+        if (!mounted) return;
+        serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        if (!serviceEnabled) return;
       }
 
       LocationPermission permission = await Geolocator.checkPermission();
@@ -1018,13 +1039,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       category = _inferCategory(isImage: true);
     }
 
-    // Block re-submission of a group that already validated + uploaded.
-    if (_uploadedGroupKeys.contains(category)) {
-      debugPrint(
-        '[Validate] skipping re-submit for already-uploaded group: $category',
-      );
-      return;
-    }
+    // Stale failure cards are guarded at the UI layer (their Submit button is
+    // disabled when the group is in `_uploadedGroupKeys`). The fresh GET_IMAGE
+    // trigger card must remain submittable because the AI can re-ask for the
+    // same group after a "No, re-upload" — so no early return here.
 
     // Scope the entries to the full allowed-angles set for this card. On a
     // retry, the failure card carries `validationAllowedAngles` (forwarded
@@ -1066,11 +1084,20 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     // ── Validate first (AI image validation) ───────────────────────────
     // Only `vehicle_photos` goes through `/validate-images` — every other
     // group (damage_photos, driver_license, …) uploads directly.
+    // Only forward the originating msg for removal if it's a failure card
+    // (not the original GET_IMAGE trigger card — that one stays in chat).
+    final _ChatMessage? failureCardToReplace =
+        (originatingMsg != null &&
+                (originatingMsg.validationFailedAngles.isNotEmpty ||
+                    originatingMsg.validationFailedLegacy))
+            ? originatingMsg
+            : null;
     if (category == 'vehicle_photos') {
       final validation = await _runImageValidation(
         questionLabel: category,
         images: {for (final p in prepared) p.angle: base64Encode(p.bytes)},
         allowedAngles: allowedAngles,
+        previousFailureMsg: failureCardToReplace,
       );
       if (!validation.valid) {
         if (!mounted) return;
@@ -1134,6 +1161,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     required Map<String, String> images,
     bool isLegacy = false,
     List<String> allowedAngles = const [],
+    _ChatMessage? previousFailureMsg,
   }) async {
     final waitingMsg = _ChatMessage(
       text: 'Please wait while we validate your images...',
@@ -1163,6 +1191,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
     setState(() {
       _messages.remove(waitingMsg);
+      // Drop the previous failure card for this group so retries don't stack
+      // multiple "Some images need to be re-uploaded" cards in the chat.
+      if (previousFailureMsg != null) {
+        _messages.remove(previousFailureMsg);
+      }
       if (!result.valid) {
         // Snapshot the rejected paths so the failure card can detect when
         // the user picks a replacement (re-enabling Submit). The picked
@@ -1865,6 +1898,12 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
   String _inferCategoryFromText(String raw, {required bool isImage}) {
     final text = raw.toLowerCase();
+    // `supporting` must be checked first: the supporting-docs prompt enumerates
+    // examples ("insurance policy, accident photos, or police reports") that
+    // would otherwise match the police_report / bill_invoice branches and route
+    // the upload to the wrong groupKey, leaving the Claim Summary's
+    // "Supporting Documents" section empty.
+    if (text.contains('supporting')) return 'supporting_docs';
     if (text.contains('damage')) return 'damage_photos';
     if (text.contains('license') || text.contains('licence')) {
       return 'driver_license';
@@ -2508,14 +2547,14 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           if (isLastBot &&
               !_botTyping &&
               !_isCurrentlySpeaking(index) &&
-              msg.triggers.isNotEmpty) ...[
+              (msg.triggers.isNotEmpty || _isSkippable(msg))) ...[
             const SizedBox(height: 10),
             Padding(
               padding: const EdgeInsets.only(left: 46),
               child: Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: msg.triggers
+                children: _effectiveTriggers(msg)
                     .where((t) => t != 'SHOW_TABLE')
                     .map((t) => _buildTriggerButton(t, msg))
                     .toList(),
@@ -2785,6 +2824,26 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   }
 
   /// Whether the bot's `GET_IMAGE` payload requested showing the bundled
+  /// Whether the bot's payload marks this question as skippable
+  /// (`payload.is_skippable == true`). Drives an inline Skip pill alongside
+  /// trigger cards when the AI didn't already emit a standalone `SKIP`
+  /// trigger.
+  bool _isSkippable(_ChatMessage msg) {
+    final raw = msg.payload?['is_skippable'];
+    if (raw is bool) return raw;
+    if (raw is String) return raw.toLowerCase() == 'true';
+    return false;
+  }
+
+  /// Returns `msg.triggers` plus an implicit `SKIP` when `is_skippable` is
+  /// set on the payload but `SKIP` isn't already in triggers. De-duplicated.
+  List<String> _effectiveTriggers(_ChatMessage msg) {
+    if (!_isSkippable(msg) || msg.triggers.contains('SKIP')) {
+      return msg.triggers;
+    }
+    return [...msg.triggers, 'SKIP'];
+  }
+
   /// sample-photos affordance (`payload.show_sample == true`).
   bool _showSampleOf(_ChatMessage msg) {
     if (!msg.triggers.contains('GET_IMAGE')) return false;
@@ -3035,13 +3094,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     // Count only the angles this trigger owns. The global map can carry stray
     // entries from a different group's still-open failure card.
     final filledCount = angles.where(_angleImages.containsKey).length;
-    final triggerCategory = _inferCategoryFromText(msg.text, isImage: true);
-    final groupAlreadyDone = _uploadedGroupKeys.contains(triggerCategory);
     final canSubmit =
         filledCount >= minCount &&
         !_uploadingFiles &&
-        !_botTyping &&
-        !groupAlreadyDone;
+        !_botTyping;
 
     return Container(
       width: double.infinity,
@@ -4092,14 +4148,14 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           if (isLastBot &&
               !_botTyping &&
               !_isCurrentlySpeaking(index) &&
-              msg.triggers.isNotEmpty) ...[
+              (msg.triggers.isNotEmpty || _isSkippable(msg))) ...[
             const SizedBox(height: 10),
             Padding(
               padding: const EdgeInsets.only(left: 46),
               child: Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: msg.triggers
+                children: _effectiveTriggers(msg)
                     .where((t) => t != 'SHOW_TABLE')
                     .map((t) => _buildTriggerButton(t, msg))
                     .toList(),
