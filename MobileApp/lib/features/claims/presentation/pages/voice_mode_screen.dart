@@ -45,16 +45,20 @@ class _ChatMessage {
   final Map<String, dynamic>? payload;
   final List<String> imagePaths;
   final List<String> documentNames;
+
   /// Angles flagged as `angle_matches: false` by `/validate-images`. When
   /// non-empty, the bot bubble renders a per-angle re-upload card.
   final List<String> validationFailedAngles;
+
   /// Set when `/validate-images` fails for the legacy free-form flow (no
   /// per-angle breakdown). Drives a single "Re-upload Photos" button in
   /// the failure bubble.
   final bool validationFailedLegacy;
+
   /// `group_key` echoed back by `/validate-images`. Scopes the failure card
   /// to a particular upload group (e.g. `vehicle_photos`).
   final String? validationGroupKey;
+
   /// Full set of allowed angles for this group, carried forward from the
   /// original GET_IMAGE trigger so retry submits can re-validate every angle
   /// (failed + previously valid) — `/validate-images` expects the complete
@@ -129,7 +133,12 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   final List<PlatformFile> _pickedDocuments = [];
   final int _maxDocuments = 10;
   final List<String> _allowedDocExtensions = const [
-    'pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx',
+    'pdf',
+    'jpg',
+    'jpeg',
+    'png',
+    'doc',
+    'docx',
   ];
   final List<String> _uploadedDocumentIds = [];
 
@@ -174,12 +183,6 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   final List<_SpeechEntry> _pendingSpeech = [];
   _SpeechEntry? _currentSpeech;
   int _spokenChars = 0;
-  // Bot message indices that have been added to `_messages` but whose TTS
-  // utterance hasn't started yet. The list view hides these so back-to-back
-  // bot replies appear one at a time, in lockstep with what the avatar is
-  // actually saying — no more "second bubble + buttons appear while the first
-  // is still being typed out".
-  final Set<int> _pendingRevealIndices = {};
 
   // ─── Auto-listen after bot finishes speaking ───────────────────────────
   Timer? _autoListenTimer;
@@ -275,7 +278,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text(
-              'Microphone permission is required for voice input'),
+            'Microphone permission is required for voice input',
+          ),
           action: SnackBarAction(
             label: 'Settings',
             onPressed: () => openAppSettings(),
@@ -283,9 +287,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         ),
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Voice error: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Voice error: $error')));
     }
     _resetRecordingUi();
   }
@@ -342,15 +346,12 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       _cancelAutoListen();
       setState(() {
         _botSpeaking = true;
-        _currentSpeech =
-            _pendingSpeech.isNotEmpty ? _pendingSpeech.removeAt(0) : null;
+        _currentSpeech = _pendingSpeech.isNotEmpty
+            ? _pendingSpeech.removeAt(0)
+            : null;
         _spokenChars = 0;
-        if (_currentSpeech != null) {
-          _pendingRevealIndices.remove(_currentSpeech!.messageIndex);
-        }
       });
       _speakController.repeat(reverse: true);
-      // A queued bubble just became visible — keep it in view.
       _scrollToBottom();
     });
     _tts.setProgressHandler((text, start, end, word) {
@@ -379,9 +380,6 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         _currentSpeech = null;
         _spokenChars = 0;
         _pendingSpeech.clear();
-        // Reveal anything that was waiting on a now-cancelled utterance so
-        // those bubbles don't stay hidden forever.
-        _pendingRevealIndices.clear();
       });
       _speakController.stop();
       _speakController.reset();
@@ -393,7 +391,6 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         _currentSpeech = null;
         _spokenChars = 0;
         _pendingSpeech.clear();
-        _pendingRevealIndices.clear();
       });
       _speakController.stop();
       _speakController.reset();
@@ -474,7 +471,6 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     if (spoken.isEmpty) return;
     if (messageIndex != null) {
       _pendingSpeech.add(_SpeechEntry(messageIndex, spoken.length));
-      _pendingRevealIndices.add(messageIndex);
     }
     await _tts.speak(spoken);
   }
@@ -519,12 +515,14 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     unawaited(_tts.stop());
     _cancelAutoListen();
     setState(() {
-      _messages.add(_ChatMessage(
-        text: text,
-        type: 'user',
-        imagePaths: imagePaths,
-        documentNames: documentNames,
-      ));
+      _messages.add(
+        _ChatMessage(
+          text: text,
+          type: 'user',
+          imagePaths: imagePaths,
+          documentNames: documentNames,
+        ),
+      );
       _messageTimestamps.add(DateTime.now());
     });
     _scrollToBottom();
@@ -561,11 +559,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   Future<void> _streamBotReply(String userMessage) async {
     setState(() {
       _botTyping = true;
-      _messages.add(const _ChatMessage(
-        text: '',
-        type: 'bot',
-        isTyping: true,
-      ));
+      _messages.add(const _ChatMessage(text: '', type: 'bot', isTyping: true));
     });
     _scrollToBottom();
 
@@ -582,16 +576,18 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         if (!mounted) return;
         setState(() {
           _messages.removeWhere((m) => m.isTyping);
-          _messages.add(_ChatMessage(
-            text: msg.content,
-            type: 'bot',
-            chips: msg.suggestions.isNotEmpty ? msg.suggestions : null,
-            messageType: msg.messageType,
-            triggers: msg.triggers,
-            claimData: msg.claimData,
-            payloadType: msg.payloadType,
-            payload: msg.payload,
-          ));
+          _messages.add(
+            _ChatMessage(
+              text: msg.content,
+              type: 'bot',
+              chips: msg.suggestions.isNotEmpty ? msg.suggestions : null,
+              messageType: msg.messageType,
+              triggers: msg.triggers,
+              claimData: msg.claimData,
+              payloadType: msg.payloadType,
+              payload: msg.payload,
+            ),
+          );
           _messageTimestamps.add(DateTime.now());
         });
         _scrollToBottom();
@@ -610,10 +606,12 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       if (!mounted) return;
       setState(() {
         _messages.removeWhere((m) => m.isTyping);
-        _messages.add(const _ChatMessage(
-          text: 'Sorry, something went wrong. Please try again.',
-          type: 'bot',
-        ));
+        _messages.add(
+          const _ChatMessage(
+            text: 'Sorry, something went wrong. Please try again.',
+            type: 'bot',
+          ),
+        );
         _messageTimestamps.add(DateTime.now());
       });
     }
@@ -670,7 +668,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text(
-                'Microphone permission is required for voice input'),
+              'Microphone permission is required for voice input',
+            ),
             action: SnackBarAction(
               label: 'Settings',
               onPressed: () => openAppSettings(),
@@ -803,9 +802,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       firstDate: DateTime(2020),
       lastDate: DateTime(2030),
       builder: (context, child) => Theme(
-        data: Theme.of(context).copyWith(
-          colorScheme: const ColorScheme.light(primary: _kBlue),
-        ),
+        data: Theme.of(
+          context,
+        ).copyWith(colorScheme: const ColorScheme.light(primary: _kBlue)),
         child: child!,
       ),
     );
@@ -821,9 +820,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       context: context,
       initialTime: initial,
       builder: (context, child) => Theme(
-        data: Theme.of(context).copyWith(
-          colorScheme: const ColorScheme.light(primary: _kBlue),
-        ),
+        data: Theme.of(
+          context,
+        ).copyWith(colorScheme: const ColorScheme.light(primary: _kBlue)),
         child: child!,
       ),
     );
@@ -836,8 +835,13 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     final now = DateTime.now();
     final date = _dtDate ?? now;
     final time = _dtTime ?? TimeOfDay.fromDateTime(now);
-    final selected =
-        DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    final selected = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time.hour,
+      time.minute,
+    );
     final formatted = DateFormat('dd MMM yyyy, hh:mm a').format(selected);
     setState(() {
       _dtDate = null;
@@ -866,7 +870,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-                'Please enable location services (GPS) in device settings'),
+              'Please enable location services (GPS) in device settings',
+            ),
           ),
         );
         await Geolocator.openLocationSettings();
@@ -889,7 +894,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-                'Location permission is permanently denied. Please enable it in app settings.'),
+              'Location permission is permanently denied. Please enable it in app settings.',
+            ),
           ),
         );
         await Geolocator.openAppSettings();
@@ -943,9 +949,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not get location: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not get location: $e')));
     } finally {
       if (mounted) setState(() => _fetchingLocation = false);
     }
@@ -1029,9 +1035,12 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     final List<String> allowedAngles =
         (originatingMsg?.validationAllowedAngles.isNotEmpty ?? false)
         ? originatingMsg!.validationAllowedAngles
-        : (originatingMsg != null ? _allowedAnglesOf(originatingMsg) : const []);
-    final List<String>? scopedAngles =
-        allowedAngles.isEmpty ? null : allowedAngles;
+        : (originatingMsg != null
+              ? _allowedAnglesOf(originatingMsg)
+              : const []);
+    final List<String>? scopedAngles = allowedAngles.isEmpty
+        ? null
+        : allowedAngles;
     final entries = scopedAngles == null
         ? _angleImages.entries.toList(growable: false)
         : _angleImages.entries
@@ -1042,7 +1051,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
     // Read bytes once; reused for both upload + validation.
     final List<({String angle, String name, Uint8List bytes, String path})>
-        prepared = [];
+    prepared = [];
     for (final entry in entries) {
       final bytes = await entry.value.readAsBytes();
       final name = entry.value.path.split(RegExp(r'[\\/]')).last;
@@ -1060,9 +1069,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     if (category == 'vehicle_photos') {
       final validation = await _runImageValidation(
         questionLabel: category,
-        images: {
-          for (final p in prepared) p.angle: base64Encode(p.bytes),
-        },
+        images: {for (final p in prepared) p.angle: base64Encode(p.bytes)},
         allowedAngles: allowedAngles,
       );
       if (!validation.valid) {
@@ -1092,9 +1099,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Image upload failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Image upload failed: $e')));
       }
       debugPrint('[Upload] angle image upload failed: $e');
     }
@@ -1169,9 +1176,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         final useLegacy = isLegacy || failedAngles.isEmpty;
         _messages.add(
           _ChatMessage(
-            text: useLegacy
-                ? 'Image validation failed. Please re-upload.'
-                : '',
+            text: useLegacy ? 'Image validation failed. Please re-upload.' : '',
             type: 'bot',
             validationFailedAngles: useLegacy ? const [] : failedAngles,
             validationFailedLegacy: useLegacy,
@@ -1295,9 +1300,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                         ? null
                         : () => _onPickAngleImage(angle),
                     icon: Icon(
-                      stillRejected
-                          ? Icons.camera_alt_outlined
-                          : Icons.refresh,
+                      stillRejected ? Icons.camera_alt_outlined : Icons.refresh,
                       size: 16,
                     ),
                     label: Text(
@@ -1355,9 +1358,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   }
 
   Future<void> _onSubmitImages() async {
-    debugPrint('[Upload] _onSubmitImages enter '
-        'picked=${_pickedImages.length} '
-        'botTyping=$_botTyping uploading=$_uploadingFiles');
+    debugPrint(
+      '[Upload] _onSubmitImages enter '
+      'picked=${_pickedImages.length} '
+      'botTyping=$_botTyping uploading=$_uploadingFiles',
+    );
     if (_pickedImages.isEmpty || _botTyping || _uploadingFiles) {
       debugPrint('[Upload] _onSubmitImages BAILED (guard)');
       return;
@@ -1417,9 +1422,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Image upload failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Image upload failed: $e')));
       }
       debugPrint('[Upload] image upload failed: $e');
     }
@@ -1431,8 +1436,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       _pickedImages.clear();
       _uploadingFiles = false;
     });
-    debugPrint('[Upload] images submit → uploadedCount=$uploadedCount '
-        'fallbackCount=${files.length} sending="${count.toString()}"');
+    debugPrint(
+      '[Upload] images submit → uploadedCount=$uploadedCount '
+      'fallbackCount=${files.length} sending="${count.toString()}"',
+    );
     _addUserAttachmentMessage(
       text: '$count photo${count > 1 ? 's' : ''} uploaded',
       imagePaths: paths,
@@ -1465,17 +1472,21 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   }
 
   Future<void> _onSubmitDocuments(_ChatMessage msg) async {
-    debugPrint('[Upload] _onSubmitDocuments enter '
-        'picked=${_pickedDocuments.length} '
-        'botTyping=$_botTyping uploading=$_uploadingFiles');
+    debugPrint(
+      '[Upload] _onSubmitDocuments enter '
+      'picked=${_pickedDocuments.length} '
+      'botTyping=$_botTyping uploading=$_uploadingFiles',
+    );
     if (_pickedDocuments.isEmpty || _botTyping || _uploadingFiles) {
       debugPrint('[Upload] _onSubmitDocuments BAILED (guard)');
       return;
     }
 
     final docs = List<PlatformFile>.from(_pickedDocuments);
-    final progress =
-        _docTriggerProgress.putIfAbsent(msg, () => _DocTriggerProgress());
+    final progress = _docTriggerProgress.putIfAbsent(
+      msg,
+      () => _DocTriggerProgress(),
+    );
     final minCount = _payloadInt(msg, 'min_count') ?? 1;
     setState(() => _uploadingFiles = true);
 
@@ -1507,9 +1518,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Document upload failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Document upload failed: $e')));
       }
       debugPrint('[Upload] document upload failed: $e');
     }
@@ -1548,8 +1559,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       _pickedDocuments.clear();
       _uploadingFiles = false;
     });
-    debugPrint('[Upload] docs submit → uploadedCount=$uploadedCount '
-        'fallbackCount=${docs.length} sending="${total.toString()}"');
+    debugPrint(
+      '[Upload] docs submit → uploadedCount=$uploadedCount '
+      'fallbackCount=${docs.length} sending="${total.toString()}"',
+    );
     _addUserAttachmentMessage(
       text: '$total document${total > 1 ? 's' : ''} uploaded',
       imagePaths: imagePaths,
@@ -1572,9 +1585,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
     String? errorMessage;
     try {
-      await _runSaveClaimAndConversation(
-        saveSummaryPayload: msg.payload,
-      );
+      await _runSaveClaimAndConversation(saveSummaryPayload: msg.payload);
       _savedOnSummary = true;
     } catch (e) {
       errorMessage = 'Failed to save claim: $e';
@@ -1606,36 +1617,39 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     setState(() => _submittingClaim = true);
 
     try {
-      final payload = {
-        ...claimData,
-        'chatThreadId': _threadId,
-      };
+      final payload = {...claimData, 'chatThreadId': _threadId};
       final dataSource = di.sl<ClaimsRemoteDataSource>();
       final response = await dataSource.createClaim(payload);
 
       if (!mounted) return;
       final claimNumber = response['claimNumber'] as String? ?? '';
-      _submittedClaimId =
-          (response['id'] ?? response['claimId'] ?? claimNumber).toString();
+      _submittedClaimId = (response['id'] ?? response['claimId'] ?? claimNumber)
+          .toString();
 
       setState(() {
-        _messages.add(_ChatMessage(
-          text: 'Claim **$claimNumber** has been submitted successfully!',
-          type: 'bot',
-        ));
+        _messages.add(
+          _ChatMessage(
+            text: 'Claim **$claimNumber** has been submitted successfully!',
+            type: 'bot',
+          ),
+        );
         _messageTimestamps.add(DateTime.now());
         _submittingClaim = false;
       });
       _scrollToBottom();
-      unawaited(_speakBotReply('Claim $claimNumber has been submitted successfully.'));
+      unawaited(
+        _speakBotReply('Claim $claimNumber has been submitted successfully.'),
+      );
       _refreshClaimsList();
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _messages.add(const _ChatMessage(
-          text: 'Failed to submit claim. Please try again.',
-          type: 'bot',
-        ));
+        _messages.add(
+          const _ChatMessage(
+            text: 'Failed to submit claim. Please try again.',
+            type: 'bot',
+          ),
+        );
         _messageTimestamps.add(DateTime.now());
         _submittingClaim = false;
       });
@@ -1710,12 +1724,14 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       if (value == null) return;
       switch (key.toLowerCase().trim()) {
         case 'policy number':
-          mapped['policyNumber'] = value; break;
+          mapped['policyNumber'] = value;
+          break;
         case 'policy holder':
         case 'policyholder':
         case 'full name':
         case 'name':
-          mapped['fullName'] = value; break;
+          mapped['fullName'] = value;
+          break;
         case 'plat number':
         case 'plate number':
         case 'vehicle number':
@@ -1727,16 +1743,20 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         case 'vin':
         case 'vin number':
         case 'vehicle identification number':
-          mapped['vinNumber'] = value; break;
+          mapped['vinNumber'] = value;
+          break;
         case 'vehicle':
         case 'vehicle model':
-          mapped['vehicleModel'] = value; break;
+          mapped['vehicleModel'] = value;
+          break;
         case 'coverage':
         case 'coverage type':
-          mapped['coverageType'] = value; break;
+          mapped['coverageType'] = value;
+          break;
         case 'status':
         case 'policy status':
-          mapped['policyStatus'] = value; break;
+          mapped['policyStatus'] = value;
+          break;
         case 'valid until':
         case 'policy valid until':
           {
@@ -1748,13 +1768,21 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
             }
           }
           break;
-        case 'claim type': mapped['claimType'] = value.toString(); break;
+        case 'claim type':
+          mapped['claimType'] = value.toString();
+          break;
         case 'incident date':
-        case 'date': incidentDateRaw = value.toString(); break;
+        case 'date':
+          incidentDateRaw = value.toString();
+          break;
         case 'incident time':
-        case 'time': incidentTimeRaw = value.toString(); break;
+        case 'time':
+          incidentTimeRaw = value.toString();
+          break;
         case 'incident location':
-        case 'location': mapped['incidentLocation'] = value; break;
+        case 'location':
+          mapped['incidentLocation'] = value;
+          break;
         case 'incident description':
         case 'damage details':
         case 'description':
@@ -1772,33 +1800,42 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           break;
         case 'vehicle photos':
         case 'vehicle photos count':
-          mapped['vehiclePhotosCount'] = _extractCount(value); break;
+          mapped['vehiclePhotosCount'] = _extractCount(value);
+          break;
         case 'damage photos':
         case 'damage photos count':
-          mapped['damagePhotosCount'] = _extractCount(value); break;
+          mapped['damagePhotosCount'] = _extractCount(value);
+          break;
         case 'driver license':
         case 'driving license':
         case 'license photos':
         case 'license photos count':
-          mapped['licensePhotosCount'] = _extractCount(value); break;
+          mapped['licensePhotosCount'] = _extractCount(value);
+          break;
         case 'police report':
         case 'police report count':
-          mapped['policeReportCount'] = _extractCount(value); break;
+          mapped['policeReportCount'] = _extractCount(value);
+          break;
         case 'repair bill':
         case 'bill invoice':
         case 'invoice':
         case 'invoice count':
         case 'repair bill count':
-          mapped['repairBillCount'] = _extractCount(value); break;
+          mapped['repairBillCount'] = _extractCount(value);
+          break;
         case 'supporting docs':
         case 'supporting documents':
-          mapped[key] = _extractCount(value); break;
-        default: mapped[key] = value;
+          mapped[key] = _extractCount(value);
+          break;
+        default:
+          mapped[key] = value;
       }
     });
 
-    final combinedIncident =
-        _combineIncidentDateTime(incidentDateRaw, incidentTimeRaw);
+    final combinedIncident = _combineIncidentDateTime(
+      incidentDateRaw,
+      incidentTimeRaw,
+    );
     if (combinedIncident != null) {
       mapped['incidentDate'] = combinedIncident.toUtc().toIso8601String();
     } else {
@@ -1849,7 +1886,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   /// per session does any work; the Close button awaits [_autoSaveFuture]
   /// so it won't race-create a duplicate claim.
   void _triggerAutoSaveOnSummary(
-      Map<String, dynamic>? saveSummaryPayload, String doneText) {
+    Map<String, dynamic>? saveSummaryPayload,
+    String doneText,
+  ) {
     if (_savedOnSummary || _autoSaveFuture != null) return;
     final externalRef = _extractClaimReference(doneText);
     final future = _runSaveClaimAndConversation(
@@ -1857,12 +1896,16 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       externalRef: externalRef,
     );
     _autoSaveFuture = future;
-    future.then((_) {
-      _savedOnSummary = true;
-    }).catchError((Object e) {
-      debugPrint('[AutoSave] save_summary save failed (will retry on Close): $e');
-      _autoSaveFuture = null;
-    });
+    future
+        .then((_) {
+          _savedOnSummary = true;
+        })
+        .catchError((Object e) {
+          debugPrint(
+            '[AutoSave] save_summary save failed (will retry on Close): $e',
+          );
+          _autoSaveFuture = null;
+        });
   }
 
   /// Performs the full server-side save: create claim row (if not already
@@ -1899,9 +1942,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
     if (_uploadedDocumentIds.isNotEmpty) {
       await di.sl<ClaimsRemoteDataSource>().attachClaimDocuments(
-            claimId: finalClaimId,
-            documentIds: List<String>.from(_uploadedDocumentIds),
-          );
+        claimId: finalClaimId,
+        documentIds: List<String>.from(_uploadedDocumentIds),
+      );
     }
   }
 
@@ -1980,24 +2023,25 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('End Session?',
-            style: TextStyle(fontWeight: FontWeight.bold, color: _kDark)),
-        content: const Text(
-            'Are you sure you want to end this voice session?'),
+        title: const Text(
+          'End Session?',
+          style: TextStyle(fontWeight: FontWeight.bold, color: _kDark),
+        ),
+        content: const Text('Are you sure you want to end this voice session?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child:
-                const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
           ),
           TextButton(
             onPressed: () {
               Navigator.of(ctx).pop();
               Navigator.of(context).pop();
             },
-            child: const Text('End Session',
-                style: TextStyle(
-                    color: _kRed, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'End Session',
+              style: TextStyle(color: _kRed, fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -2016,42 +2060,37 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         if (didPop) _refreshClaimsList();
       },
       child: Scaffold(
-      backgroundColor: _kBg,
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 390),
-            child: Column(
-              children: [
-                _buildHeader(),
-                _buildStateAvatar(),
-                Expanded(
-                  child: ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                    itemCount: _messages.length,
-                    itemBuilder: (_, index) {
-                      final msg = _messages[index];
-                      if (msg.isTyping) return _buildTypingIndicator();
-                      if (msg.type == 'bot') {
-                        // Hide bot bubbles whose TTS hasn't started yet — the
-                        // queued speech entries reveal them one at a time.
-                        if (_pendingRevealIndices.contains(index)) {
-                          return const SizedBox.shrink();
+        backgroundColor: _kBg,
+        body: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 390),
+              child: Column(
+                children: [
+                  _buildHeader(),
+                  _buildStateAvatar(),
+                  Expanded(
+                    child: ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                      itemCount: _messages.length,
+                      itemBuilder: (_, index) {
+                        final msg = _messages[index];
+                        if (msg.isTyping) return _buildTypingIndicator();
+                        if (msg.type == 'bot') {
+                          return _buildBotBubble(msg, index);
                         }
-                        return _buildBotBubble(msg, index);
-                      }
-                      return _buildUserBubble(msg);
-                    },
+                        return _buildUserBubble(msg);
+                      },
+                    ),
                   ),
-                ),
-                if (_isRecording) _buildListeningBanner(),
-                _buildInputBar(),
-              ],
+                  if (_isRecording) _buildListeningBanner(),
+                  _buildInputBar(),
+                ],
+              ),
             ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -2130,9 +2169,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     final isListening = _isRecording;
     final isSpeaking = _botSpeaking;
 
-    final Color ringColor = isListening
-        ? const Color(0xFF22C55E)
-        : _kBlue;
+    final Color ringColor = isListening ? const Color(0xFF22C55E) : _kBlue;
     final Color dotColor = isListening
         ? const Color(0xFF22C55E)
         : (isSpeaking ? const Color(0xFFF59E0B) : Colors.grey.shade400);
@@ -2164,8 +2201,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                         height: 72 - 8 * t,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: const Color(0xFF22C55E)
-                              .withValues(alpha: 0.18 * (1 - t)),
+                          color: const Color(
+                            0xFF22C55E,
+                          ).withValues(alpha: 0.18 * (1 - t)),
                         ),
                       );
                     },
@@ -2260,10 +2298,12 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       if (match.start > cursor) {
         spans.add(TextSpan(text: text.substring(cursor, match.start)));
       }
-      spans.add(TextSpan(
-        text: match.group(1),
-        style: const TextStyle(fontWeight: FontWeight.bold),
-      ));
+      spans.add(
+        TextSpan(
+          text: match.group(1),
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+      );
       cursor = match.end;
     }
     if (cursor < text.length) {
@@ -2275,9 +2315,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   int _lastBotIndex() {
     for (int i = _messages.length - 1; i >= 0; i--) {
       final m = _messages[i];
-      if (m.type == 'bot' &&
-          !m.isTyping &&
-          !_pendingRevealIndices.contains(i)) {
+      if (m.type == 'bot' && !m.isTyping) {
         return i;
       }
     }
@@ -2554,7 +2592,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                 return Container(
                   margin: const EdgeInsets.only(bottom: 6),
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 10),
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(12),
@@ -2611,7 +2651,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                 ],
                 Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 12),
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   decoration: const BoxDecoration(
                     color: _kBlue,
                     borderRadius: BorderRadius.only(
@@ -2737,7 +2779,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   // Helpers to read GET_IMAGE constraints from a message payload.
   List<String> _allowedAnglesOf(_ChatMessage msg) {
     final raw = msg.payload?['allowed_angles'];
-    if (raw is List) return raw.map((e) => e.toString()).toList(growable: false);
+    if (raw is List)
+      return raw.map((e) => e.toString()).toList(growable: false);
     return const [];
   }
 
@@ -2909,8 +2952,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
               const SizedBox(
                 width: 16,
                 height: 16,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: _kBlue),
+                child: CircularProgressIndicator(strokeWidth: 2, color: _kBlue),
               )
             else
               Icon(icon, size: 16, color: _kBlue),
@@ -2942,14 +2984,20 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
             style: const TextStyle(fontSize: 13, color: _kDark),
             decoration: InputDecoration(
               hintText: 'Enter street, city or zip code',
-              hintStyle:
-                  TextStyle(fontSize: 13, color: Colors.grey.shade400),
-              prefixIcon: Icon(Icons.location_on_outlined,
-                  size: 18, color: Colors.grey.shade400),
-              prefixIconConstraints:
-                  const BoxConstraints(minWidth: 40, minHeight: 0),
+              hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade400),
+              prefixIcon: Icon(
+                Icons.location_on_outlined,
+                size: 18,
+                color: Colors.grey.shade400,
+              ),
+              prefixIconConstraints: const BoxConstraints(
+                minWidth: 40,
+                minHeight: 0,
+              ),
               contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 12),
+                horizontal: 16,
+                vertical: 12,
+              ),
               isDense: true,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(22),
@@ -3015,7 +3063,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           const Text(
             'Upload Photos',
             style: TextStyle(
-                fontSize: 15, fontWeight: FontWeight.bold, color: _kDark),
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: _kDark,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
@@ -3055,13 +3106,17 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                           height: 16,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(Colors.white),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
                           ),
                         )
                       else
-                        const Icon(Icons.check_circle_outline,
-                            size: 18, color: Colors.white),
+                        const Icon(
+                          Icons.check_circle_outline,
+                          size: 18,
+                          color: Colors.white,
+                        ),
                       const SizedBox(width: 8),
                       const Text(
                         'DONE',
@@ -3091,8 +3146,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         if (picked != null) ...[
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: Image.file(picked,
-                width: 48, height: 48, fit: BoxFit.cover),
+            child: Image.file(picked, width: 48, height: 48, fit: BoxFit.cover),
           ),
           const SizedBox(width: 10),
         ] else ...[
@@ -3103,8 +3157,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
               color: const Color(0xFFF0F2F7),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(Icons.image_outlined,
-                color: Colors.grey.shade500, size: 22),
+            child: Icon(
+              Icons.image_outlined,
+              color: Colors.grey.shade500,
+              size: 22,
+            ),
           ),
           const SizedBox(width: 10),
         ],
@@ -3142,10 +3199,14 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           onPressed: (atCap || _uploadingFiles)
               ? null
               : () => _onPickAngleImage(angle),
-          icon: Icon(picked == null ? Icons.camera_alt_outlined : Icons.refresh,
-              size: 16),
-          label: Text(picked == null ? 'Upload' : 'Replace',
-              style: const TextStyle(fontSize: 12)),
+          icon: Icon(
+            picked == null ? Icons.camera_alt_outlined : Icons.refresh,
+            size: 16,
+          ),
+          label: Text(
+            picked == null ? 'Upload' : 'Replace',
+            style: const TextStyle(fontSize: 12),
+          ),
           style: TextButton.styleFrom(
             foregroundColor: _kBlue,
             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -3177,7 +3238,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           const Text(
             'Upload Photos',
             style: TextStyle(
-                fontSize: 15, fontWeight: FontWeight.bold, color: _kDark),
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: _kDark,
+            ),
           ),
           if (_pickedImages.isNotEmpty) ...[
             const SizedBox(height: 12),
@@ -3212,8 +3276,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                               color: Colors.red,
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(Icons.close,
-                                size: 12, color: Colors.white),
+                            child: const Icon(
+                              Icons.close,
+                              size: 12,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                       ),
@@ -3252,7 +3319,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                       width: 16,
                       height: 16,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: _kDark),
+                        strokeWidth: 2,
+                        color: _kDark,
+                      ),
                     )
                   else
                     Icon(
@@ -3323,9 +3392,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
               const Text(
                 'Upload Documents',
                 style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: _kDark),
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: _kDark,
+                ),
               ),
               const SizedBox(height: 4),
               Text(
@@ -3342,20 +3412,24 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                   return Container(
                     margin: const EdgeInsets.only(bottom: 8),
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: Colors.grey.shade200),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.description_outlined,
-                            size: 20, color: _kBlue),
+                        const Icon(
+                          Icons.description_outlined,
+                          size: 20,
+                          color: _kBlue,
+                        ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Column(
-                            crossAxisAlignment:
-                                CrossAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
                                 doc.name,
@@ -3379,8 +3453,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                         ),
                         GestureDetector(
                           onTap: () => _onRemoveDocument(index),
-                          child: Icon(Icons.close,
-                              size: 18, color: Colors.grey.shade500),
+                          child: Icon(
+                            Icons.close,
+                            size: 18,
+                            color: Colors.grey.shade500,
+                          ),
                         ),
                       ],
                     ),
@@ -3400,8 +3477,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                 onTap: _uploadingFiles
                     ? null
                     : (_pickedDocuments.isEmpty
-                        ? _onPickDocuments
-                        : () => _onSubmitDocuments(msg)),
+                          ? _onPickDocuments
+                          : () => _onSubmitDocuments(msg)),
                 child: Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 10),
@@ -3417,7 +3494,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                           width: 16,
                           height: 16,
                           child: CircularProgressIndicator(
-                              strokeWidth: 2, color: _kDark),
+                            strokeWidth: 2,
+                            color: _kDark,
+                          ),
                         )
                       else
                         Icon(
@@ -3462,8 +3541,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         GestureDetector(
           onTap: _onSkipDocuments,
           child: Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(20),
@@ -3520,23 +3598,31 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     final k = key.toLowerCase().trim();
     switch (k) {
       case 'vehicle photos':
-      case 'vehicle photos count': return 'Vehicle Photos';
+      case 'vehicle photos count':
+        return 'Vehicle Photos';
       case 'damage photos':
-      case 'damage photos count': return 'Damage Vehicle Photos';
+      case 'damage photos count':
+        return 'Damage Vehicle Photos';
       case 'driver license':
       case 'driving license':
       case 'license photos':
-      case 'license photos count': return 'Driving License';
+      case 'license photos count':
+        return 'Driving License';
       case 'supporting docs':
-      case 'supporting documents': return 'Uploaded Documents';
+      case 'supporting documents':
+        return 'Uploaded Documents';
       case 'police report':
-      case 'police report count': return 'Police Report';
+      case 'police report count':
+        return 'Police Report';
       case 'bill invoice':
       case 'invoice':
-      case 'invoice count': return 'Invoice';
+      case 'invoice count':
+        return 'Invoice';
       case 'repair bill':
-      case 'repair bill count': return 'Repair Bill';
-      default: return key.replaceAll(' Count', '');
+      case 'repair bill count':
+        return 'Repair Bill';
+      default:
+        return key.replaceAll(' Count', '');
     }
   }
 
@@ -3610,130 +3696,127 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                     ),
                     child: _buildFormattedText(
                       _visibleBotText(index, msg.text),
-                      const TextStyle(
-                        fontSize: 14,
-                        color: _kDark,
-                        height: 1.4,
-                      ),
+                      const TextStyle(fontSize: 14, color: _kDark, height: 1.4),
                     ),
                   ),
                 ),
             ],
           ),
           if (!_isCurrentlySpeaking(index)) ...[
-          const SizedBox(height: 10),
-          Padding(
-            padding: const EdgeInsets.only(left: 46),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: maxCardWidth),
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Color(0xFF2A6FDB), Color(0xFF1E5BC2)],
-                  ),
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _kBlue.withValues(alpha: 0.25),
-                      blurRadius: 14,
-                      offset: const Offset(0, 4),
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.only(left: 46),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxCardWidth),
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF2A6FDB), Color(0xFF1E5BC2)],
                     ),
-                  ],
-                ),
-                padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.18),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(
-                            Icons.description_outlined,
-                            color: Colors.white,
-                            size: 16,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        const Text(
-                          'Review Your Claim',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    ..._reviewRows(basic),
-                    if (incident.isNotEmpty) ...[
-                      const SizedBox(height: 14),
-                      _reviewSectionHeader('INCIDENT DETAILS'),
-                      const SizedBox(height: 10),
-                      ..._reviewRows(incident, multiline: true),
-                    ],
-                    if (documents.isNotEmpty) ...[
-                      const SizedBox(height: 14),
-                      _reviewSectionHeader('DOCUMENTS'),
-                      const SizedBox(height: 10),
-                      ..._reviewRows(documents),
-                    ],
-                    const SizedBox(height: 18),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: (!isLastBot ||
-                                _confirmingFinalSummary ||
-                                _botTyping ||
-                                _isCurrentlySpeaking(index))
-                            ? null
-                            : () => _onConfirmFinalSummary(msg),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: _kBlue,
-                          disabledBackgroundColor:
-                              Colors.white.withValues(alpha: 0.7),
-                          disabledForegroundColor:
-                              _kBlue.withValues(alpha: 0.6),
-                          elevation: 0,
-                          padding:
-                              const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(28),
-                          ),
-                        ),
-                        child: _confirmingFinalSummary
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor:
-                                      AlwaysStoppedAnimation(_kBlue),
-                                ),
-                              )
-                            : const Text(
-                                'Confirm & Submit Claim',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _kBlue.withValues(alpha: 0.25),
+                        blurRadius: 14,
+                        offset: const Offset(0, 4),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
+                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.description_outlined,
+                              color: Colors.white,
+                              size: 16,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          const Text(
+                            'Review Your Claim',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      ..._reviewRows(basic),
+                      if (incident.isNotEmpty) ...[
+                        const SizedBox(height: 14),
+                        _reviewSectionHeader('INCIDENT DETAILS'),
+                        const SizedBox(height: 10),
+                        ..._reviewRows(incident, multiline: true),
+                      ],
+                      if (documents.isNotEmpty) ...[
+                        const SizedBox(height: 14),
+                        _reviewSectionHeader('DOCUMENTS'),
+                        const SizedBox(height: 10),
+                        ..._reviewRows(documents),
+                      ],
+                      const SizedBox(height: 18),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed:
+                              (!isLastBot ||
+                                  _confirmingFinalSummary ||
+                                  _botTyping ||
+                                  _isCurrentlySpeaking(index))
+                              ? null
+                              : () => _onConfirmFinalSummary(msg),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: _kBlue,
+                            disabledBackgroundColor: Colors.white.withValues(
+                              alpha: 0.7,
+                            ),
+                            disabledForegroundColor: _kBlue.withValues(
+                              alpha: 0.6,
+                            ),
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(28),
+                            ),
+                          ),
+                          child: _confirmingFinalSummary
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation(_kBlue),
+                                  ),
+                                )
+                              : const Text(
+                                  'Confirm & Submit Claim',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
           ],
         ],
       ),
@@ -3744,10 +3827,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          height: 1,
-          color: Colors.white.withValues(alpha: 0.2),
-        ),
+        Container(height: 1, color: Colors.white.withValues(alpha: 0.2)),
         const SizedBox(height: 12),
         Text(
           label,
@@ -3793,11 +3873,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                     fontWeight: FontWeight.w600,
                     height: 1.45,
                   ),
-                  textAlign:
-                      multiline ? TextAlign.left : TextAlign.right,
+                  textAlign: multiline ? TextAlign.left : TextAlign.right,
                   maxLines: multiline ? null : 2,
-                  overflow:
-                      multiline ? TextOverflow.visible : TextOverflow.ellipsis,
+                  overflow: multiline
+                      ? TextOverflow.visible
+                      : TextOverflow.ellipsis,
                 ),
               ),
             ],
@@ -3856,11 +3936,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                     ),
                     child: _buildFormattedText(
                       introText,
-                      const TextStyle(
-                        fontSize: 14,
-                        color: _kDark,
-                        height: 1.4,
-                      ),
+                      const TextStyle(fontSize: 14, color: _kDark, height: 1.4),
                     ),
                   ),
                 ),
@@ -3872,127 +3948,132 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           // finish before revealing the structured fields, so the user never
           // sees the table while the message above it is mid-typing.
           if (!_isCurrentlySpeaking(index))
-          Padding(
-            padding: const EdgeInsets.only(left: 46, top: 10),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: maxCardWidth),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
-                      blurRadius: 10,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Header
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 14),
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFF7F8FA),
-                        borderRadius: BorderRadius.only(
-                          topLeft: Radius.circular(16),
-                          topRight: Radius.circular(16),
-                        ),
+            Padding(
+              padding: const EdgeInsets.only(left: 46, top: 10),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxCardWidth),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
                       ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 28,
-                            height: 28,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF34A853),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(Icons.check,
-                                color: Colors.white, size: 16),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Header
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFF7F8FA),
+                          borderRadius: BorderRadius.only(
+                            topLeft: Radius.circular(16),
+                            topRight: Radius.circular(16),
                           ),
-                          const SizedBox(width: 10),
-                          Flexible(
-                            child: Text(
-                              title,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: _kDark,
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 28,
+                              height: 28,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF34A853),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.check,
+                                color: Colors.white,
+                                size: 16,
                               ),
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 10),
+                            Flexible(
+                              child: Text(
+                                title,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: _kDark,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    // Fields
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 4),
-                      child: Column(
-                        children: List.generate(fields.length, (i) {
-                          final entry = fields.entries.elementAt(i);
-                          final isStatus =
-                              entry.key.toLowerCase() == 'status';
-                          final isLast = i == fields.length - 1;
-                          return Container(
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 10),
-                            decoration: BoxDecoration(
-                              border: isLast
-                                  ? null
-                                  : Border(
-                                      bottom: BorderSide(
-                                        color: Colors.grey.shade200,
-                                        width: 1,
+                      // Fields
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 4,
+                        ),
+                        child: Column(
+                          children: List.generate(fields.length, (i) {
+                            final entry = fields.entries.elementAt(i);
+                            final isStatus =
+                                entry.key.toLowerCase() == 'status';
+                            final isLast = i == fields.length - 1;
+                            return Container(
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              decoration: BoxDecoration(
+                                border: isLast
+                                    ? null
+                                    : Border(
+                                        bottom: BorderSide(
+                                          color: Colors.grey.shade200,
+                                          width: 1,
+                                        ),
+                                      ),
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  SizedBox(
+                                    width: 110,
+                                    child: Text(
+                                      '${entry.key}:',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.grey.shade600,
+                                        height: 1.4,
                                       ),
                                     ),
-                            ),
-                            child: Row(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.start,
-                              children: [
-                                SizedBox(
-                                  width: 110,
-                                  child: Text(
-                                    '${entry.key}:',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: Colors.grey.shade600,
-                                      height: 1.4,
+                                  ),
+                                  Expanded(
+                                    child: Text(
+                                      entry.value,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: isStatus && isActive
+                                            ? const Color(0xFF34A853)
+                                            : _kDark,
+                                        height: 1.4,
+                                      ),
+                                      textAlign: TextAlign.right,
                                     ),
                                   ),
-                                ),
-                                Expanded(
-                                  child: Text(
-                                    entry.value,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                      color: isStatus && isActive
-                                          ? const Color(0xFF34A853)
-                                          : _kDark,
-                                      height: 1.4,
-                                    ),
-                                    textAlign: TextAlign.right,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
+                                ],
+                              ),
+                            );
+                          }),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                  ],
+                      const SizedBox(height: 6),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
 
           // Suggestion chips on last bot message — only after speech ends.
           if (isLastBot &&
@@ -4074,8 +4155,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           _buildBotAvatar(),
           const SizedBox(width: 10),
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: const BorderRadius.only(
@@ -4098,8 +4178,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                   mainAxisSize: MainAxisSize.min,
                   children: List.generate(3, (i) {
                     final delay = i * 0.15;
-                    final t =
-                        (_typingController.value - delay).clamp(0.0, 1.0);
+                    final t = (_typingController.value - delay).clamp(0.0, 1.0);
                     final offset =
                         -4.0 * (1.0 - (2.0 * t - 1.0) * (2.0 * t - 1.0));
                     return Padding(
@@ -4191,7 +4270,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                 onTap: _stopRecordingAndSubmit,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 6),
+                    horizontal: 14,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: _kRed.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(100),
@@ -4278,8 +4359,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                         ),
                         border: InputBorder.none,
                         isDense: true,
-                        contentPadding:
-                            const EdgeInsets.symmetric(vertical: 12),
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                        ),
                       ),
                     ),
                   ),
@@ -4325,8 +4407,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: (_isRecording ? _kRed : _kBlue)
-                        .withValues(alpha: 0.3),
+                    color: (_isRecording ? _kRed : _kBlue).withValues(
+                      alpha: 0.3,
+                    ),
                     blurRadius: 10,
                     offset: const Offset(0, 3),
                   ),
