@@ -95,6 +95,10 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   // since picked a different image (enabling re-submit). Cleared on a
   // successful validate + upload pass.
   final Map<String, String> _failedAnglePaths = {};
+  // group_keys that have already validated + uploaded successfully in this
+  // thread. Used to disable Submit on any older failure card whose group is
+  // done so the user can't accidentally re-validate an already-stored group.
+  final Set<String> _uploadedGroupKeys = {};
 
   // GET_DOCUMENT state.
   final List<PlatformFile> _pickedDocuments = [];
@@ -180,6 +184,10 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   /// Streams bot response from `/chat/stream`.
   /// Each message in the SSE payload becomes its own bubble.
   Future<void> _streamBotReply(String userMessage) async {
+    // `AUTO_GET_LOCATION` is delivered mid-stream; defer the actual fetch
+    // until after the stream finishes so the location reply doesn't race
+    // with remaining queued bot messages.
+    bool autoFetchLocation = false;
     try {
       await for (final msg in ChatService.sendMessage(
         userMessage,
@@ -206,7 +214,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           _triggerAutoSaveOnSummary(msg.payload, msg.content);
         }
         if (msg.triggers.contains('AUTO_GET_LOCATION')) {
-          unawaited(_onUseCurrentLocation(auto: true));
+          autoFetchLocation = true;
         }
       }
     } catch (_) {
@@ -220,6 +228,10 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     }
     if (!mounted) return;
     _showNextPendingMessage();
+
+    if (autoFetchLocation) {
+      unawaited(_onUseCurrentLocation(auto: true));
+    }
   }
 
   /// Shows the next queued bot message and animates it.
@@ -1542,8 +1554,11 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                             if (_showSampleOf(msg)) _buildSeeSampleLink(msg),
                             if (msg.validationFailedAngles.isNotEmpty)
                               _buildValidationFailureList(
+                                msg,
                                 msg.validationFailedAngles,
                               ),
+                            if (msg.validationFailedLegacy)
+                              _buildLegacyValidationFailure(),
                           ],
                         ),
                 ),
@@ -1667,13 +1682,50 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     setState(() => _angleImages.remove(angle));
   }
 
-  Future<void> _onSubmitAngleImages() async {
+  Future<void> _onSubmitAngleImages({_ChatMsg? originatingMsg}) async {
     if (_angleImages.isEmpty || _botTyping || _uploadingFiles) return;
 
-    final entries = _angleImages.entries.toList(growable: false);
-    setState(() => _uploadingFiles = true);
+    // Resolve the group_key for THIS submission. Priority:
+    //   1. validationGroupKey on the originating failure card (echoed back by
+    //      the previous /validate-images response).
+    //   2. Keyword scan over the originating GET_IMAGE trigger's bot text.
+    //   3. Walk-back inference over the chat history (legacy fallback).
+    // The previous flow always took option 3, which mis-fired after a failed
+    // validation because the failure bubble has empty text — `_inferCategory`
+    // then fell through to its `vehicle_photos` default and re-validated an
+    // already-completed group.
+    String category;
+    if (originatingMsg?.validationGroupKey != null &&
+        originatingMsg!.validationGroupKey!.isNotEmpty) {
+      category = originatingMsg.validationGroupKey!;
+    } else if (originatingMsg != null && originatingMsg.text.isNotEmpty) {
+      category = _inferCategoryFromText(originatingMsg.text, isImage: true);
+    } else {
+      category = _inferCategory(isImage: true);
+    }
 
-    final category = _inferCategory(isImage: true);
+    // Block re-submission of a group that already validated + uploaded.
+    if (_uploadedGroupKeys.contains(category)) {
+      debugPrint(
+        '[Validate] skipping re-submit for already-uploaded group: $category',
+      );
+      return;
+    }
+
+    // Restrict the entries we send to the angles owned by this card. Without
+    // this filter, stale entries from a previous group's failure card would
+    // bundle into the request and trigger a second redundant validation.
+    final List<String>? scopedAngles =
+        (originatingMsg?.validationFailedAngles.isNotEmpty ?? false)
+        ? originatingMsg!.validationFailedAngles
+        : (originatingMsg != null ? _allowedAnglesOf(originatingMsg) : null);
+    final entries = scopedAngles == null
+        ? _angleImages.entries.toList(growable: false)
+        : _angleImages.entries
+              .where((e) => scopedAngles.contains(e.key))
+              .toList(growable: false);
+    if (entries.isEmpty) return;
+    setState(() => _uploadingFiles = true);
 
     // Read bytes once; reused for both upload + validation.
     final List<({String angle, String name, List<int> bytes, String path})>
@@ -1690,16 +1742,20 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     }
 
     // ── Validate first (AI image validation) ───────────────────────────
-    final validation = await _runImageValidation(
-      questionLabel: category,
-      images: {
-        for (final p in prepared) p.angle: base64Encode(p.bytes),
-      },
-    );
-    if (!validation.valid) {
-      if (!mounted) return;
-      setState(() => _uploadingFiles = false);
-      return;
+    // Only `vehicle_photos` goes through `/validate-images` — every other
+    // group (damage_photos, driver_license, …) uploads directly.
+    if (category == 'vehicle_photos') {
+      final validation = await _runImageValidation(
+        questionLabel: category,
+        images: {
+          for (final p in prepared) p.angle: base64Encode(p.bytes),
+        },
+      );
+      if (!validation.valid) {
+        if (!mounted) return;
+        setState(() => _uploadingFiles = false);
+        return;
+      }
     }
 
     int uploadedCount = 0;
@@ -1744,7 +1800,12 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     final bubble = '$count photo${count > 1 ? 's' : ''} uploaded';
     final paths = prepared.map((p) => p.path).toList();
     setState(() {
-      _angleImages.clear();
+      // Drop only the angles we just uploaded — preserves any picks the user
+      // may have made for a different group's still-open card.
+      for (final p in prepared) {
+        _angleImages.remove(p.angle);
+      }
+      _uploadedGroupKeys.add(category);
       _uploadingFiles = false;
       _messages.add(_ChatMsg(text: bubble, isUser: true, imagePaths: paths));
       _botTyping = true;
@@ -1760,6 +1821,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   Future<ImageValidationResult> _runImageValidation({
     required String questionLabel,
     required Map<String, String> images,
+    bool isLegacy = false,
   }) async {
     final waitingMsg = _ChatMsg(
       text: 'Please wait while we validate your images...',
@@ -1785,7 +1847,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
 
     if (!mounted) return result;
 
-    final failedAngles = _extractFailedAngles(result.raw);
+    final failedAngles = result.invalidAngles;
 
     setState(() {
       _messages.remove(waitingMsg);
@@ -1793,19 +1855,22 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         // Snapshot the rejected images' paths so the failure card can detect
         // when the user picks a replacement (and re-enable Submit). The
         // images themselves stay in `_angleImages` so their thumbnails
-        // remain visible alongside the "image is not correct" status.
+        // remain visible alongside the per-angle error status.
         _failedAnglePaths.clear();
         for (final a in failedAngles) {
           final f = _angleImages[a];
           if (f != null) _failedAnglePaths[a] = f.path;
         }
+        final useLegacy = isLegacy || failedAngles.isEmpty;
         _messages.add(
           _ChatMsg(
-            text: failedAngles.isEmpty
+            text: useLegacy
                 ? 'Image validation failed. Please re-upload.'
                 : '',
             isUser: false,
-            validationFailedAngles: failedAngles,
+            validationFailedAngles: useLegacy ? const [] : failedAngles,
+            validationFailedLegacy: useLegacy,
+            validationGroupKey: result.groupKey,
           ),
         );
       } else {
@@ -1816,20 +1881,15 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     return result;
   }
 
-  /// Pulls the angle keys whose `angle_matches` is `false` out of the
-  /// `/validate-images` response. The `details` map mixes per-angle objects
-  /// with scalars (`is_same_car`, `failure_reason`), so we only treat entries
-  /// that are themselves Maps containing `angle_matches`.
-  List<String> _extractFailedAngles(Map<String, dynamic> raw) {
-    final details = raw['details'];
-    if (details is! Map) return const [];
-    final out = <String>[];
-    details.forEach((key, value) {
-      if (value is Map && value['angle_matches'] == false) {
-        out.add(key.toString());
-      }
-    });
-    return out;
+  /// Re-renders the same legacy GET_IMAGE trigger card inside the failure
+  /// bubble so the user can remove rejected images, add more, and resubmit.
+  /// `_pickedImages` is preserved on validation failure, so the originally
+  /// rejected thumbnails stay visible until the user edits them.
+  Widget _buildLegacyValidationFailure() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: _buildLegacyImageTrigger(),
+    );
   }
 
   /// Renders the validation-failure card: header, one row per failed angle
@@ -1837,12 +1897,19 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   /// Upload/Replace button), and a Submit button that re-runs the validate +
   /// upload flow. Self-contained because the original GET_IMAGE trigger card
   /// is no longer the "last bot message" once this bubble is added.
-  Widget _buildValidationFailureList(List<String> angles) {
+  Widget _buildValidationFailureList(_ChatMsg msg, List<String> angles) {
     bool isStillRejected(String a) =>
         _failedAnglePaths[a] != null &&
         _angleImages[a]?.path == _failedAnglePaths[a];
     final allReplaced = angles.every((a) => !isStillRejected(a));
-    final canSubmit = allReplaced && !_uploadingFiles && !_botTyping;
+    // Once this card's group has been validated + uploaded successfully,
+    // freeze its Submit so a stale card can't re-fire validation against an
+    // already-stored group.
+    final groupAlreadyDone =
+        msg.validationGroupKey != null &&
+        _uploadedGroupKeys.contains(msg.validationGroupKey);
+    final canSubmit =
+        allReplaced && !_uploadingFiles && !_botTyping && !groupAlreadyDone;
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Column(
@@ -1907,7 +1974,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                         const SizedBox(height: 2),
                         Text(
                           stillRejected
-                              ? 'image is not correct'
+                              ? '${_humanizeAngle(angle)} does not match the required view. Please re-upload.'
                               : 'Ready to submit',
                           style: TextStyle(
                             fontSize: 11,
@@ -1947,7 +2014,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: canSubmit ? _onSubmitAngleImages : null,
+              onPressed: canSubmit
+                  ? () => _onSubmitAngleImages(originatingMsg: msg)
+                  : null,
               style: ElevatedButton.styleFrom(
                 backgroundColor: _kBlue,
                 foregroundColor: Colors.white,
@@ -2038,17 +2107,22 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       ));
     }
 
-    final validation = await _runImageValidation(
-      questionLabel: category,
-      images: {
-        for (var i = 0; i < prepared.length; i++)
-          'image_$i': base64Encode(prepared[i].bytes),
-      },
-    );
-    if (!validation.valid) {
-      if (!mounted) return;
-      setState(() => _uploadingFiles = false);
-      return;
+    // Only `vehicle_photos` runs through AI validation; every other group
+    // uploads directly.
+    if (category == 'vehicle_photos') {
+      final validation = await _runImageValidation(
+        questionLabel: category,
+        images: {
+          for (var i = 0; i < prepared.length; i++)
+            'image_$i': base64Encode(prepared[i].bytes),
+        },
+        isLegacy: true,
+      );
+      if (!validation.valid) {
+        if (!mounted) return;
+        setState(() => _uploadingFiles = false);
+        return;
+      }
     }
 
     int uploadedCount = 0;
@@ -2515,13 +2589,25 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   /// prompt. The chatbot's trigger messages don't carry an explicit category,
   /// so we fall back to keyword matching on the latest bot text.
   String _inferCategory({required bool isImage}) {
+    // Walk back to the most recent bot message that actually carries content
+    // — skip empty validation-failure bubbles and any blank assistant turn so
+    // the inference doesn't get pulled to its default by the failure card.
     String text = '';
     for (int i = _messages.length - 1; i >= 0; i--) {
-      if (!_messages[i].isUser) {
-        text = _messages[i].text.toLowerCase();
-        break;
+      final m = _messages[i];
+      if (m.isUser) continue;
+      if (m.validationFailedAngles.isNotEmpty || m.validationFailedLegacy) {
+        continue;
       }
+      if (m.text.trim().isEmpty) continue;
+      text = m.text;
+      break;
     }
+    return _inferCategoryFromText(text, isImage: isImage);
+  }
+
+  String _inferCategoryFromText(String raw, {required bool isImage}) {
+    final text = raw.toLowerCase();
     if (text.contains('damage')) return 'damage_photos';
     if (text.contains('license') || text.contains('licence')) {
       return 'driver_license';
@@ -3168,9 +3254,16 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     }
     final minCount = _payloadInt(msg, 'min_count') ?? angles.length;
     final maxCount = _payloadInt(msg, 'max_count') ?? angles.length;
-    final filledCount = _angleImages.length;
+    // Count only the angles this trigger owns. The global map can carry stray
+    // entries from a different group's still-open failure card.
+    final filledCount = angles.where(_angleImages.containsKey).length;
+    final triggerCategory = _inferCategoryFromText(msg.text, isImage: true);
+    final groupAlreadyDone = _uploadedGroupKeys.contains(triggerCategory);
     final canSubmit =
-        filledCount >= minCount && !_uploadingFiles && !_botTyping;
+        filledCount >= minCount &&
+        !_uploadingFiles &&
+        !_botTyping &&
+        !groupAlreadyDone;
 
     return Container(
       width: double.infinity,
@@ -3214,7 +3307,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           const SizedBox(height: 12),
           if (filledCount >= minCount)
             GestureDetector(
-              onTap: canSubmit ? _onSubmitAngleImages : null,
+              onTap: canSubmit
+                  ? () => _onSubmitAngleImages(originatingMsg: msg)
+                  : null,
               child: Opacity(
                 opacity: canSubmit ? 1.0 : 0.5,
                 child: Container(
@@ -3834,6 +3929,12 @@ class _ChatMsg {
   /// non-empty, the bubble renders a per-angle "Upload `<angle>`" button that
   /// re-picks just that slot in `_angleImages`.
   final List<String> validationFailedAngles;
+  /// Set when `/validate-images` fails for the legacy free-form flow (no
+  /// per-angle breakdown). Drives a single "Re-upload Photos" button.
+  final bool validationFailedLegacy;
+  /// `group_key` echoed back by `/validate-images`. Scopes the failure card
+  /// to a particular upload group (e.g. `vehicle_photos`).
+  final String? validationGroupKey;
 
   const _ChatMsg({
     required this.text,
@@ -3848,6 +3949,8 @@ class _ChatMsg {
     this.imagePaths = const [],
     this.documentNames = const [],
     this.validationFailedAngles = const [],
+    this.validationFailedLegacy = false,
+    this.validationGroupKey,
   });
 }
 

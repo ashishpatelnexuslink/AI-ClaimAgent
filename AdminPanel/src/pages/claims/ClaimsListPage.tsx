@@ -23,7 +23,6 @@ export default function ClaimsListPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const filtered = useMemo(() => {
     if (!claims) return [];
@@ -43,22 +42,6 @@ export default function ClaimsListPage() {
   const resetFilters = () => {
     setSearch(''); setStatusFilter('All'); setTypeFilter('All');
     setDateFrom(''); setDateTo(''); setPage(1);
-  };
-
-  const toggleSelect = (id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleAll = () => {
-    if (selected.size === paged.length) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(paged.map((c) => c.id)));
-    }
   };
 
   if (isLoading) {
@@ -133,29 +116,11 @@ export default function ClaimsListPage() {
         </div>
       )}
 
-      {/* Bulk Actions */}
-      {selected.size > 0 && (
-        <div className="bg-primary-light rounded-xl px-4 py-3 flex items-center gap-4">
-          <span className="text-sm font-medium text-primary">{selected.size} selected</span>
-          <Button size="sm" variant="success">Approve Selected</Button>
-          <Button size="sm" variant="danger">Reject Selected</Button>
-          <Button size="sm" variant="outline">Export Selected</Button>
-        </div>
-      )}
-
       {/* Table */}
       <div className="bg-card rounded-xl shadow-sm overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="border-b border-gray-100">
-              <th className="px-4 py-3 text-left">
-                <input
-                  type="checkbox"
-                  checked={selected.size === paged.length && paged.length > 0}
-                  onChange={toggleAll}
-                  className="rounded border-gray-300"
-                />
-              </th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Claim #</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">User</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Type</th>
@@ -169,14 +134,6 @@ export default function ClaimsListPage() {
           <tbody>
             {paged.map((claim: Claim) => (
               <tr key={claim.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                <td className="px-4 py-3">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(claim.id)}
-                    onChange={() => toggleSelect(claim.id)}
-                    className="rounded border-gray-300"
-                  />
-                </td>
                 <td className="px-4 py-3">
                   <button
                     onClick={() => navigate(`/claims/${claim.id}`)}

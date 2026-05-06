@@ -27,7 +27,12 @@ interface AdminClaimListItemDto {
   claimantType?: string | null;
 }
 
-function toClaim(row: AdminClaimListItemDto): Claim {
+interface AdminClaimDetailDto extends AdminClaimListItemDto {
+  description?: string | null;
+  incidentLocation?: string | null;
+}
+
+function toClaim(row: AdminClaimDetailDto): Claim {
   return {
     id: row.id,
     claimNumber: row.claimNumber,
@@ -42,6 +47,8 @@ function toClaim(row: AdminClaimListItemDto): Claim {
     amount: row.amount ?? undefined,
     assignedTo: row.assignedTo ?? undefined,
     claimantType: row.claimantType ?? undefined,
+    description: row.description ?? undefined,
+    incidentLocation: row.incidentLocation ?? undefined,
   };
 }
 
@@ -71,7 +78,7 @@ export const claimsService = {
       return claim;
     }
     const { data } = await api.get(`/api/web/claims/${id}`);
-    const row = unwrap<AdminClaimListItemDto>(data);
+    const row = unwrap<AdminClaimDetailDto>(data);
     return toClaim(row);
   },
 

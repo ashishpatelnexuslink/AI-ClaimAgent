@@ -60,18 +60,28 @@ class ChatService {
     } catch (_) {
       body = const {};
     }
+    final invalidAngles =
+        (body['invalid_angles'] as List?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        const <String>[];
+    final groupKey = body['group_key']?.toString();
     if (response.statusCode < 200 || response.statusCode >= 300) {
       return ImageValidationResult(
         valid: false,
         failureReason:
             (body['failure_reason'] ?? body['detail'] ?? 'Validation failed')
                 .toString(),
+        invalidAngles: invalidAngles,
+        groupKey: groupKey,
         raw: body,
       );
     }
     return ImageValidationResult(
       valid: body['valid'] == true,
       failureReason: body['failure_reason']?.toString(),
+      invalidAngles: invalidAngles,
+      groupKey: groupKey,
       raw: body,
     );
   }
@@ -80,10 +90,14 @@ class ChatService {
 class ImageValidationResult {
   final bool valid;
   final String? failureReason;
+  final List<String> invalidAngles;
+  final String? groupKey;
   final Map<String, dynamic> raw;
   const ImageValidationResult({
     required this.valid,
     this.failureReason,
+    this.invalidAngles = const [],
+    this.groupKey,
     this.raw = const {},
   });
 }

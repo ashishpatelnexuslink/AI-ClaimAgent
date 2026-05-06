@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -45,6 +46,16 @@ class _ChatMessage {
   final Map<String, dynamic>? payload;
   final List<String> imagePaths;
   final List<String> documentNames;
+  /// Angles flagged as `angle_matches: false` by `/validate-images`. When
+  /// non-empty, the bot bubble renders a per-angle re-upload card.
+  final List<String> validationFailedAngles;
+  /// Set when `/validate-images` fails for the legacy free-form flow (no
+  /// per-angle breakdown). Drives a single "Re-upload Photos" button in
+  /// the failure bubble.
+  final bool validationFailedLegacy;
+  /// `group_key` echoed back by `/validate-images`. Scopes the failure card
+  /// to a particular upload group (e.g. `vehicle_photos`).
+  final String? validationGroupKey;
 
   const _ChatMessage({
     required this.text,
@@ -58,6 +69,9 @@ class _ChatMessage {
     this.payload,
     this.imagePaths = const [],
     this.documentNames = const [],
+    this.validationFailedAngles = const [],
+    this.validationFailedLegacy = false,
+    this.validationGroupKey,
   });
 }
 
@@ -98,6 +112,15 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   // Dynamic per-angle flow driven by `payload.allowed_angles` — keyed by
   // angle name (e.g. "front_left"). Cleared after each successful submit.
   final Map<String, File> _angleImages = {};
+  // For each angle that `/validate-images` flagged as invalid, the path of
+  // the image at the time of failure. Used by the failure card to detect
+  // when the user has picked a replacement (enabling re-submit). Cleared on
+  // a successful validate + upload pass.
+  final Map<String, String> _failedAnglePaths = {};
+  // group_keys that have already validated + uploaded successfully in this
+  // session. Disables Submit on any older failure card so a stale card can't
+  // re-fire validation against an already-stored group.
+  final Set<String> _uploadedGroupKeys = {};
   final List<PlatformFile> _pickedDocuments = [];
   final int _maxDocuments = 10;
   final List<String> _allowedDocExtensions = const [
@@ -541,6 +564,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     });
     _scrollToBottom();
 
+    // `AUTO_GET_LOCATION` is delivered mid-stream, while `_botTyping` is
+    // still true. `_onUseCurrentLocation` bails on that flag, so we defer
+    // the fetch until after the stream finishes.
+    bool autoFetchLocation = false;
+
     try {
       await for (final msg in ChatService.sendMessage(
         userMessage,
@@ -570,7 +598,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           _triggerAutoSaveOnSummary(msg.payload, msg.content);
         }
         if (msg.triggers.contains('AUTO_GET_LOCATION')) {
-          unawaited(_onUseCurrentLocation());
+          autoFetchLocation = true;
         }
       }
     } catch (_) {
@@ -591,6 +619,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       _botTyping = false;
     });
     _scrollToBottom();
+
+    if (autoFetchLocation) {
+      unawaited(_onUseCurrentLocation());
+    }
   }
 
   void _handleChipSelection(String value) {
@@ -958,27 +990,87 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     setState(() => _angleImages.remove(angle));
   }
 
-  Future<void> _onSubmitAngleImages() async {
+  Future<void> _onSubmitAngleImages({_ChatMessage? originatingMsg}) async {
     if (_angleImages.isEmpty || _botTyping || _uploadingFiles) return;
 
-    final entries = _angleImages.entries.toList(growable: false);
+    // Resolve the group_key for THIS submission. Priority:
+    //   1. validationGroupKey on the originating failure card.
+    //   2. Keyword scan on the originating GET_IMAGE trigger's bot text.
+    //   3. Walk-back inference (legacy fallback).
+    String category;
+    if (originatingMsg?.validationGroupKey != null &&
+        originatingMsg!.validationGroupKey!.isNotEmpty) {
+      category = originatingMsg.validationGroupKey!;
+    } else if (originatingMsg != null && originatingMsg.text.isNotEmpty) {
+      category = _inferCategoryFromText(originatingMsg.text, isImage: true);
+    } else {
+      category = _inferCategory(isImage: true);
+    }
+
+    // Block re-submission of a group that already validated + uploaded.
+    if (_uploadedGroupKeys.contains(category)) {
+      debugPrint(
+        '[Validate] skipping re-submit for already-uploaded group: $category',
+      );
+      return;
+    }
+
+    // Restrict the entries to angles owned by this card so stray entries from
+    // a different group's still-open card don't bundle into the request.
+    final List<String>? scopedAngles =
+        (originatingMsg?.validationFailedAngles.isNotEmpty ?? false)
+        ? originatingMsg!.validationFailedAngles
+        : (originatingMsg != null ? _allowedAnglesOf(originatingMsg) : null);
+    final entries = scopedAngles == null
+        ? _angleImages.entries.toList(growable: false)
+        : _angleImages.entries
+              .where((e) => scopedAngles.contains(e.key))
+              .toList(growable: false);
+    if (entries.isEmpty) return;
     setState(() => _uploadingFiles = true);
+
+    // Read bytes once; reused for both upload + validation.
+    final List<({String angle, String name, Uint8List bytes, String path})>
+        prepared = [];
+    for (final entry in entries) {
+      final bytes = await entry.value.readAsBytes();
+      final name = entry.value.path.split(RegExp(r'[\\/]')).last;
+      prepared.add((
+        angle: entry.key,
+        name: name.isEmpty ? 'image.jpg' : name,
+        bytes: bytes,
+        path: entry.value.path,
+      ));
+    }
+
+    // ── Validate first (AI image validation) ───────────────────────────
+    // Only `vehicle_photos` goes through `/validate-images` — every other
+    // group (damage_photos, driver_license, …) uploads directly.
+    if (category == 'vehicle_photos') {
+      final validation = await _runImageValidation(
+        questionLabel: category,
+        images: {
+          for (final p in prepared) p.angle: base64Encode(p.bytes),
+        },
+      );
+      if (!validation.valid) {
+        if (!mounted) return;
+        setState(() => _uploadingFiles = false);
+        return;
+      }
+    }
 
     int uploadedCount = 0;
     try {
       final ds = di.sl<ClaimsRemoteDataSource>();
-      final category = _inferCategory(isImage: true);
-      for (final entry in entries) {
-        final file = entry.value;
-        final bytes = await file.readAsBytes();
-        final name = file.path.split(RegExp(r'[\\/]')).last;
+      for (final p in prepared) {
         final response = await ds.uploadClaimDocument(
-          bytes: bytes,
-          fileName: name.isEmpty ? 'image.jpg' : name,
+          bytes: p.bytes,
+          fileName: p.name,
           kind: 'Image',
           groupKey: category,
           chatThreadId: _threadId,
-          angle: entry.key,
+          angle: p.angle,
         );
         final id = (response['id'] ?? '').toString();
         if (id.isNotEmpty) {
@@ -997,9 +1089,14 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
     if (!mounted) return;
     final count = uploadedCount == 0 ? entries.length : uploadedCount;
-    final paths = entries.map((e) => e.value.path).toList();
+    final paths = prepared.map((p) => p.path).toList();
     setState(() {
-      _angleImages.clear();
+      // Drop only the angles we just uploaded — preserves any picks the user
+      // may have made for a different group's still-open card.
+      for (final p in prepared) {
+        _angleImages.remove(p.angle);
+      }
+      _uploadedGroupKeys.add(category);
       _uploadingFiles = false;
     });
     _addUserAttachmentMessage(
@@ -1007,6 +1104,240 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       imagePaths: paths,
     );
     _streamBotReply(count.toString());
+  }
+
+  /// POSTs the picked images to `/validate-images` and renders a transient
+  /// "validating…" bot bubble. On success the bubble is removed; on failure
+  /// it's swapped for a per-angle re-upload card. Returns the validation
+  /// result so callers can decide whether to continue with the upload + chat.
+  Future<ImageValidationResult> _runImageValidation({
+    required String questionLabel,
+    required Map<String, String> images,
+    bool isLegacy = false,
+  }) async {
+    final waitingMsg = _ChatMessage(
+      text: 'Please wait while we validate your images...',
+      type: 'bot',
+    );
+    setState(() => _messages.add(waitingMsg));
+    _scrollToBottom();
+
+    ImageValidationResult result;
+    try {
+      result = await ChatService.validateImages(
+        questionLabel: questionLabel,
+        threadId: _threadId,
+        images: images,
+      );
+    } catch (e) {
+      debugPrint('[Validate] image validation failed: $e');
+      result = ImageValidationResult(
+        valid: false,
+        failureReason: 'Could not validate images. Please try again.',
+      );
+    }
+
+    if (!mounted) return result;
+
+    final failedAngles = result.invalidAngles;
+
+    setState(() {
+      _messages.remove(waitingMsg);
+      if (!result.valid) {
+        // Snapshot the rejected paths so the failure card can detect when
+        // the user picks a replacement (re-enabling Submit). The picked
+        // images themselves stay in `_angleImages` so their thumbnails
+        // remain visible alongside the per-angle error status.
+        _failedAnglePaths.clear();
+        for (final a in failedAngles) {
+          final f = _angleImages[a];
+          if (f != null) _failedAnglePaths[a] = f.path;
+        }
+        final useLegacy = isLegacy || failedAngles.isEmpty;
+        _messages.add(
+          _ChatMessage(
+            text: useLegacy
+                ? 'Image validation failed. Please re-upload.'
+                : '',
+            type: 'bot',
+            validationFailedAngles: useLegacy ? const [] : failedAngles,
+            validationFailedLegacy: useLegacy,
+            validationGroupKey: result.groupKey,
+          ),
+        );
+      } else {
+        _failedAnglePaths.clear();
+      }
+    });
+    _scrollToBottom();
+    return result;
+  }
+
+  /// Re-renders the same legacy GET_IMAGE trigger card inside the failure
+  /// bubble so the user can remove rejected images, add more, and resubmit.
+  /// `_pickedImages` is preserved on validation failure, so the originally
+  /// rejected thumbnails stay visible until the user edits them.
+  Widget _buildLegacyValidationFailure() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: _buildLegacyImageTrigger(),
+    );
+  }
+
+  /// Renders the validation-failure card: header, one row per failed angle
+  /// (thumbnail of the rejected/replacement image, label, status, Upload or
+  /// Replace button), and a Submit button that re-runs the validate + upload
+  /// flow once every failed angle has a replacement.
+  Widget _buildValidationFailureList(_ChatMessage msg, List<String> angles) {
+    bool isStillRejected(String a) =>
+        _failedAnglePaths[a] != null &&
+        _angleImages[a]?.path == _failedAnglePaths[a];
+    final allReplaced = angles.every((a) => !isStillRejected(a));
+    // Once this card's group has been validated + uploaded, freeze its Submit
+    // so a stale card can't re-fire validation against an already-stored group.
+    final groupAlreadyDone =
+        msg.validationGroupKey != null &&
+        _uploadedGroupKeys.contains(msg.validationGroupKey);
+    final canSubmit =
+        allReplaced && !_uploadingFiles && !_botTyping && !groupAlreadyDone;
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'Some images need to be re-uploaded',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFFB00020),
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...angles.map((angle) {
+            final picked = _angleImages[angle];
+            final stillRejected = isStillRejected(angle);
+            return Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                children: [
+                  if (picked != null) ...[
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.file(
+                        picked,
+                        width: 48,
+                        height: 48,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                  ] else ...[
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0F2F7),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        Icons.broken_image_outlined,
+                        color: Colors.grey.shade500,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                  ],
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _humanizeAngle(angle),
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: _kDark,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          stillRejected
+                              ? '${_humanizeAngle(angle)} does not match the required view. Please re-upload.'
+                              : 'Ready to submit',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: stillRejected
+                                ? const Color(0xFFB00020)
+                                : _kBlue,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: _uploadingFiles
+                        ? null
+                        : () => _onPickAngleImage(angle),
+                    icon: Icon(
+                      stillRejected
+                          ? Icons.camera_alt_outlined
+                          : Icons.refresh,
+                      size: 16,
+                    ),
+                    label: Text(
+                      stillRejected ? 'Upload' : 'Replace',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    style: TextButton.styleFrom(
+                      foregroundColor: _kBlue,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: canSubmit
+                  ? () => _onSubmitAngleImages(originatingMsg: msg)
+                  : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _kBlue,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: Colors.grey.shade300,
+                disabledForegroundColor: Colors.grey.shade600,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              child: _uploadingFiles
+                  ? const SizedBox(
+                      height: 16,
+                      width: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text(
+                      'Submit',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _onSubmitImages() async {
@@ -1021,16 +1352,45 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     final files = List<File>.from(_pickedImages);
     setState(() => _uploadingFiles = true);
 
+    final category = _inferCategory(isImage: true);
+
+    // Read bytes once; reused for validate + upload.
+    final List<({String name, Uint8List bytes, String path})> prepared = [];
+    for (final file in files) {
+      final bytes = await file.readAsBytes();
+      final name = file.path.split(RegExp(r'[\\/]')).last;
+      prepared.add((
+        name: name.isEmpty ? 'image.jpg' : name,
+        bytes: bytes,
+        path: file.path,
+      ));
+    }
+
+    // Only `vehicle_photos` runs through AI validation; every other group
+    // uploads directly.
+    if (category == 'vehicle_photos') {
+      final validation = await _runImageValidation(
+        questionLabel: category,
+        images: {
+          for (var i = 0; i < prepared.length; i++)
+            'image_$i': base64Encode(prepared[i].bytes),
+        },
+        isLegacy: true,
+      );
+      if (!validation.valid) {
+        if (!mounted) return;
+        setState(() => _uploadingFiles = false);
+        return;
+      }
+    }
+
     int uploadedCount = 0;
     try {
       final ds = di.sl<ClaimsRemoteDataSource>();
-      final category = _inferCategory(isImage: true);
-      for (final file in files) {
-        final bytes = await file.readAsBytes();
-        final name = file.path.split(RegExp(r'[\\/]')).last;
+      for (final p in prepared) {
         final response = await ds.uploadClaimDocument(
-          bytes: bytes,
-          fileName: name.isEmpty ? 'image.jpg' : name,
+          bytes: p.bytes,
+          fileName: p.name,
           kind: 'Image',
           groupKey: category,
           chatThreadId: _threadId,
@@ -1051,8 +1411,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     }
 
     if (!mounted) return;
-    final count = uploadedCount == 0 ? files.length : uploadedCount;
-    final paths = files.map((f) => f.path).toList();
+    final count = uploadedCount == 0 ? prepared.length : uploadedCount;
+    final paths = prepared.map((p) => p.path).toList();
     setState(() {
       _pickedImages.clear();
       _uploadingFiles = false;
@@ -1435,13 +1795,25 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   }
 
   String _inferCategory({required bool isImage}) {
+    // Walk back to the most recent bot message that actually carries content
+    // — skip empty validation-failure bubbles so the inference doesn't get
+    // pulled to its default by a per-angle failure card.
     String text = '';
     for (int i = _messages.length - 1; i >= 0; i--) {
-      if (_messages[i].type == 'bot') {
-        text = _messages[i].text.toLowerCase();
-        break;
+      final m = _messages[i];
+      if (m.type != 'bot') continue;
+      if (m.validationFailedAngles.isNotEmpty || m.validationFailedLegacy) {
+        continue;
       }
+      if (m.text.trim().isEmpty) continue;
+      text = m.text;
+      break;
     }
+    return _inferCategoryFromText(text, isImage: isImage);
+  }
+
+  String _inferCategoryFromText(String raw, {required bool isImage}) {
+    final text = raw.toLowerCase();
     if (text.contains('damage')) return 'damage_photos';
     if (text.contains('license') || text.contains('licence')) {
       return 'driver_license';
@@ -2081,6 +2453,13 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                             ),
                           ),
                         ),
+                      if (msg.validationFailedAngles.isNotEmpty)
+                        _buildValidationFailureList(
+                          msg,
+                          msg.validationFailedAngles,
+                        ),
+                      if (msg.validationFailedLegacy)
+                        _buildLegacyValidationFailure(),
                     ],
                   ),
                 ),
@@ -2621,9 +3000,16 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     }
     final minCount = _payloadInt(msg, 'min_count') ?? angles.length;
     final maxCount = _payloadInt(msg, 'max_count') ?? angles.length;
-    final filledCount = _angleImages.length;
+    // Count only the angles this trigger owns. The global map can carry stray
+    // entries from a different group's still-open failure card.
+    final filledCount = angles.where(_angleImages.containsKey).length;
+    final triggerCategory = _inferCategoryFromText(msg.text, isImage: true);
+    final groupAlreadyDone = _uploadedGroupKeys.contains(triggerCategory);
     final canSubmit =
-        filledCount >= minCount && !_uploadingFiles && !_botTyping;
+        filledCount >= minCount &&
+        !_uploadingFiles &&
+        !_botTyping &&
+        !groupAlreadyDone;
 
     return Container(
       width: double.infinity,
@@ -2664,7 +3050,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           const SizedBox(height: 12),
           if (filledCount >= minCount)
             GestureDetector(
-              onTap: canSubmit ? _onSubmitAngleImages : null,
+              onTap: canSubmit
+                  ? () => _onSubmitAngleImages(originatingMsg: msg)
+                  : null,
               child: Opacity(
                 opacity: canSubmit ? 1.0 : 0.5,
                 child: Container(

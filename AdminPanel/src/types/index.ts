@@ -22,6 +22,7 @@ export interface Claim {
   submittedAt: string;
   updatedAt: string;
   description?: string;
+  incidentLocation?: string;
   photos?: string[];
   claimantType?: string;
   amount?: number;
