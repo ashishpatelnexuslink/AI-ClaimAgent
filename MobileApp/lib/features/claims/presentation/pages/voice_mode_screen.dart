@@ -20,7 +20,6 @@ import 'package:claim_ai/core/storage/chat_transcript_writer.dart';
 import 'package:claim_ai/features/assistant/presentation/widgets/sample_images_dialog.dart';
 import 'package:claim_ai/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:claim_ai/features/claims/presentation/cubit/claims_cubit.dart';
-import 'package:claim_ai/features/chat/data/datasources/chat_remote_datasource.dart';
 import 'package:claim_ai/features/claims/data/datasources/claims_remote_datasource.dart';
 import 'package:claim_ai/injection_container.dart' as di;
 import 'package:claim_ai/services/chat_service.dart';
@@ -56,6 +55,11 @@ class _ChatMessage {
   /// `group_key` echoed back by `/validate-images`. Scopes the failure card
   /// to a particular upload group (e.g. `vehicle_photos`).
   final String? validationGroupKey;
+  /// Full set of allowed angles for this group, carried forward from the
+  /// original GET_IMAGE trigger so retry submits can re-validate every angle
+  /// (failed + previously valid) — `/validate-images` expects the complete
+  /// batch on each call.
+  final List<String> validationAllowedAngles;
 
   const _ChatMessage({
     required this.text,
@@ -72,6 +76,7 @@ class _ChatMessage {
     this.validationFailedAngles = const [],
     this.validationFailedLegacy = false,
     this.validationGroupKey,
+    this.validationAllowedAngles = const [],
   });
 }
 
@@ -1015,12 +1020,18 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       return;
     }
 
-    // Restrict the entries to angles owned by this card so stray entries from
-    // a different group's still-open card don't bundle into the request.
+    // Scope the entries to the full allowed-angles set for this card. On a
+    // retry, the failure card carries `validationAllowedAngles` (forwarded
+    // from the original GET_IMAGE trigger) so we always send the complete
+    // batch — newly replaced angles + previously valid ones — to
+    // `/validate-images`. Sending only failed angles would have the AI
+    // re-validate a partial set, which the agent rejects.
+    final List<String> allowedAngles =
+        (originatingMsg?.validationAllowedAngles.isNotEmpty ?? false)
+        ? originatingMsg!.validationAllowedAngles
+        : (originatingMsg != null ? _allowedAnglesOf(originatingMsg) : const []);
     final List<String>? scopedAngles =
-        (originatingMsg?.validationFailedAngles.isNotEmpty ?? false)
-        ? originatingMsg!.validationFailedAngles
-        : (originatingMsg != null ? _allowedAnglesOf(originatingMsg) : null);
+        allowedAngles.isEmpty ? null : allowedAngles;
     final entries = scopedAngles == null
         ? _angleImages.entries.toList(growable: false)
         : _angleImages.entries
@@ -1052,6 +1063,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         images: {
           for (final p in prepared) p.angle: base64Encode(p.bytes),
         },
+        allowedAngles: allowedAngles,
       );
       if (!validation.valid) {
         if (!mounted) return;
@@ -1114,6 +1126,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     required String questionLabel,
     required Map<String, String> images,
     bool isLegacy = false,
+    List<String> allowedAngles = const [],
   }) async {
     final waitingMsg = _ChatMessage(
       text: 'Please wait while we validate your images...',
@@ -1163,6 +1176,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
             validationFailedAngles: useLegacy ? const [] : failedAngles,
             validationFailedLegacy: useLegacy,
             validationGroupKey: result.groupKey,
+            validationAllowedAngles: allowedAngles,
           ),
         );
       } else {
@@ -1830,29 +1844,6 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     return isImage ? 'vehicle_photos' : 'supporting_docs';
   }
 
-  List<Map<String, dynamic>> _buildConversationMessagesPayload() {
-    final payload = <Map<String, dynamic>>[];
-    for (var i = 0; i < _messages.length; i++) {
-      final m = _messages[i];
-      if (m.isTyping) continue;
-      final ts = i < _messageTimestamps.length
-          ? _messageTimestamps[i]
-          : DateTime.now();
-      final metadata = <String, dynamic>{
-        if (m.messageType.isNotEmpty) 'messageType': m.messageType,
-        if (m.triggers.isNotEmpty) 'triggers': m.triggers,
-        if (m.payloadType != null) 'payloadType': m.payloadType,
-      };
-      payload.add({
-        'role': m.type == 'user' ? 'User' : 'Assistant',
-        'content': m.text,
-        'timestamp': ts.toUtc().toIso8601String(),
-        if (metadata.isNotEmpty) 'metadata': jsonEncode(metadata),
-      });
-    }
-    return payload;
-  }
-
   /// Fire-and-forget auto-save invoked the moment the bot streams a message
   /// with `payload_type == "save_summary"`. Idempotent — only the first call
   /// per session does any work; the Close button awaits [_autoSaveFuture]
@@ -1875,8 +1866,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   }
 
   /// Performs the full server-side save: create claim row (if not already
-  /// created via SUBMIT_CLAIM), attach uploaded documents, save the chat
-  /// transcript to the Conversation tables. Throws on any step failure.
+  /// created via SUBMIT_CLAIM) and attach uploaded documents. Throws on any
+  /// step failure.
   Future<void> _runSaveClaimAndConversation({
     Map<String, dynamic>? saveSummaryPayload,
     String? externalRef,
@@ -1912,13 +1903,6 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
             documentIds: List<String>.from(_uploadedDocumentIds),
           );
     }
-
-    await di.sl<ChatRemoteDataSource>().saveConversation(
-          threadId: _threadId,
-          claimId: finalClaimId,
-          externalReference: externalRef,
-          messages: _buildConversationMessagesPayload(),
-        );
   }
 
   Future<void> _onCloseConversation(_ChatMessage doneMsg) async {
