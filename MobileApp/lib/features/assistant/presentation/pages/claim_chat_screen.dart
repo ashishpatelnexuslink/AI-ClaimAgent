@@ -16,7 +16,6 @@ import 'package:claim_ai/core/navigation/app_routes.dart';
 import 'package:claim_ai/core/storage/chat_transcript_writer.dart';
 import 'package:claim_ai/services/chat_service.dart';
 import 'package:claim_ai/features/assistant/presentation/widgets/sample_images_dialog.dart';
-import 'package:claim_ai/features/chat/data/datasources/chat_remote_datasource.dart';
 import 'package:claim_ai/features/claims/data/datasources/claims_remote_datasource.dart';
 import 'package:claim_ai/injection_container.dart' as di;
 
@@ -1712,13 +1711,18 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       return;
     }
 
-    // Restrict the entries we send to the angles owned by this card. Without
-    // this filter, stale entries from a previous group's failure card would
-    // bundle into the request and trigger a second redundant validation.
+    // Scope the entries to the full allowed-angles set for this card. On a
+    // retry, the failure card carries `validationAllowedAngles` (forwarded
+    // from the original GET_IMAGE trigger) so we always send the complete
+    // batch — newly replaced angles + previously valid ones — to
+    // `/validate-images`. Sending only failed angles would have the AI
+    // re-validate a partial set, which the agent rejects.
+    final List<String> allowedAngles =
+        (originatingMsg?.validationAllowedAngles.isNotEmpty ?? false)
+        ? originatingMsg!.validationAllowedAngles
+        : (originatingMsg != null ? _allowedAnglesOf(originatingMsg) : const []);
     final List<String>? scopedAngles =
-        (originatingMsg?.validationFailedAngles.isNotEmpty ?? false)
-        ? originatingMsg!.validationFailedAngles
-        : (originatingMsg != null ? _allowedAnglesOf(originatingMsg) : null);
+        allowedAngles.isEmpty ? null : allowedAngles;
     final entries = scopedAngles == null
         ? _angleImages.entries.toList(growable: false)
         : _angleImages.entries
@@ -1750,6 +1754,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         images: {
           for (final p in prepared) p.angle: base64Encode(p.bytes),
         },
+        allowedAngles: allowedAngles,
       );
       if (!validation.valid) {
         if (!mounted) return;
@@ -1822,6 +1827,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     required String questionLabel,
     required Map<String, String> images,
     bool isLegacy = false,
+    List<String> allowedAngles = const [],
   }) async {
     final waitingMsg = _ChatMsg(
       text: 'Please wait while we validate your images...',
@@ -1871,6 +1877,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
             validationFailedAngles: useLegacy ? const [] : failedAngles,
             validationFailedLegacy: useLegacy,
             validationGroupKey: result.groupKey,
+            validationAllowedAngles: allowedAngles,
           ),
         );
       } else {
@@ -2662,29 +2669,6 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     return date;
   }
 
-  /// Builds the transcript payload sent to `POST /mobile/conversations`.
-  List<Map<String, dynamic>> _buildConversationMessagesPayload() {
-    final payload = <Map<String, dynamic>>[];
-    for (var i = 0; i < _messages.length; i++) {
-      final m = _messages[i];
-      final ts = i < _messageTimestamps.length
-          ? _messageTimestamps[i]
-          : DateTime.now();
-      final metadata = <String, dynamic>{
-        if (m.messageType.isNotEmpty) 'messageType': m.messageType,
-        if (m.triggers.isNotEmpty) 'triggers': m.triggers,
-        if (m.payloadType != null) 'payloadType': m.payloadType,
-      };
-      payload.add({
-        'role': m.isUser ? 'User' : 'Assistant',
-        'content': m.text,
-        'timestamp': ts.toUtc().toIso8601String(),
-        if (metadata.isNotEmpty) 'metadata': jsonEncode(metadata),
-      });
-    }
-    return payload;
-  }
-
   /// Handler for the Close button shown on the `message_type == 'done'` bubble.
   /// Always runs end-to-end (try/finally) and surfaces real errors via SnackBar
   /// so failures are visible instead of silently swallowed.
@@ -2717,9 +2701,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   }
 
   /// Performs the full server-side save: create claim row (if not already
-  /// created via SUBMIT_CLAIM), attach uploaded documents, save the chat
-  /// transcript to the Conversation tables. Throws on any step failure so the
-  /// caller can decide whether to retry or surface the error.
+  /// created via SUBMIT_CLAIM) and attach uploaded documents. Throws on any
+  /// step failure so the caller can decide whether to retry or surface the
+  /// error.
   Future<void> _runSaveClaimAndConversation({
     Map<String, dynamic>? saveSummaryPayload,
     String? externalRef,
@@ -2761,16 +2745,6 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         '[AutoSave] attached ${result['attachedCount']} document(s) to $finalClaimId',
       );
     }
-
-    final convResult = await di.sl<ChatRemoteDataSource>().saveConversation(
-      threadId: _threadId,
-      claimId: finalClaimId,
-      externalReference: externalRef,
-      messages: _buildConversationMessagesPayload(),
-    );
-    debugPrint(
-      '[AutoSave] conversation saved: ${convResult['conversationId']}',
-    );
   }
 
   Future<void> _onCloseConversation(_ChatMsg doneMsg) async {
@@ -3935,6 +3909,11 @@ class _ChatMsg {
   /// `group_key` echoed back by `/validate-images`. Scopes the failure card
   /// to a particular upload group (e.g. `vehicle_photos`).
   final String? validationGroupKey;
+  /// Full set of allowed angles for this group, carried forward from the
+  /// original GET_IMAGE trigger so retry submits can re-validate every angle
+  /// (failed + previously valid) — `/validate-images` expects the complete
+  /// batch on each call.
+  final List<String> validationAllowedAngles;
 
   const _ChatMsg({
     required this.text,
@@ -3951,6 +3930,7 @@ class _ChatMsg {
     this.validationFailedAngles = const [],
     this.validationFailedLegacy = false,
     this.validationGroupKey,
+    this.validationAllowedAngles = const [],
   });
 }
 
