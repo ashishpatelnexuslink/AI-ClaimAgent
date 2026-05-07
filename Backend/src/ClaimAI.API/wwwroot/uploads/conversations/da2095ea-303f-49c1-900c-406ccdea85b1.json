@@ -1,0 +1,284 @@
+[
+  {
+    "Role": "Assistant",
+    "Content": "Hello! \uD83D\uDC4B I\u2019m your Claims Assistant for Draudita Insurance, here to help you file your insurance claim quickly and efficiently. It should only take a few minutes.",
+    "Timestamp": "2026-05-04T11:39:41.095481Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022wait\u0022}"
+  },
+  {
+    "Role": "Assistant",
+    "Content": "Are you the policy holder or third-party claimant?",
+    "Timestamp": "2026-05-04T11:39:41.099589Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022ask\u0022}"
+  },
+  {
+    "Role": "User",
+    "Content": "Policy Holder",
+    "Timestamp": "2026-05-04T11:39:51.892003Z",
+    "Metadata": null
+  },
+  {
+    "Role": "Assistant",
+    "Content": "Kindly provide your full name as per official records.",
+    "Timestamp": "2026-05-04T11:39:52.388538Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022ask\u0022}"
+  },
+  {
+    "Role": "User",
+    "Content": "Surbhi Acharya",
+    "Timestamp": "2026-05-04T11:40:06.30568Z",
+    "Metadata": null
+  },
+  {
+    "Role": "Assistant",
+    "Content": "Please provide your vehicle registration number.",
+    "Timestamp": "2026-05-04T11:40:06.968785Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022ask\u0022}"
+  },
+  {
+    "Role": "User",
+    "Content": "DJ 18",
+    "Timestamp": "2026-05-04T11:40:20.961547Z",
+    "Metadata": null
+  },
+  {
+    "Role": "Assistant",
+    "Content": "Please provide your insurance policy number for verification.",
+    "Timestamp": "2026-05-04T11:40:22.849Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022ask\u0022}"
+  },
+  {
+    "Role": "User",
+    "Content": "Skip",
+    "Timestamp": "2026-05-04T11:40:24.37766Z",
+    "Metadata": null
+  },
+  {
+    "Role": "Assistant",
+    "Content": "Please provide the Vehicle Identification Number (VIN).",
+    "Timestamp": "2026-05-04T11:40:24.906232Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022ask\u0022}"
+  },
+  {
+    "Role": "User",
+    "Content": "Skip",
+    "Timestamp": "2026-05-04T11:40:25.937677Z",
+    "Metadata": null
+  },
+  {
+    "Role": "Assistant",
+    "Content": "Does this information look correct to you?",
+    "Timestamp": "2026-05-04T11:40:26.518592Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022ask\u0022,\u0022triggers\u0022:[\u0022SHOW_TABLE\u0022],\u0022payloadType\u0022:\u0022initial_summary\u0022}"
+  },
+  {
+    "Role": "User",
+    "Content": "Yes, everything is correct",
+    "Timestamp": "2026-05-04T11:40:27.689546Z",
+    "Metadata": null
+  },
+  {
+    "Role": "Assistant",
+    "Content": "Thank you, We are currently validating your insurance details, Please wait a moment...",
+    "Timestamp": "2026-05-04T11:40:28.157559Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022wait\u0022}"
+  },
+  {
+    "Role": "Assistant",
+    "Content": "I found your policy details! Is this information correct?",
+    "Timestamp": "2026-05-04T11:40:30.169869Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022ask\u0022,\u0022triggers\u0022:[\u0022SHOW_TABLE\u0022],\u0022payloadType\u0022:\u0022verified_summary\u0022}"
+  },
+  {
+    "Role": "User",
+    "Content": "Yes, correct",
+    "Timestamp": "2026-05-04T11:40:31.230589Z",
+    "Metadata": null
+  },
+  {
+    "Role": "Assistant",
+    "Content": "Could you please tell me when the incident occured?(e.g. 02 april 2026, 11:00 AM)",
+    "Timestamp": "2026-05-04T11:40:31.75576Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022ask\u0022,\u0022triggers\u0022:[\u0022GET_DATE_TIME\u0022]}"
+  },
+  {
+    "Role": "User",
+    "Content": "04 May 2026, 05:10 PM",
+    "Timestamp": "2026-05-04T11:40:32.938829Z",
+    "Metadata": null
+  },
+  {
+    "Role": "Assistant",
+    "Content": "I understood the incident occured on **04-05-2026 05:10 PM**. Is this correct?",
+    "Timestamp": "2026-05-04T11:40:34.654202Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022ask\u0022}"
+  },
+  {
+    "Role": "User",
+    "Content": "Yes",
+    "Timestamp": "2026-05-04T11:40:35.767466Z",
+    "Metadata": null
+  },
+  {
+    "Role": "Assistant",
+    "Content": "Could you tell me where the incident occured?",
+    "Timestamp": "2026-05-04T11:40:36.291273Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022ask\u0022,\u0022triggers\u0022:[\u0022GET_LOCATION\u0022]}"
+  },
+  {
+    "Role": "User",
+    "Content": "Gujarat International Finance Tec-City, Gandhinagar, Gujarat",
+    "Timestamp": "2026-05-04T11:40:42.060589Z",
+    "Metadata": null
+  },
+  {
+    "Role": "Assistant",
+    "Content": "I\u0027ve noted the location as: **Gujarat International Finance Tec-City, Gandhinagar, Gujarat**. Is this correct?",
+    "Timestamp": "2026-05-04T11:40:43.546296Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022ask\u0022}"
+  },
+  {
+    "Role": "User",
+    "Content": "Yes",
+    "Timestamp": "2026-05-04T11:40:44.688296Z",
+    "Metadata": null
+  },
+  {
+    "Role": "Assistant",
+    "Content": "Please describe what happened. You can type or speak(e.g. collision with another vehicle, damage to front bumper)",
+    "Timestamp": "2026-05-04T11:40:45.257593Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022ask\u0022}"
+  },
+  {
+    "Role": "User",
+    "Content": "while I was driving I will hit by truck",
+    "Timestamp": "2026-05-04T11:41:06.370489Z",
+    "Metadata": null
+  },
+  {
+    "Role": "Assistant",
+    "Content": "I\u0027ve recorded the following description:\n\n\u0022while I was driving I will hit by truck\u0022\n\nDoes this accurately describe the incident?",
+    "Timestamp": "2026-05-04T11:41:07.921211Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022ask\u0022}"
+  },
+  {
+    "Role": "User",
+    "Content": "Yes",
+    "Timestamp": "2026-05-04T11:41:09.273718Z",
+    "Metadata": null
+  },
+  {
+    "Role": "Assistant",
+    "Content": "Please upload 4 photos of your vehicle.\nEnsure each photo is taken from a\ndifferent corner (front, rear, left,\nand right), and the vehicle registration \nnumber is clearly visible in at least one\nimage. All 4 photos are mandatory.\n",
+    "Timestamp": "2026-05-04T11:41:10.11582Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022ask\u0022,\u0022triggers\u0022:[\u0022GET_IMAGE\u0022],\u0022payloadType\u0022:\u0022GET_IMAGE\u0022}"
+  },
+  {
+    "Role": "User",
+    "Content": "4 photos uploaded",
+    "Timestamp": "2026-05-04T11:41:33.687015Z",
+    "Metadata": null
+  },
+  {
+    "Role": "Assistant",
+    "Content": "I\u0027ve received 4 photos, Are you sure you want to proceed?",
+    "Timestamp": "2026-05-04T11:41:34.452188Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022ask\u0022}"
+  },
+  {
+    "Role": "User",
+    "Content": "Yes, proceed",
+    "Timestamp": "2026-05-04T11:41:36.09994Z",
+    "Metadata": null
+  },
+  {
+    "Role": "Assistant",
+    "Content": "Please upload clear photos showing all\ndamaged areas of your vehicle.\nCapture close-up and wide-angle views\nfor better clarity",
+    "Timestamp": "2026-05-04T11:41:36.872003Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022ask\u0022,\u0022triggers\u0022:[\u0022GET_IMAGE\u0022],\u0022payloadType\u0022:\u0022GET_IMAGE\u0022}"
+  },
+  {
+    "Role": "User",
+    "Content": "Skip",
+    "Timestamp": "2026-05-04T11:42:34.307635Z",
+    "Metadata": null
+  },
+  {
+    "Role": "Assistant",
+    "Content": "Please upload clear images of your\ndriving license, including both front and\nback sides. Ensure all details are\nclearly visible.",
+    "Timestamp": "2026-05-04T11:42:34.828566Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022ask\u0022,\u0022triggers\u0022:[\u0022GET_IMAGE\u0022],\u0022payloadType\u0022:\u0022GET_IMAGE\u0022}"
+  },
+  {
+    "Role": "User",
+    "Content": "2 photos uploaded",
+    "Timestamp": "2026-05-04T11:42:56.130268Z",
+    "Metadata": null
+  },
+  {
+    "Role": "Assistant",
+    "Content": "I\u0027ve received 2 photos, Are you sure you want to proceed?",
+    "Timestamp": "2026-05-04T11:42:56.801285Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022ask\u0022}"
+  },
+  {
+    "Role": "User",
+    "Content": "Yes, proceed",
+    "Timestamp": "2026-05-04T11:42:59.637543Z",
+    "Metadata": null
+  },
+  {
+    "Role": "Assistant",
+    "Content": "Please upload any available supporting\ndocuments, such as your insurance\npolicy, accident photos, or police\nreports. This will help us process your\nclaim faster.",
+    "Timestamp": "2026-05-04T11:43:00.252271Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022ask\u0022,\u0022triggers\u0022:[\u0022GET_DOCUMENT\u0022],\u0022payloadType\u0022:\u0022GET_DOCUMENT\u0022}"
+  },
+  {
+    "Role": "User",
+    "Content": "2 documents uploaded",
+    "Timestamp": "2026-05-04T11:43:11.588008Z",
+    "Metadata": null
+  },
+  {
+    "Role": "Assistant",
+    "Content": "I\u0027ve received 2 documents, Are you sure you want to proceed?",
+    "Timestamp": "2026-05-04T11:43:12.2743Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022ask\u0022}"
+  },
+  {
+    "Role": "User",
+    "Content": "Yes, proceed",
+    "Timestamp": "2026-05-04T11:43:13.361036Z",
+    "Metadata": null
+  },
+  {
+    "Role": "Assistant",
+    "Content": "Upload the repair or service invoice if\navailable. Ensure the invoice number,\ndate, and amount are clearly visible.",
+    "Timestamp": "2026-05-04T11:43:14.094282Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022ask\u0022,\u0022triggers\u0022:[\u0022GET_DOCUMENT\u0022],\u0022payloadType\u0022:\u0022GET_DOCUMENT\u0022}"
+  },
+  {
+    "Role": "User",
+    "Content": "Skip",
+    "Timestamp": "2026-05-04T11:43:32.709695Z",
+    "Metadata": null
+  },
+  {
+    "Role": "Assistant",
+    "Content": "We are validating your documents.\nThis will only take a moment.\nThank you for your patience.",
+    "Timestamp": "2026-05-04T11:43:33.357247Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022wait\u0022}"
+  },
+  {
+    "Role": "Assistant",
+    "Content": "All set! Your documents have been verified successfully. \u2705\n\nYou can add documents later if needed.\nHere\u0027s a summary of the information provided so far. Please review and confirm the details.",
+    "Timestamp": "2026-05-04T11:43:34.399301Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022wait\u0022}"
+  },
+  {
+    "Role": "Assistant",
+    "Content": "Please review the summary details and confirm to submit your claim.",
+    "Timestamp": "2026-05-04T11:43:34.409637Z",
+    "Metadata": "{\u0022messageType\u0022:\u0022ask\u0022,\u0022triggers\u0022:[\u0022SHOW_TABLE\u0022],\u0022payloadType\u0022:\u0022final_summary\u0022}"
+  }
+]

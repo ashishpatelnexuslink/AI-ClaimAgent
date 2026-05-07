@@ -68,6 +68,10 @@
 	</array>
 	<key>NSFaceIDUsageDescription</key>
 	<string>ClaimAI uses Face ID to securely authenticate you.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>ClaimAI needs your location to record where the incident occurred.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app allows you to upload photos such as accident images, vehicle photos, and driving license documents for claim processing and verification</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>ClaimAI needs microphone access for voice-based claim filing.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
