@@ -88,4 +88,20 @@ public class ClaimsController : ControllerBase
 
         return Ok(ApiResponse<ClaimResponseDto>.SuccessResponse(result.Data!));
     }
+
+    [HttpPut("{id:guid}/accident-info")]
+    public async Task<IActionResult> UpdateAccidentInfo(
+        Guid id,
+        [FromBody] UpdateAccidentInfoDto dto)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId is null)
+            return Unauthorized();
+
+        var result = await _claimsService.UpdateAccidentInfoAsync(id, userId, dto);
+        if (!result.Succeeded)
+            return BadRequest(ApiResponse<object>.FailResponse(result.Errors));
+
+        return Ok(ApiResponse<ClaimResponseDto>.SuccessResponse(result.Data!));
+    }
 }

@@ -154,6 +154,7 @@ public class ClaimsController : ControllerBase
             LicensePhotosCount = row.Claim.LicensePhotosCount,
             PoliceReportCount = row.Claim.PoliceReportCount,
             RepairBillCount = row.Claim.RepairBillCount,
+            SupportingDocsCount = row.Claim.SupportingDocsCount,
             AdditionalData = row.Claim.AdditionalData,
         };
 
@@ -181,7 +182,9 @@ public class ClaimsController : ControllerBase
             ContentType = d.ContentType,
             FileSize = d.FileSize,
             Kind = d.Kind,
-            Category = d.Category,
+            GroupKey = d.GroupKey,
+            Label = d.Label,
+            Angle = d.Angle,
             CreatedAt = d.CreatedAt,
         }).ToList();
 

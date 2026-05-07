@@ -765,8 +765,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.of(ctx).pop();
+              // Clear tokens + cached user before navigating; otherwise the next
+              // cold start finds a stored token and skips the login screen.
+              await context.read<AuthCubit>().logout();
+              if (!mounted) return;
               Navigator.of(context).pushNamedAndRemoveUntil(AppRoutes.login, (_) => false);
             },
             child: const Text('Logout', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),

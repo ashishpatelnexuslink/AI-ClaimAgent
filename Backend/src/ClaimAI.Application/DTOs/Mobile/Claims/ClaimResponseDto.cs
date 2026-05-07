@@ -29,6 +29,7 @@ public class ClaimResponseDto
     public int LicensePhotosCount { get; set; }
     public int PoliceReportCount { get; set; }
     public int RepairBillCount { get; set; }
+    public int SupportingDocsCount { get; set; }
     public string? ChatThreadId { get; set; }
     public string? AdditionalData { get; set; }
     public DateTime CreatedAt { get; set; }

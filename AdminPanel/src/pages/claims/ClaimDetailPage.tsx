@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, UserCircle } from 'lucide-react';
+import { ArrowLeft, UserCircle, X } from 'lucide-react';
 import { useClaim, useClaimDocuments } from '../../hooks/useClaims';
 import { useQuery } from '@tanstack/react-query';
 import { usersService } from '../../services/users.service';
@@ -13,6 +14,7 @@ export default function ClaimDetailPage() {
   const navigate = useNavigate();
   const { data: claim, isLoading } = useClaim(id!);
   const { data: documents = [] } = useClaimDocuments(id!);
+  const [preview, setPreview] = useState<{ url: string; name: string } | null>(null);
   const { data: user } = useQuery({
     queryKey: ['users', claim?.userId],
     queryFn: () => usersService.getById(claim!.userId),
@@ -63,6 +65,7 @@ export default function ClaimDetailPage() {
               <InfoItem label="Claim Type" value={claim.type} />
               <InfoItem label="Assigned To" value={claim.assignedTo ?? 'Unassigned'} />
               <InfoItem label="Last Updated" value={format(new Date(claim.updatedAt), 'dd MMM yyyy')} />
+              <InfoItem label="Incident Location" value={claim.incidentLocation ?? '—'} />
               {claim.amount && <InfoItem label="Claim Amount" value={`₹${claim.amount.toLocaleString('en-IN')}`} />}
             </div>
           </div>
@@ -70,7 +73,13 @@ export default function ClaimDetailPage() {
           {/* Description */}
           <div className="bg-card rounded-2xl p-5 shadow-sm">
             <h3 className="text-base font-semibold text-secondary mb-3">Description</h3>
-            <p className="text-sm text-gray-600 leading-relaxed">{claim.description}</p>
+            {claim.description ? (
+              <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">
+                {claim.description}
+              </p>
+            ) : (
+              <p className="text-sm text-gray-400">No description</p>
+            )}
           </div>
 
           {/* Photos */}
@@ -84,12 +93,11 @@ export default function ClaimDetailPage() {
                 {photos.length > 0 ? (
                   <div className="grid grid-cols-3 gap-3">
                     {photos.map((photo) => (
-                      <a
+                      <button
                         key={photo.id}
-                        href={photo.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="block aspect-square bg-gray-100 rounded-xl overflow-hidden hover:opacity-90 transition"
+                        type="button"
+                        onClick={() => setPreview({ url: photo.url, name: photo.fileName })}
+                        className="block aspect-square bg-gray-100 rounded-xl overflow-hidden hover:opacity-90 transition cursor-zoom-in"
                         title={`${photo.fileName}${photo.category ? ` • ${photo.category}` : ''}`}
                       >
                         <img
@@ -97,7 +105,7 @@ export default function ClaimDetailPage() {
                           alt={photo.fileName}
                           className="w-full h-full object-cover"
                         />
-                      </a>
+                      </button>
                     ))}
                   </div>
                 ) : (
@@ -185,6 +193,31 @@ export default function ClaimDetailPage() {
 
         </div>
       </div>
+
+      {preview && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6"
+          onClick={() => setPreview(null)}
+        >
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setPreview(null);
+            }}
+            aria-label="Close preview"
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition"
+          >
+            <X size={20} />
+          </button>
+          <img
+            src={preview.url}
+            alt={preview.name}
+            onClick={(e) => e.stopPropagation()}
+            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+          />
+        </div>
+      )}
     </div>
   );
 }

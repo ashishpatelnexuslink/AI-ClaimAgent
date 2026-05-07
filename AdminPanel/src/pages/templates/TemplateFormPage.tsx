@@ -23,6 +23,8 @@ import {
   useTemplate,
 } from '../../hooks/useTemplates';
 import { useToastContext } from '../../hooks/ToastContext';
+import { templatesService } from '../../services/templates.service';
+import { aimlService } from '../../services/aiml.service';
 import type {
   CreateIdentityField,
   CreateGroupRule,
@@ -95,6 +97,7 @@ export default function TemplateFormPage({ mode }: Props) {
           isRequired: p.isRequired,
           allowedAngles: p.allowedAngles,
           sampleImageUrls: p.sampleImageUrls,
+          showSample: p.showSample,
           maxFileSizeMb: p.maxFileSizeMb,
           allowedMimeTypes: p.allowedMimeTypes,
           displayOrder: p.displayOrder,
@@ -179,6 +182,17 @@ export default function TemplateFormPage({ mode }: Props) {
       addToast('Save failed', 'error');
     };
 
+    const syncToAi = async (templateId: string) => {
+      try {
+        const fresh = await templatesService.getById(templateId);
+        await aimlService.syncTemplateConfig(fresh);
+        addToast('AI agent config updated', 'success');
+      } catch (e) {
+        console.error('AI/ML sync failed', e);
+        addToast('AI agent sync failed', 'error');
+      }
+    };
+
     if (isEdit && id) {
       const { companyName: _c, insuranceType: _t, ...updatePayload } = values;
       void _c;
@@ -190,8 +204,9 @@ export default function TemplateFormPage({ mode }: Props) {
             addToast('Template updated', 'success');
             if (andActivate) {
               activateMut.mutate(tpl.id, {
-                onSuccess: () => {
+                onSuccess: async () => {
                   addToast('Template activated', 'success');
+                  await syncToAi(tpl.id);
                   navigate('/templates');
                 },
                 onError: onApiError,
@@ -209,8 +224,9 @@ export default function TemplateFormPage({ mode }: Props) {
           addToast('Template created', 'success');
           if (andActivate) {
             activateMut.mutate(tpl.id, {
-              onSuccess: () => {
+              onSuccess: async () => {
                 addToast('Template activated', 'success');
+                await syncToAi(tpl.id);
                 navigate('/templates');
               },
               onError: onApiError,

@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:claim_ai/core/auth/session_event_bus.dart';
 import 'package:claim_ai/core/storage/local_storage.dart';
 import 'package:claim_ai/core/constants/api_constants.dart';
 import 'package:claim_ai/core/config/env_config.dart';
@@ -7,13 +8,16 @@ import 'package:logger/logger.dart';
 class ApiInterceptor extends Interceptor {
   final LocalStorage _localStorage;
   final Dio _dio;
+  final SessionEventBus _sessionBus;
   final Logger _logger = Logger();
 
   ApiInterceptor({
     required LocalStorage localStorage,
     required Dio dio,
+    required SessionEventBus sessionBus,
   })  : _localStorage = localStorage,
-        _dio = dio;
+        _dio = dio,
+        _sessionBus = sessionBus;
 
   @override
   Future<void> onRequest(
@@ -45,7 +49,12 @@ class ApiInterceptor extends Interceptor {
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) async {
     _logger.e(
-      'ERROR[${err.response?.statusCode}] => PATH: ${err.requestOptions.path}',
+      'ERROR[${err.response?.statusCode}] => PATH: ${err.requestOptions.path}\n'
+      'METHOD: ${err.requestOptions.method}\n'
+      'REQUEST DATA: ${err.requestOptions.data}\n'
+      'QUERY: ${err.requestOptions.queryParameters}\n'
+      'RESPONSE BODY: ${err.response?.data}\n'
+      'DIO MESSAGE: ${err.message}',
     );
 
     if (err.response?.statusCode == 401) {
@@ -54,6 +63,8 @@ class ApiInterceptor extends Interceptor {
         final retryResponse = await _retryRequest(err.requestOptions);
         return handler.resolve(retryResponse);
       }
+      await _localStorage.clearTokens();
+      _sessionBus.emit(SessionEvent.expired);
     }
 
     handler.next(err);
@@ -94,6 +105,16 @@ class ApiInterceptor extends Interceptor {
     // path against the browser origin (localhost:<devPort>) on retry.
     final token = await _localStorage.getAccessToken();
     requestOptions.headers['Authorization'] = 'Bearer $token';
+
+    // FormData is a single-use stream — Dio consumes its bytes during the
+    // first attempt. Without cloning, the retry tries to re-read an empty
+    // stream and the upload silently fails (the 401 we just refreshed past
+    // becomes a hung request or a confusing follow-on error). Clone so the
+    // retry has fresh bytes.
+    if (requestOptions.data is FormData) {
+      requestOptions.data = (requestOptions.data as FormData).clone();
+    }
+
     return _dio.fetch(requestOptions);
   }
 }

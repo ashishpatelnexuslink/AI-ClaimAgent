@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:claim_ai/core/navigation/app_routes.dart';
-import 'package:claim_ai/core/services/biometric_service.dart';
-import 'package:claim_ai/core/storage/local_storage.dart';
+// import 'package:claim_ai/core/services/biometric_service.dart';
+// import 'package:claim_ai/core/storage/local_storage.dart';
+import 'package:claim_ai/core/usecases/usecase.dart';
 import 'package:claim_ai/features/auth/domain/repositories/auth_repository.dart';
+import 'package:claim_ai/features/auth/domain/usecases/get_user_profile_usecase.dart';
 import 'package:claim_ai/injection_container.dart';
 
 class SplashPage extends StatefulWidget {
@@ -164,38 +166,67 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
   }
 
   Future<void> _checkAuth() async {
-    // Let the full animation play ~4.5s total
-    await Future.delayed(const Duration(milliseconds: 2000));
+    debugPrint('[splash] _checkAuth: start');
+    try {
+      // Let the full animation play ~4.5s total
+      await Future.delayed(const Duration(milliseconds: 2000));
+      debugPrint('[splash] _checkAuth: delay done, resolving deps');
 
-    final authRepo = sl<AuthRepository>();
-    final localStorage = sl<LocalStorage>();
-    final biometricService = sl<BiometricService>();
-    final isLoggedIn = await authRepo.isLoggedIn();
+      final authRepo = sl<AuthRepository>();
+      debugPrint('[splash] _checkAuth: authRepo resolved');
+      // final localStorage = sl<LocalStorage>();
+      // final biometricService = sl<BiometricService>();
+      var isLoggedIn = await authRepo.isLoggedIn();
+      debugPrint('[splash] _checkAuth: hasToken=$isLoggedIn');
 
-    if (!mounted) return;
-
-    await _fadeOutController.forward();
-    if (!mounted) return;
-
-    if (isLoggedIn) {
-      if (localStorage.isBiometricEnabled) {
-        final authenticated = await biometricService.authenticate(
-          reason: 'Verify your identity to open ClaimAI',
-        );
-        if (!mounted) return;
-        if (!authenticated) {
-          Navigator.of(context).pushNamedAndRemoveUntil(
-            AppRoutes.login,
-            (_) => false,
-          );
-          return;
-        }
+      // A stored token only proves we logged in once — it may be expired and
+      // its refresh token may also be expired. Probe an authenticated endpoint
+      // so the Dio interceptor exercises refresh-on-401; if both tokens are
+      // dead the call returns Left(AuthFailure) and we route to login instead
+      // of dropping the user on home with a stuck-loading screen.
+      if (isLoggedIn) {
+        final probe = await sl<GetUserProfileUseCase>()(const NoParams());
+        isLoggedIn = probe.isRight();
+        debugPrint('[splash] _checkAuth: probe ok=$isLoggedIn');
       }
-      Navigator.of(context).pushNamedAndRemoveUntil(
-        AppRoutes.home,
-        (_) => false,
-      );
-    } else {
+
+      if (!mounted) return;
+
+      await _fadeOutController.forward();
+      debugPrint('[splash] _checkAuth: fadeOut done, navigating');
+      if (!mounted) return;
+
+      if (isLoggedIn) {
+      // Biometric gate temporarily disabled — was hanging on splash in release
+      // builds when the prompt failed to surface.
+      // if (localStorage.isBiometricEnabled) {
+      //   final authenticated = await biometricService.authenticate(
+      //     reason: 'Verify your identity to open ClaimAI',
+      //   );
+      //   if (!mounted) return;
+      //   if (!authenticated) {
+      //     Navigator.of(context).pushNamedAndRemoveUntil(
+      //       AppRoutes.login,
+      //       (_) => false,
+      //     );
+      //     return;
+      //   }
+      // }
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          AppRoutes.home,
+          (_) => false,
+        );
+      } else {
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          AppRoutes.login,
+          (_) => false,
+        );
+      }
+    } catch (e, st) {
+      debugPrint('[splash] _checkAuth: ERROR $e\n$st');
+      if (!mounted) return;
+      // Any unexpected failure (network down, dead tokens, parse error) must
+      // not leave the user stranded on splash — fall through to login.
       Navigator.of(context).pushNamedAndRemoveUntil(
         AppRoutes.login,
         (_) => false,

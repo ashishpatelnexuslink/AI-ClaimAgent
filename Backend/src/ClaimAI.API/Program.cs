@@ -5,6 +5,7 @@ using ClaimAI.API.Middleware;
 using ClaimAI.Application;
 using ClaimAI.Infrastructure;
 using ClaimAI.Infrastructure.Data.Seeders;
+using ClaimAI.Infrastructure.Identity;
 using Scalar.AspNetCore;
 using Serilog;
 
@@ -17,6 +18,7 @@ builder.Host.UseSerilog((context, configuration) =>
 // Layer registrations
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddAuthorizationPolicies();
 
 // Controllers with validation filter
@@ -35,12 +37,24 @@ builder.Services.AddControllers(options =>
 // OpenAPI with JWT Bearer auth
 builder.Services.AddOpenApiWithAuth();
 
-// CORS
+// Read origins from appsettings.json
+var allowedOrigins = builder.Configuration
+    .GetSection("Cors:AllowedOrigins")
+    .Get<string[]>() ?? Array.Empty<string>();
+
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
-        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
+    options.AddPolicy("ReactCorsPolicy", policy =>
+    {
+        policy
+            .WithOrigins(allowedOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials()
+            .WithExposedHeaders("Content-Disposition", "X-Total-Count"); // Expose any custom headers
+    });
 });
+
 
 var app = builder.Build();
 
@@ -63,7 +77,11 @@ if (!app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 }
 app.UseStaticFiles(); // serve wwwroot (profile photos, etc.)
-app.UseCors("AllowAll");
+
+app.UseRouting();
+
+// CORS must come after UseRouting and before UseAuthentication/UseAuthorization
+app.UseCors("ReactCorsPolicy");
 
 app.UseAuthentication();
 app.UseAuthorization();

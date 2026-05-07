@@ -63,6 +63,7 @@ export function templateToForm(t: Template): WizardForm {
         isRequired: p.isRequired,
         allowedAngles: p.allowedAngles,
         sampleImageUrls: p.sampleImageUrls,
+        showSample: p.showSample,
         maxFileSizeMb: p.maxFileSizeMb,
         allowedMimeTypes: p.allowedMimeTypes,
         displayOrder: p.displayOrder,

@@ -23,9 +23,21 @@ public class ClaimDocument : BaseEntity
     /// "Image" | "Document" — free-text so new kinds don't require a schema change.
     public string Kind { get; set; } = "Document";
 
-    /// Logical bucket on the claim detail screen. One of:
-    /// "VehiclePhoto", "DamagePhoto", "DriverLicense", "PoliceReport",
-    /// "BillInvoice", "SupportingDocument". Free-text so new categories
-    /// can be added without a schema change.
-    public string? Category { get; set; }
+    /// Logical bucket from the active <c>Template</c>. Holds the template's
+    /// <c>TemplatePhotoSetting.GroupKey</c> for image groups (e.g.
+    /// "vehicle_photos") or <c>TemplateDocumentSetting.DocKey</c> for document
+    /// groups (e.g. "bill_invoice"). Free-text so adding a new template group
+    /// does not require a schema change.
+    public string? GroupKey { get; set; }
+
+    /// Human label of the group at the time of upload, copied verbatim from
+    /// the template (e.g. "Vehicle Photos"). Stored on the row so old uploads
+    /// keep their label even if the template later renames the group.
+    public string? Label { get; set; }
+
+    /// Optional angle/position tag for image uploads driven by the
+    /// `allowed_angles` payload from the chat stream (e.g. "front_left",
+    /// "rear_right"). Free-text so new angles can be added without a schema
+    /// change. Null for documents and for legacy uploads.
+    public string? Angle { get; set; }
 }

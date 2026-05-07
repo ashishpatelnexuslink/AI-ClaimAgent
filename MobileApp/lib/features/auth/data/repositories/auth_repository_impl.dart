@@ -93,21 +93,30 @@ class AuthRepositoryImpl implements AuthRepository {
       return Right(user);
     } on ServerException catch (e) {
       return Left(ServerFailure(message: e.message, statusCode: e.statusCode));
+    } on UnauthorizedException catch (e) {
+      return Left(AuthFailure(message: e.message, statusCode: 401));
+    } on NetworkException {
+      return const Left(NetworkFailure());
+    } catch (e) {
+      return Left(ServerFailure(message: e.toString()));
     }
   }
 
   @override
   Future<Either<Failure, void>> logout() async {
+    // Remote logout is best-effort. Local tokens/cache must always be cleared
+    // so that force-kill + relaunch lands on the login screen even if the
+    // server call fails (network error, 401 with dead refresh token, etc.).
     try {
       if (await networkInfo.isConnected) {
         await remoteDataSource.logout();
       }
-      await localStorage.clearTokens();
-      await localDataSource.clearCache();
-      return const Right(null);
-    } on ServerException catch (e) {
-      return Left(ServerFailure(message: e.message, statusCode: e.statusCode));
+    } catch (_) {
+      // swallow — proceed to local cleanup
     }
+    await localStorage.clearTokens();
+    await localDataSource.clearCache();
+    return const Right(null);
   }
 
   @override

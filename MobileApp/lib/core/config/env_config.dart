@@ -3,7 +3,7 @@ import 'package:claim_ai/core/constants/api_constants.dart';
 enum Environment { dev, staging, prod }
 
 class EnvConfig {
-  static Environment _environment = Environment.dev;
+  static Environment _environment = Environment.prod;
 
   static Environment get environment => _environment;
 

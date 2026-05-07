@@ -48,6 +48,7 @@ public class CreatePhotoSettingDto
     public bool IsRequired { get; set; } = true;
     public List<string> AllowedAngles { get; set; } = new();
     public List<string> SampleImageUrls { get; set; } = new();
+    public bool ShowSample { get; set; }
     public int MaxFileSizeMb { get; set; } = 10;
     public List<string> AllowedMimeTypes { get; set; } = new() { "image/jpeg", "image/png" };
     public int DisplayOrder { get; set; }

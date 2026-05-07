@@ -54,6 +54,7 @@ export default function StepPhotoSettings() {
       isRequired: true,
       allowedAngles: [],
       sampleImageUrls: [],
+      showSample: false,
       maxFileSizeMb: 10,
       allowedMimeTypes: ['image/jpeg', 'image/png'],
       displayOrder: fa.fields.length + 1,
@@ -143,6 +144,18 @@ export default function StepPhotoSettings() {
                   className="h-4 w-4"
                 />
                 <span>required</span>
+              </label>
+
+              <label
+                className="flex items-center gap-1.5 text-xs text-gray-700 shrink-0"
+                title="Show a 'See Sample' button on the mobile claim summary for this photo group"
+              >
+                <input
+                  type="checkbox"
+                  {...register(`photoSettings.${i}.showSample` as const)}
+                  className="h-4 w-4"
+                />
+                <span>see sample</span>
               </label>
 
               {current?.label && isCollapsed && (

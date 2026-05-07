@@ -1,3 +1,4 @@
+using ClaimAI.Application.DTOs.AiMl;
 using ClaimAI.Application.DTOs.Common;
 using ClaimAI.Application.DTOs.Templates;
 using ClaimAI.Domain.Common;
@@ -16,6 +17,12 @@ public interface ITemplateService
     /// <summary>Returns the currently Active template for (<paramref name="companyName"/>, <paramref name="insuranceType"/>).</summary>
     Task<Result<TemplateDetailDto>> GetActiveAsync(string companyName, InsuranceType insuranceType, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Returns the single active template (no tenant filter). Used by the
+    /// mobile claim-summary page which has no company/insurance-type context.
+    /// </summary>
+    Task<Result<TemplateDetailDto>> GetSingleActiveAsync(CancellationToken cancellationToken = default);
+
     /// <summary>Creates a new template tree. The new row is always persisted as <c>Draft, Version=1</c> (first version for that company + type) or <c>maxVersion+1</c> if an existing row already occupies version 1.</summary>
     Task<Result<TemplateDetailDto>> CreateAsync(CreateTemplateDto dto, CancellationToken cancellationToken = default);
 
@@ -30,4 +37,13 @@ public interface ITemplateService
 
     /// <summary>Soft-deletes a template. Fails when the target is not in <see cref="TemplateStatus.Draft"/>.</summary>
     Task<Result> DeleteAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>Loads the template tree and POSTs it to the AI/ML <c>/config</c> endpoint.</summary>
+    Task<Result<TemplateConfigResponseDto>> SyncToAiAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resolves the active template for (<paramref name="companyName"/>, <paramref name="insuranceType"/>) and POSTs it to the AI/ML <c>/config</c> endpoint.
+    /// Used when the mobile app enters chat or voice mode.
+    /// </summary>
+    Task<Result<TemplateConfigResponseDto>> SyncActiveToAiAsync(string companyName, InsuranceType insuranceType, CancellationToken cancellationToken = default);
 }

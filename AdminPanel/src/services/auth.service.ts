@@ -26,4 +26,13 @@ export const authService = {
     );
     return data.data;
   },
+
+  async forgotPassword(email: string): Promise<string | undefined> {
+    const { data } = await api.post<ApiEnvelope<object>>(
+      '/api/web/Auth/forgot-password',
+      JSON.stringify(email),
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+    return data.message;
+  },
 };

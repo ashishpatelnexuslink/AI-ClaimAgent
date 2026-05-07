@@ -22,6 +22,7 @@ export interface Claim {
   submittedAt: string;
   updatedAt: string;
   description?: string;
+  incidentLocation?: string;
   photos?: string[];
   claimantType?: string;
   amount?: number;
@@ -158,6 +159,7 @@ export interface TemplatePhotoSetting {
   isRequired: boolean;
   allowedAngles: string[];
   sampleImageUrls: string[];
+  showSample: boolean;
   maxFileSizeMb: number;
   allowedMimeTypes: string[];
   displayOrder: number;
@@ -235,6 +237,7 @@ export interface CreatePhotoSetting {
   isRequired: boolean;
   allowedAngles: string[];
   sampleImageUrls: string[];
+  showSample: boolean;
   maxFileSizeMb: number;
   allowedMimeTypes: string[];
   displayOrder: number;

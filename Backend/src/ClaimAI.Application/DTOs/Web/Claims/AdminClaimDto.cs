@@ -42,6 +42,7 @@ public class AdminClaimDetailDto : AdminClaimListItemDto
     public int LicensePhotosCount { get; set; }
     public int PoliceReportCount { get; set; }
     public int RepairBillCount { get; set; }
+    public int SupportingDocsCount { get; set; }
     public string? AdditionalData { get; set; }
 }
 

@@ -24,6 +24,7 @@ public class TemplatePhotoSettingConfiguration : IEntityTypeConfiguration<Templa
 
         builder.Property(p => p.MaxFileSizeMb).IsRequired().HasDefaultValue(10);
         builder.Property(p => p.DisplayOrder).IsRequired();
+        builder.Property(p => p.ShowSample).IsRequired().HasDefaultValue(false);
 
         builder.HasOne(p => p.Template)
                .WithMany(t => t.PhotoSettings)
@@ -64,7 +65,8 @@ public class TemplatePhotoSettingConfiguration : IEntityTypeConfiguration<Templa
                 AllowedMimeTypes = new List<string> { "image/jpeg", "image/png" },
                 DisplayOrder = 1,
                 CreatedAt = ts,
-                IsDeleted = false
+                IsDeleted = false,
+                ShowSample = true
             },
             new TemplatePhotoSetting
             {
@@ -82,7 +84,8 @@ public class TemplatePhotoSettingConfiguration : IEntityTypeConfiguration<Templa
                 AllowedMimeTypes = new List<string> { "image/jpeg", "image/png" },
                 DisplayOrder = 2,
                 CreatedAt = ts,
-                IsDeleted = false
+                IsDeleted = false,
+                ShowSample = true
             },
             new TemplatePhotoSetting
             {
@@ -100,7 +103,8 @@ public class TemplatePhotoSettingConfiguration : IEntityTypeConfiguration<Templa
                 AllowedMimeTypes = new List<string> { "image/jpeg", "image/png" },
                 DisplayOrder = 3,
                 CreatedAt = ts,
-                IsDeleted = false
+                IsDeleted = false,
+                ShowSample = false
             });
     }
 }

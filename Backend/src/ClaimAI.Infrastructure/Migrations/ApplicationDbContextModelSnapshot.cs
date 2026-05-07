@@ -188,6 +188,9 @@ namespace ClaimAI.Infrastructure.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
+                    b.Property<int>("SupportingDocsCount")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasColumnType("text");
@@ -230,7 +233,7 @@ namespace ClaimAI.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<string>("Category")
+                    b.Property<string>("Angle")
                         .HasMaxLength(40)
                         .HasColumnType("character varying(40)");
 
@@ -260,6 +263,10 @@ namespace ClaimAI.Infrastructure.Migrations
                     b.Property<long>("FileSize")
                         .HasColumnType("bigint");
 
+                    b.Property<string>("GroupKey")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
@@ -267,6 +274,10 @@ namespace ClaimAI.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Label")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
 
                     b.Property<string>("RelativeUrl")
                         .IsRequired()
@@ -303,6 +314,9 @@ namespace ClaimAI.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("ChatMode")
+                        .HasColumnType("text");
+
                     b.Property<Guid?>("ClaimId")
                         .HasColumnType("uuid");
 
@@ -315,9 +329,15 @@ namespace ClaimAI.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
-                    b.Property<string>("Title")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
+                    b.Property<string>("JsonFilePath")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("ThreadId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -334,52 +354,11 @@ namespace ClaimAI.Infrastructure.Migrations
 
                     b.HasIndex("ClaimId");
 
+                    b.HasIndex("ThreadId");
+
                     b.HasIndex("UserId");
 
                     b.ToTable("Conversations");
-                });
-
-            modelBuilder.Entity("ClaimAI.Domain.Entities.ConversationMessage", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("ConversationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("CreatedBy")
-                        .HasColumnType("text");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Metadata")
-                        .HasColumnType("jsonb");
-
-                    b.Property<string>("Role")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("UpdatedBy")
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ConversationId", "CreatedAt");
-
-                    b.ToTable("ConversationMessages");
                 });
 
             modelBuilder.Entity("ClaimAI.Domain.Entities.Notification", b =>
@@ -922,6 +901,11 @@ namespace ClaimAI.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("jsonb");
 
+                    b.Property<bool>("ShowSample")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<Guid>("TemplateId")
                         .HasColumnType("uuid");
 
@@ -961,6 +945,7 @@ namespace ClaimAI.Infrastructure.Migrations
                             MaxFileSizeMb = 10,
                             MinCount = 4,
                             SampleImageUrls = "[]",
+                            ShowSample = true,
                             TemplateId = new Guid("11111111-1111-1111-1111-111111111111")
                         },
                         new
@@ -979,6 +964,7 @@ namespace ClaimAI.Infrastructure.Migrations
                             MaxFileSizeMb = 10,
                             MinCount = 2,
                             SampleImageUrls = "[]",
+                            ShowSample = true,
                             TemplateId = new Guid("11111111-1111-1111-1111-111111111111")
                         },
                         new
@@ -997,6 +983,7 @@ namespace ClaimAI.Infrastructure.Migrations
                             MaxFileSizeMb = 10,
                             MinCount = 1,
                             SampleImageUrls = "[]",
+                            ShowSample = false,
                             TemplateId = new Guid("11111111-1111-1111-1111-111111111111")
                         });
                 });
@@ -1231,17 +1218,6 @@ namespace ClaimAI.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("ClaimAI.Domain.Entities.ConversationMessage", b =>
-                {
-                    b.HasOne("ClaimAI.Domain.Entities.Conversation", "Conversation")
-                        .WithMany("Messages")
-                        .HasForeignKey("ConversationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Conversation");
-                });
-
             modelBuilder.Entity("ClaimAI.Domain.Entities.Notification", b =>
                 {
                     b.HasOne("ClaimAI.Domain.Entities.Claim", "Claim")
@@ -1368,11 +1344,6 @@ namespace ClaimAI.Infrastructure.Migrations
             modelBuilder.Entity("ClaimAI.Domain.Entities.ApplicationUser", b =>
                 {
                     b.Navigation("Profile");
-                });
-
-            modelBuilder.Entity("ClaimAI.Domain.Entities.Conversation", b =>
-                {
-                    b.Navigation("Messages");
                 });
 
             modelBuilder.Entity("ClaimAI.Domain.Entities.Templates.Template", b =>

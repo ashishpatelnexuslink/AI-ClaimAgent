@@ -4,10 +4,15 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:claim_ai/core/constants/api_constants.dart';
 import 'package:claim_ai/core/constants/app_theme.dart';
+import 'package:claim_ai/core/network/dio_client.dart';
 import 'package:claim_ai/core/utils/date_utils.dart';
 import 'package:claim_ai/core/widgets/loading_widget.dart';
 import 'package:claim_ai/core/widgets/error_widget.dart';
+import 'package:claim_ai/features/assistant/presentation/widgets/sample_images_dialog.dart';
 import 'package:claim_ai/features/claims/data/datasources/claims_remote_datasource.dart';
 import 'package:claim_ai/features/claims/domain/entities/claim_entity.dart';
 import 'package:claim_ai/features/claims/presentation/cubit/claims_cubit.dart';
@@ -28,8 +33,15 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
 
   List<Map<String, dynamic>> _documents = const [];
   bool _documentsLoading = false;
-  final Set<String> _busyCategories = {};
+  _TemplateSettings? _templateSettings;
+  // Tracked per (groupKey, angle) so multiple buttons in the same group
+  // (front_left, front_right, …) can show their own busy state.
+  final Set<String> _busyKeys = {};
   final Set<String> _deletingIds = {};
+  final Set<String> _downloadingDocs = {};
+
+  String _busyKey(String groupKey, String? angle) =>
+      '$groupKey::${angle ?? ''}';
 
   static const _allowedDocExtensions = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
 
@@ -38,6 +50,30 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
     super.initState();
     context.read<ClaimsCubit>().fetchClaimDetail(widget.claimId);
     _loadDocuments();
+    _loadActiveTemplate();
+  }
+
+  /// Pulls the single Active template from `/mobile/templates/active` so the
+  /// documents card can render groups dynamically from `photoSettings` /
+  /// `documentSettings`. Failure leaves `_templateSettings` null and the
+  /// section renders a "no template configured" empty state.
+  Future<void> _loadActiveTemplate() async {
+    try {
+      final response =
+          await di.sl<DioClient>().get(ApiConstants.activeTemplate);
+      final data = response.data;
+      final payload = (data is Map && data['data'] is Map)
+          ? data['data'] as Map<String, dynamic>
+          : (data is Map<String, dynamic> ? data : null);
+      if (payload == null || !mounted) return;
+      setState(() {
+        _templateSettings = _TemplateSettings.fromJson(payload);
+      });
+    } catch (e) {
+      // Non-fatal; the documents card just shows an empty state.
+      // ignore: avoid_print
+      debugPrint('[ClaimDetail] failed to load active template: $e');
+    }
   }
 
   Future<void> _loadDocuments() async {
@@ -63,8 +99,19 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
         .showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  Future<void> _pickAndUploadPhoto(String category) async {
-    if (_busyCategories.contains(category)) return;
+  bool _isEditable() {
+    final claim = context.read<ClaimsCubit>().state.selectedClaim;
+    return claim?.status == ClaimStatus.pending;
+  }
+
+  Future<void> _pickAndUploadPhoto({
+    required String groupKey,
+    required String label,
+    String? angle,
+  }) async {
+    if (!_isEditable()) return;
+    final busyKey = _busyKey(groupKey, angle);
+    if (_busyKeys.contains(busyKey)) return;
 
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
@@ -94,7 +141,7 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
     );
     if (picked == null || !mounted) return;
 
-    setState(() => _busyCategories.add(category));
+    setState(() => _busyKeys.add(busyKey));
     try {
       final ds = di.sl<ClaimsRemoteDataSource>();
       final bytes = await File(picked.path).readAsBytes();
@@ -103,7 +150,9 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
         bytes: bytes,
         fileName: name.isEmpty ? 'image.jpg' : name,
         kind: 'Image',
-        category: category,
+        groupKey: groupKey,
+        label: label,
+        angle: angle,
       );
       final id = (response['id'] ?? '').toString();
       if (id.isNotEmpty) {
@@ -117,12 +166,17 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
     } catch (e) {
       _snack('Upload failed: $e');
     } finally {
-      if (mounted) setState(() => _busyCategories.remove(category));
+      if (mounted) setState(() => _busyKeys.remove(busyKey));
     }
   }
 
-  Future<void> _pickAndUploadDocument(String category) async {
-    if (_busyCategories.contains(category)) return;
+  Future<void> _pickAndUploadDocument({
+    required String groupKey,
+    required String label,
+  }) async {
+    if (!_isEditable()) return;
+    final busyKey = _busyKey(groupKey, null);
+    if (_busyKeys.contains(busyKey)) return;
 
     final result = await FilePicker.platform.pickFiles(
       allowMultiple: true,
@@ -132,7 +186,7 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
     );
     if (result == null || result.files.isEmpty || !mounted) return;
 
-    setState(() => _busyCategories.add(category));
+    setState(() => _busyKeys.add(busyKey));
     try {
       final ds = di.sl<ClaimsRemoteDataSource>();
       final uploadedIds = <String>[];
@@ -151,7 +205,8 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
           bytes: bytes,
           fileName: f.name,
           kind: isImage ? 'Image' : 'Document',
-          category: category,
+          groupKey: groupKey,
+          label: label,
         );
         final id = (response['id'] ?? '').toString();
         if (id.isNotEmpty) uploadedIds.add(id);
@@ -167,11 +222,68 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
     } catch (e) {
       _snack('Upload failed: $e');
     } finally {
-      if (mounted) setState(() => _busyCategories.remove(category));
+      if (mounted) setState(() => _busyKeys.remove(busyKey));
+    }
+  }
+
+  Future<Directory> _resolveDownloadsDir() async {
+    if (Platform.isAndroid) {
+      final publicDownloads = Directory('/storage/emulated/0/Download');
+      if (await publicDownloads.exists()) return publicDownloads;
+      try {
+        await publicDownloads.create(recursive: true);
+        return publicDownloads;
+      } catch (_) {
+        final ext = await getExternalStorageDirectory();
+        if (ext != null) return ext;
+      }
+    }
+    return getApplicationDocumentsDirectory();
+  }
+
+  Future<bool> _ensureStoragePermission() async {
+    if (!Platform.isAndroid) return true;
+    if (await Permission.storage.request().isGranted) return true;
+    final manage = await Permission.manageExternalStorage.request();
+    return manage.isGranted;
+  }
+
+  String _uniqueFilePath(String dir, String name) {
+    final dot = name.lastIndexOf('.');
+    final base = dot > 0 ? name.substring(0, dot) : name;
+    final ext = dot > 0 ? name.substring(dot) : '';
+    var candidate = '$dir/$name';
+    var i = 1;
+    while (File(candidate).existsSync()) {
+      candidate = '$dir/$base ($i)$ext';
+      i++;
+    }
+    return candidate;
+  }
+
+  Future<void> _downloadDoc(String url, String name) async {
+    if (url.isEmpty) return;
+    if (_downloadingDocs.contains(url)) return;
+    setState(() => _downloadingDocs.add(url));
+    try {
+      if (!await _ensureStoragePermission()) {
+        _snack('Storage permission denied');
+        return;
+      }
+      final dir = await _resolveDownloadsDir();
+      final safeName = name.trim().isEmpty ? 'document.pdf' : name.trim();
+      final filePath = _uniqueFilePath(dir.path, safeName);
+      await di.sl<DioClient>().dio.download(url, filePath);
+      _snack('Saved to $filePath');
+    } catch (e) {
+      _snack('Download failed: $e');
+    } finally {
+      if (mounted) setState(() => _downloadingDocs.remove(url));
     }
   }
 
   Future<void> _deleteDoc(String id) async {
+    if (!_isEditable()) return;
     if (id.isEmpty || _deletingIds.contains(id)) return;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -270,17 +382,24 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
               children: [
                 _PolicyDetailsCard(claim: claim),
                 const SizedBox(height: AppSpacing.md),
-                _AccidentInfoCard(claim: claim),
+                _AccidentInfoCard(
+                  claim: claim,
+                  onUpdated: () =>
+                      context.read<ClaimsCubit>().fetchClaimDetail(widget.claimId),
+                ),
                 const SizedBox(height: AppSpacing.md),
                 _DocumentsCard(
                   claim: claim,
                   documents: _documents,
                   loading: _documentsLoading,
-                  busyCategories: _busyCategories,
+                  templateSettings: _templateSettings,
+                  busyKeys: _busyKeys,
                   deletingIds: _deletingIds,
                   onUploadPhoto: _pickAndUploadPhoto,
                   onUploadDocument: _pickAndUploadDocument,
                   onDeleteDoc: _deleteDoc,
+                  onDownloadDoc: _downloadDoc,
+                  downloadingDocs: _downloadingDocs,
                 ),
                 const SizedBox(height: AppSpacing.xl),
               ],
@@ -333,15 +452,23 @@ class _PolicyDetailsCard extends StatelessWidget {
                 ? '—'
                 : (claim.identityVerified! ? 'Yes' : 'No'),
             highlight: claim.identityVerified == true,
+            isLast: true,
           ),
         ],
       ),
     );
   }
 
-  Widget _kv(String k, String v, {bool highlight = false}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7),
+  Widget _kv(String k, String v, {bool highlight = false, bool isLast = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      decoration: BoxDecoration(
+        border: isLast
+            ? null
+            : const Border(
+                bottom: BorderSide(color: AppColors.border, width: 1),
+              ),
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -377,17 +504,128 @@ class _PolicyDetailsCard extends StatelessWidget {
 
 // ─── Accident Info Card ──────────────────────────────────────────────────
 
-class _AccidentInfoCard extends StatelessWidget {
+class _AccidentInfoCard extends StatefulWidget {
   final ClaimEntity claim;
-  const _AccidentInfoCard({required this.claim});
+  final VoidCallback onUpdated;
+  const _AccidentInfoCard({required this.claim, required this.onUpdated});
+
+  @override
+  State<_AccidentInfoCard> createState() => _AccidentInfoCardState();
+}
+
+class _AccidentInfoCardState extends State<_AccidentInfoCard> {
+  bool _editing = false;
+  bool _saving = false;
+  late TextEditingController _locationController;
+  late TextEditingController _descriptionController;
+  DateTime? _incidentDate;
+
+  @override
+  void initState() {
+    super.initState();
+    _locationController =
+        TextEditingController(text: widget.claim.incidentLocation ?? '');
+    _descriptionController = TextEditingController(
+      text: widget.claim.incidentDescription ?? widget.claim.description ?? '',
+    );
+    _incidentDate = widget.claim.incidentDate;
+  }
+
+  @override
+  void didUpdateWidget(covariant _AccidentInfoCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Refresh form values when the parent reloads the claim after a save.
+    if (!_editing && widget.claim != oldWidget.claim) {
+      _locationController.text = widget.claim.incidentLocation ?? '';
+      _descriptionController.text =
+          widget.claim.incidentDescription ?? widget.claim.description ?? '';
+      _incidentDate = widget.claim.incidentDate;
+    }
+  }
+
+  @override
+  void dispose() {
+    _locationController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+
+  void _enterEditMode() {
+    setState(() {
+      _locationController.text = widget.claim.incidentLocation ?? '';
+      _descriptionController.text =
+          widget.claim.incidentDescription ?? widget.claim.description ?? '';
+      _incidentDate = widget.claim.incidentDate;
+      _editing = true;
+    });
+  }
+
+  void _cancelEdit() {
+    setState(() => _editing = false);
+  }
+
+  Future<void> _pickDateTime() async {
+    final now = DateTime.now();
+    final initial = _incidentDate ?? now;
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(now.year + 1, now.month, now.day),
+    );
+    if (pickedDate == null || !mounted) return;
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initial),
+    );
+    if (!mounted) return;
+    final time = pickedTime ?? TimeOfDay.fromDateTime(initial);
+    setState(() {
+      _incidentDate = DateTime(
+        pickedDate.year,
+        pickedDate.month,
+        pickedDate.day,
+        time.hour,
+        time.minute,
+      );
+    });
+  }
+
+  Future<void> _save() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      await di.sl<ClaimsRemoteDataSource>().updateAccidentInfo(
+            id: widget.claim.id,
+            incidentDate: _incidentDate,
+            incidentLocation: _locationController.text.trim().isEmpty
+                ? null
+                : _locationController.text.trim(),
+            incidentDescription: _descriptionController.text.trim().isEmpty
+                ? null
+                : _descriptionController.text.trim(),
+          );
+      if (!mounted) return;
+      setState(() {
+        _editing = false;
+        _saving = false;
+      });
+      widget.onUpdated();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Accident information updated')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Update failed: $e')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final date = claim.incidentDate;
-    final dateText = date != null
-        ? '${AppDateUtils.formatDate(date)}, ${AppDateUtils.formatTime(date)}'
-        : '—';
-
+    final canEdit = widget.claim.status == ClaimStatus.pending;
     return _DetailCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -404,39 +642,179 @@ class _AccidentInfoCard extends StatelessWidget {
                   ),
                 ),
               ),
-              Icon(Icons.edit_outlined,
-                  size: 18, color: Colors.grey.shade600),
+              if (canEdit && !_editing)
+                IconButton(
+                  icon: Icon(Icons.edit_outlined,
+                      size: 18, color: Colors.grey.shade600),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: _enterEditMode,
+                ),
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
-          _row('Date & Time', dateText),
-          _row('Location', claim.incidentLocation ?? '—'),
-          const SizedBox(height: AppSpacing.sm),
-          const Text(
-            'Description:',
-            style: TextStyle(
-              fontSize: 13,
-              color: AppColors.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            claim.incidentDescription ?? claim.description ?? '—',
-            style: const TextStyle(
-              fontSize: 14,
-              color: AppColors.textPrimary,
-              fontWeight: FontWeight.w500,
-              height: 1.5,
-            ),
-          ),
+          if (_editing) _buildEditMode() else _buildViewMode(),
         ],
       ),
     );
   }
 
+  Widget _buildViewMode() {
+    final date = widget.claim.incidentDate;
+    final dateText = date != null
+        ? '${AppDateUtils.formatDate(date)}, ${AppDateUtils.formatTime(date)}'
+        : '—';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _row('Date & Time', dateText),
+        _row('Location', widget.claim.incidentLocation ?? '—'),
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Description:',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                widget.claim.incidentDescription ??
+                    widget.claim.description ??
+                    '—',
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w500,
+                  height: 1.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEditMode() {
+    final dateLabel = _incidentDate != null
+        ? '${AppDateUtils.formatDate(_incidentDate!)}, ${AppDateUtils.formatTime(_incidentDate!)}'
+        : 'Select date & time';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _FieldLabel('Date & Time'),
+        InkWell(
+          onTap: _saving ? null : _pickDateTime,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            decoration: BoxDecoration(
+              border: Border.all(color: AppColors.border),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.event_outlined,
+                    size: 18, color: AppColors.textSecondary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    dateLabel,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: _incidentDate == null
+                          ? AppColors.textHint
+                          : AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+                const Icon(Icons.arrow_drop_down,
+                    color: AppColors.textSecondary),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        const _FieldLabel('Location'),
+        TextField(
+          controller: _locationController,
+          enabled: !_saving,
+          decoration: InputDecoration(
+            hintText: 'Where did the incident occur?',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12, vertical: 12),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        const _FieldLabel('Description'),
+        TextField(
+          controller: _descriptionController,
+          enabled: !_saving,
+          minLines: 3,
+          maxLines: 6,
+          decoration: InputDecoration(
+            hintText: 'Describe what happened',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12, vertical: 12),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: _saving ? null : _cancelEdit,
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                child: const Text('Cancel'),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: _saving ? null : _save,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                child: _saving
+                    ? const SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Save'),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   Widget _row(String k, String v) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      decoration: const BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: AppColors.border, width: 1),
+        ),
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -468,40 +846,110 @@ class _AccidentInfoCard extends StatelessWidget {
   }
 }
 
+class _FieldLabel extends StatelessWidget {
+  final String text;
+  const _FieldLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: AppColors.textSecondary,
+          letterSpacing: 0.4,
+        ),
+      ),
+    );
+  }
+}
+
 // ─── Documents Card ──────────────────────────────────────────────────────
 
 class _DocumentsCard extends StatelessWidget {
   final ClaimEntity claim;
   final List<Map<String, dynamic>> documents;
   final bool loading;
-  final Set<String> busyCategories;
+  final _TemplateSettings? templateSettings;
+  final Set<String> busyKeys;
   final Set<String> deletingIds;
-  final Future<void> Function(String category) onUploadPhoto;
-  final Future<void> Function(String category) onUploadDocument;
+  final Future<void> Function({
+    required String groupKey,
+    required String label,
+    String? angle,
+  }) onUploadPhoto;
+  final Future<void> Function({
+    required String groupKey,
+    required String label,
+  }) onUploadDocument;
   final Future<void> Function(String id) onDeleteDoc;
+  final Future<void> Function(String url, String name) onDownloadDoc;
+  final Set<String> downloadingDocs;
 
   const _DocumentsCard({
     required this.claim,
     required this.documents,
     required this.loading,
-    required this.busyCategories,
+    required this.templateSettings,
+    required this.busyKeys,
     required this.deletingIds,
     required this.onUploadPhoto,
     required this.onUploadDocument,
     required this.onDeleteDoc,
+    required this.onDownloadDoc,
+    required this.downloadingDocs,
   });
 
   @override
   Widget build(BuildContext context) {
-    final vehiclePhotos = _ofCategory('VehiclePhoto');
-    final damagePhotos = _ofCategory('DamagePhoto');
-    final licensePhotos = _ofCategory('DriverLicense');
-    final billDocs = _ofCategory('BillInvoice');
-    final policeDocs = _ofCategory('PoliceReport');
-    final supporting = [
-      ..._ofCategory('SupportingDocument'),
-      ...policeDocs,
-    ];
+    final canEdit = claim.status == ClaimStatus.pending;
+    final settings = templateSettings;
+
+    final sections = <Widget>[];
+    if (settings != null) {
+      for (final ps in settings.photoSettings) {
+        if (sections.isNotEmpty) sections.add(const _SectionDivider());
+        final groupDocs = _ofGroup(ps.groupKey);
+        sections.add(_PhotoSection(
+          title: ps.label.toUpperCase(),
+          groupKey: ps.groupKey,
+          label: ps.label,
+          photos: groupDocs,
+          minCount: ps.minCount,
+          maxCount: ps.maxCount,
+          allowedAngles: ps.allowedAngles,
+          showSample: ps.showSample,
+          sampleImageUrls: ps.sampleImageUrls,
+          busyKeys: busyKeys,
+          deletingIds: deletingIds,
+          canEdit: canEdit,
+          onUpload: onUploadPhoto,
+          onDelete: onDeleteDoc,
+        ));
+      }
+      for (final ds in settings.documentSettings) {
+        if (sections.isNotEmpty) sections.add(const _SectionDivider());
+        final groupDocs = _ofGroup(ds.docKey);
+        sections.add(_FilesSection(
+          title: ds.label.toUpperCase(),
+          groupKey: ds.docKey,
+          label: ds.label,
+          docs: groupDocs,
+          minCount: ds.minCount,
+          maxCount: ds.maxCount,
+          busyKeys: busyKeys,
+          deletingIds: deletingIds,
+          canEdit: canEdit,
+          onUpload: onUploadDocument,
+          onDelete: onDeleteDoc,
+          onDownload: onDownloadDoc,
+          downloadingDocs: downloadingDocs,
+        ));
+      }
+    }
 
     return _DetailCard(
       child: Column(
@@ -516,116 +964,107 @@ class _DocumentsCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          if (loading)
+          if (loading || settings == null)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 24),
               child: Center(child: CircularProgressIndicator()),
             )
-          else ...[
-            _PhotoSection(
-              title: 'VEHICLE PHOTOS',
-              trailing: 'See sample',
-              photos: vehiclePhotos,
-              quota: claim.vehiclePhotosCount == 0
-                  ? 4
-                  : claim.vehiclePhotosCount,
-              category: 'VehiclePhoto',
-              busy: busyCategories.contains('VehiclePhoto'),
-              deletingIds: deletingIds,
-              onUpload: onUploadPhoto,
-              onDelete: onDeleteDoc,
-            ),
-            const _SectionDivider(),
-            _PhotoSection(
-              title: 'DAMAGED VEHICLE PHOTOS',
-              photos: damagePhotos,
-              quota: claim.damagePhotosCount == 0
-                  ? 10
-                  : claim.damagePhotosCount,
-              category: 'DamagePhoto',
-              busy: busyCategories.contains('DamagePhoto'),
-              deletingIds: deletingIds,
-              onUpload: onUploadPhoto,
-              onDelete: onDeleteDoc,
-            ),
-            const _SectionDivider(),
-            _FilesSection(
-              title: 'BILL/INVOICE',
-              docs: billDocs,
-              quota: claim.repairBillCount == 0 ? 2 : claim.repairBillCount,
-              category: 'BillInvoice',
-              busy: busyCategories.contains('BillInvoice'),
-              deletingIds: deletingIds,
-              onUpload: onUploadDocument,
-              onDelete: onDeleteDoc,
-            ),
-            const _SectionDivider(),
-            _PhotoSection(
-              title: "DRIVER'S LICENSE",
-              photos: licensePhotos,
-              quota: claim.licensePhotosCount == 0
-                  ? 2
-                  : claim.licensePhotosCount,
-              category: 'DriverLicense',
-              busy: busyCategories.contains('DriverLicense'),
-              deletingIds: deletingIds,
-              onUpload: onUploadPhoto,
-              onDelete: onDeleteDoc,
-            ),
-            const _SectionDivider(),
-            _FilesSection(
-              title: 'SUPPORTING DOCUMENTS',
-              docs: supporting,
-              quota: 10,
-              category: 'SupportingDocument',
-              busy: busyCategories.contains('SupportingDocument'),
-              deletingIds: deletingIds,
-              onUpload: onUploadDocument,
-              onDelete: onDeleteDoc,
-            ),
-          ],
+          else if (sections.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Text(
+                'No document groups configured for this template.',
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
+            )
+          else
+            ...sections,
         ],
       ),
     );
   }
 
-  List<Map<String, dynamic>> _ofCategory(String category) {
+  List<Map<String, dynamic>> _ofGroup(String groupKey) {
     return documents
-        .where((d) => (d['category'] ?? '').toString() == category)
+        .where((d) => (d['groupKey'] ?? '').toString() == groupKey)
         .toList();
   }
 }
 
 class _PhotoSection extends StatelessWidget {
   final String title;
-  final String? trailing;
+  final String groupKey;
+  final String label;
   final List<Map<String, dynamic>> photos;
-  final int quota;
-  final String category;
-  final bool busy;
+  final int minCount;
+  final int maxCount;
+  final List<String> allowedAngles;
+  final bool showSample;
+  final List<String> sampleImageUrls;
+  final Set<String> busyKeys;
   final Set<String> deletingIds;
-  final Future<void> Function(String category) onUpload;
+  final bool canEdit;
+  final Future<void> Function({
+    required String groupKey,
+    required String label,
+    String? angle,
+  }) onUpload;
   final Future<void> Function(String id) onDelete;
 
   const _PhotoSection({
     required this.title,
-    this.trailing,
+    required this.groupKey,
+    required this.label,
     required this.photos,
-    required this.quota,
-    required this.category,
-    required this.busy,
+    required this.minCount,
+    required this.maxCount,
+    required this.allowedAngles,
+    required this.busyKeys,
     required this.deletingIds,
     required this.onUpload,
     required this.onDelete,
+    this.showSample = false,
+    this.sampleImageUrls = const [],
+    this.canEdit = true,
   });
+
+  /// Quota shown next to the photo count. Falls back to angle count when the
+  /// template doesn't specify min/max.
+  int get _quota {
+    if (maxCount > 0) return maxCount;
+    if (minCount > 0) return minCount;
+    if (allowedAngles.isNotEmpty) return allowedAngles.length;
+    return 1;
+  }
+
+  String _humanizeAngle(String angle) {
+    if (angle.isEmpty) return angle;
+    return angle
+        .split(RegExp(r'[_\s]+'))
+        .where((p) => p.isNotEmpty)
+        .map((p) => p.toUpperCase())
+        .join(' ');
+  }
 
   @override
   Widget build(BuildContext context) {
-    final canUpload = photos.length < quota;
+    final uploadedAngles = <String>{
+      for (final p in photos) (p['angle'] ?? '').toString(),
+    };
+
+    // For an allowed-angles group, "pending" angles are those without a doc.
+    final pendingAngles = allowedAngles
+        .where((a) => !uploadedAngles.contains(a))
+        .toList(growable: false);
+
+    final canStillAdd = canEdit && photos.length < _quota;
+    final canShowSample = showSample;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Expanded(
               child: Text(
@@ -638,13 +1077,25 @@ class _PhotoSection extends StatelessWidget {
                 ),
               ),
             ),
-            if (trailing != null)
-              Text(
-                '($trailing)',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.primary,
+            if (canShowSample)
+              GestureDetector(
+                onTap: () {
+                  showSampleImagesDialog(
+                    context: context,
+                    assetPaths: const [
+                      'assets/images/damage_photos_sample.png',
+                    ],
+                    labels: const [],
+                  );
+                },
+                child: const Text(
+                  '(See sample)',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.primary,
+                    decoration: TextDecoration.underline,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
           ],
@@ -654,63 +1105,103 @@ class _PhotoSection extends StatelessWidget {
           _EmptyRow(label: 'No photos uploaded')
         else
           SizedBox(
-            height: 76,
+            height: 104,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: photos.length,
               separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (_, i) {
+              itemBuilder: (ctx, i) {
                 final p = photos[i];
                 final url = (p['url'] ?? '').toString();
                 final id = (p['id'] ?? '').toString();
-                return _PhotoThumb(
-                  url: url,
-                  deleting: deletingIds.contains(id),
-                  onDelete: id.isEmpty ? null : () => onDelete(id),
+                final angle = (p['angle'] ?? '').toString();
+                return SizedBox(
+                  width: 76,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      _PhotoThumb(
+                        url: url,
+                        deleting: deletingIds.contains(id),
+                        onDelete: (!canEdit || id.isEmpty)
+                            ? null
+                            : () => onDelete(id),
+                        onTap: url.isEmpty
+                            ? null
+                            : () {
+                                final urls = photos
+                                    .map((e) => (e['url'] ?? '').toString())
+                                    .where((u) => u.isNotEmpty)
+                                    .toList();
+                                final initial = urls.indexOf(url);
+                                _showImageViewer(
+                                  ctx,
+                                  urls,
+                                  initial < 0 ? 0 : initial,
+                                );
+                              },
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        angle.isEmpty ? '—' : _humanizeAngle(angle),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textSecondary,
+                          letterSpacing: 0.4,
+                        ),
+                      ),
+                    ],
+                  ),
                 );
               },
             ),
           ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          '${photos.length}/$quota uploaded',
+          '${photos.length}/$_quota uploaded',
           style: const TextStyle(
             fontSize: 12,
             color: AppColors.textSecondary,
             fontWeight: FontWeight.w500,
           ),
         ),
-        const SizedBox(height: AppSpacing.sm),
-        Row(
-          children: [
-            Expanded(
-              child: _TagButton(
-                icon: Icons.camera_alt_outlined,
-                label: 'FRONT',
-                busy: busy,
-                onTap: canUpload && !busy ? () => onUpload(category) : null,
+        if (canEdit) ...[
+          const SizedBox(height: AppSpacing.sm),
+          if (allowedAngles.isEmpty) ...[
+            // Free-form group — single generic button gated by quota.
+            if (canStillAdd)
+              _UploadButton(
+                busy: busyKeys.contains('$groupKey::'),
+                onTap: () => onUpload(groupKey: groupKey, label: label),
               ),
+          ] else if (pendingAngles.isNotEmpty)
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final angle in pendingAngles)
+                  SizedBox(
+                    width: (MediaQuery.of(context).size.width - 96) / 3,
+                    child: _TagButton(
+                      icon: Icons.camera_alt_outlined,
+                      label: _humanizeAngle(angle),
+                      busy: busyKeys.contains('$groupKey::$angle'),
+                      onTap: canStillAdd
+                          ? () => onUpload(
+                                groupKey: groupKey,
+                                label: label,
+                                angle: angle,
+                              )
+                          : null,
+                    ),
+                  ),
+              ],
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _TagButton(
-                icon: Icons.camera_alt_outlined,
-                label: 'SIDE',
-                busy: busy,
-                onTap: canUpload && !busy ? () => onUpload(category) : null,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _TagButton(
-                icon: Icons.camera_alt_outlined,
-                label: 'CLOSE UP',
-                busy: busy,
-                onTap: canUpload && !busy ? () => onUpload(category) : null,
-              ),
-            ),
-          ],
-        ),
+        ],
       ],
     );
   }
@@ -718,28 +1209,49 @@ class _PhotoSection extends StatelessWidget {
 
 class _FilesSection extends StatelessWidget {
   final String title;
+  final String groupKey;
+  final String label;
   final List<Map<String, dynamic>> docs;
-  final int quota;
-  final String category;
-  final bool busy;
+  final int minCount;
+  final int maxCount;
+  final Set<String> busyKeys;
   final Set<String> deletingIds;
-  final Future<void> Function(String category) onUpload;
+  final bool canEdit;
+  final Future<void> Function({
+    required String groupKey,
+    required String label,
+  }) onUpload;
   final Future<void> Function(String id) onDelete;
+  final Future<void> Function(String url, String name) onDownload;
+  final Set<String> downloadingDocs;
 
   const _FilesSection({
     required this.title,
+    required this.groupKey,
+    required this.label,
     required this.docs,
-    required this.quota,
-    required this.category,
-    required this.busy,
+    required this.minCount,
+    required this.maxCount,
+    required this.busyKeys,
     required this.deletingIds,
     required this.onUpload,
     required this.onDelete,
+    required this.onDownload,
+    required this.downloadingDocs,
+    this.canEdit = true,
   });
+
+  int get _quota {
+    if (maxCount > 0) return maxCount;
+    if (minCount > 0) return minCount;
+    return 1;
+  }
 
   @override
   Widget build(BuildContext context) {
-    final canUpload = docs.length < quota;
+    final quota = _quota;
+    final canUpload = canEdit && docs.length < quota;
+    final busy = busyKeys.contains('$groupKey::');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -758,11 +1270,17 @@ class _FilesSection extends StatelessWidget {
         else
           ...docs.map((d) {
             final id = (d['id'] ?? '').toString();
+            final url = (d['url'] ?? '').toString();
+            final name = (d['fileName'] ?? 'file').toString();
             return _FileRow(
-              name: (d['fileName'] ?? 'file').toString(),
+              name: name,
               sizeBytes: (d['fileSize'] as num?)?.toInt() ?? 0,
               deleting: deletingIds.contains(id),
-              onDelete: id.isEmpty ? null : () => onDelete(id),
+              onDelete: (!canEdit || id.isEmpty)
+                  ? null
+                  : () => onDelete(id),
+              downloading: downloadingDocs.contains(url),
+              onDownload: url.isEmpty ? null : () => onDownload(url, name),
             );
           }),
         const SizedBox(height: AppSpacing.sm),
@@ -774,50 +1292,123 @@ class _FilesSection extends StatelessWidget {
             fontWeight: FontWeight.w500,
           ),
         ),
-        const SizedBox(height: AppSpacing.sm),
-        _UploadButton(
-          busy: busy,
-          onTap: canUpload && !busy ? () => onUpload(category) : null,
-        ),
+        if (canEdit) ...[
+          const SizedBox(height: AppSpacing.sm),
+          _UploadButton(
+            busy: busy,
+            onTap: canUpload && !busy
+                ? () => onUpload(groupKey: groupKey, label: label)
+                : null,
+          ),
+        ],
       ],
     );
   }
+}
+
+void _showImageViewer(
+  BuildContext context,
+  List<String> urls,
+  int initialIndex,
+) {
+  if (urls.isEmpty) return;
+  final controller = PageController(initialPage: initialIndex);
+  showDialog(
+    context: context,
+    barrierColor: Colors.black.withValues(alpha: 0.92),
+    builder: (ctx) {
+      return Stack(
+        children: [
+          GestureDetector(
+            onTap: () => Navigator.of(ctx).pop(),
+            behavior: HitTestBehavior.opaque,
+            child: PageView.builder(
+              controller: controller,
+              itemCount: urls.length,
+              itemBuilder: (_, i) {
+                return InteractiveViewer(
+                  minScale: 1,
+                  maxScale: 5,
+                  child: Center(
+                    child: Image.network(
+                      urls[i],
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) => const Icon(
+                        Icons.broken_image_outlined,
+                        color: Colors.white54,
+                        size: 64,
+                      ),
+                      loadingBuilder: (_, child, progress) {
+                        if (progress == null) return child;
+                        return const Center(
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          Positioned(
+            top: MediaQuery.of(ctx).padding.top + 8,
+            right: 8,
+            child: IconButton(
+              icon: const Icon(Icons.close, color: Colors.white, size: 28),
+              onPressed: () => Navigator.of(ctx).pop(),
+            ),
+          ),
+        ],
+      );
+    },
+  );
 }
 
 class _PhotoThumb extends StatelessWidget {
   final String url;
   final bool deleting;
   final VoidCallback? onDelete;
+  final VoidCallback? onTap;
 
   const _PhotoThumb({
     required this.url,
     this.deleting = false,
     this.onDelete,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final thumb = Container(
+      width: 76,
+      height: 76,
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
+        image: url.isEmpty
+            ? null
+            : DecorationImage(
+                image: NetworkImage(url),
+                fit: BoxFit.cover,
+              ),
+      ),
+      child: url.isEmpty
+          ? const Icon(Icons.image_not_supported_outlined,
+              color: AppColors.textHint)
+          : null,
+    );
     return Stack(
       children: [
-        Container(
-          width: 76,
-          height: 76,
-          decoration: BoxDecoration(
-            color: AppColors.background,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AppColors.border),
-            image: url.isEmpty
-                ? null
-                : DecorationImage(
-                    image: NetworkImage(url),
-                    fit: BoxFit.cover,
-                  ),
-          ),
-          child: url.isEmpty
-              ? const Icon(Icons.image_not_supported_outlined,
-                  color: AppColors.textHint)
-              : null,
-        ),
+        (onTap != null && url.isNotEmpty)
+            ? GestureDetector(
+                onTap: onTap,
+                behavior: HitTestBehavior.opaque,
+                child: thumb,
+              )
+            : thumb,
         if (onDelete != null)
           Positioned(
             top: 2,
@@ -854,11 +1445,15 @@ class _FileRow extends StatelessWidget {
   final int sizeBytes;
   final bool deleting;
   final VoidCallback? onDelete;
+  final bool downloading;
+  final VoidCallback? onDownload;
   const _FileRow({
     required this.name,
     required this.sizeBytes,
     this.deleting = false,
     this.onDelete,
+    this.downloading = false,
+    this.onDownload,
   });
 
   @override
@@ -908,22 +1503,44 @@ class _FileRow extends StatelessWidget {
               ],
             ),
           ),
-          if (deleting)
-            const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          else
-            GestureDetector(
-              onTap: onDelete,
-              behavior: HitTestBehavior.opaque,
-              child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: Icon(Icons.close,
-                    size: 18, color: Colors.grey.shade500),
+          if (onDownload != null)
+            downloading
+                ? const Padding(
+                    padding: EdgeInsets.all(4),
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : GestureDetector(
+                    onTap: onDownload,
+                    behavior: HitTestBehavior.opaque,
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(Icons.file_download_outlined,
+                          size: 20, color: AppColors.primary),
+                    ),
+                  ),
+          if (onDelete != null) ...[
+            const SizedBox(width: 4),
+            if (deleting)
+              const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              GestureDetector(
+                onTap: onDelete,
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(Icons.close,
+                      size: 18, color: Colors.grey.shade500),
+                ),
               ),
-            ),
+          ],
         ],
       ),
     );
@@ -1124,6 +1741,108 @@ class _StatusPill extends StatelessWidget {
           letterSpacing: 0.5,
         ),
       ),
+    );
+  }
+}
+
+// ─── Template settings DTOs ──────────────────────────────────────────────
+//
+// Subset of the backend `TemplateDetailDto` that the documents card needs.
+// Decoded from `/api/mobile/templates/active`. Mirrors the same shape used
+// in `claim_chat_screen.dart` — kept private here to avoid coupling the two
+// pages, since the chat flow may evolve independently.
+
+class _TemplateSettings {
+  final List<_PhotoSettingDto> photoSettings;
+  final List<_DocumentSettingDto> documentSettings;
+  const _TemplateSettings({
+    required this.photoSettings,
+    required this.documentSettings,
+  });
+
+  factory _TemplateSettings.fromJson(Map<String, dynamic> json) {
+    final photos = (json['photoSettings'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(_PhotoSettingDto.fromJson)
+        .toList()
+      ..sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
+    final docs = (json['documentSettings'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(_DocumentSettingDto.fromJson)
+        .toList()
+      ..sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
+    return _TemplateSettings(photoSettings: photos, documentSettings: docs);
+  }
+}
+
+class _PhotoSettingDto {
+  final String groupKey;
+  final String label;
+  final int minCount;
+  final int maxCount;
+  final bool isRequired;
+  final List<String> allowedAngles;
+  final bool showSample;
+  final List<String> sampleImageUrls;
+  final int displayOrder;
+
+  const _PhotoSettingDto({
+    required this.groupKey,
+    required this.label,
+    required this.minCount,
+    required this.maxCount,
+    required this.isRequired,
+    required this.allowedAngles,
+    required this.showSample,
+    required this.sampleImageUrls,
+    required this.displayOrder,
+  });
+
+  factory _PhotoSettingDto.fromJson(Map<String, dynamic> json) {
+    return _PhotoSettingDto(
+      groupKey: (json['groupKey'] ?? '').toString(),
+      label: (json['label'] ?? '').toString(),
+      minCount: (json['minCount'] as num?)?.toInt() ?? 0,
+      maxCount: (json['maxCount'] as num?)?.toInt() ?? 0,
+      isRequired: json['isRequired'] == true,
+      allowedAngles: (json['allowedAngles'] as List? ?? const [])
+          .map((e) => e.toString())
+          .toList(),
+      showSample: json['showSample'] == true,
+      sampleImageUrls: (json['sampleImageUrls'] as List? ?? const [])
+          .map((e) => e.toString())
+          .where((s) => s.isNotEmpty)
+          .toList(),
+      displayOrder: (json['displayOrder'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class _DocumentSettingDto {
+  final String docKey;
+  final String label;
+  final int minCount;
+  final int maxCount;
+  final bool isRequired;
+  final int displayOrder;
+
+  const _DocumentSettingDto({
+    required this.docKey,
+    required this.label,
+    required this.minCount,
+    required this.maxCount,
+    required this.isRequired,
+    required this.displayOrder,
+  });
+
+  factory _DocumentSettingDto.fromJson(Map<String, dynamic> json) {
+    return _DocumentSettingDto(
+      docKey: (json['docKey'] ?? '').toString(),
+      label: (json['label'] ?? '').toString(),
+      minCount: (json['minCount'] as num?)?.toInt() ?? 0,
+      maxCount: (json['maxCount'] as num?)?.toInt() ?? 0,
+      isRequired: json['isRequired'] == true,
+      displayOrder: (json['displayOrder'] as num?)?.toInt() ?? 0,
     );
   }
 }
