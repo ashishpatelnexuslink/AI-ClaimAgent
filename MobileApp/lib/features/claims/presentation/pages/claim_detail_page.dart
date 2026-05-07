@@ -439,13 +439,13 @@ class _PolicyDetailsCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
-          _kv('Policy Holder', claim.fullName ?? claim.patientName ?? '—'),
+          _kv('Policy Holder', claim.fullName ?? '—'),
           _kv('Policy Number',
               claim.policyNumber != null ? '#${claim.policyNumber}' : '—'),
           _kv('Vehicle', claim.vehicleModel ?? '—'),
-          _kv('Plat Number', claim.vehicleNumber ?? '—'),
+          _kv('Plat Number', claim.vehicleRegistrationNumber ?? '—'),
           _kv('VIN Number', claim.vinNumber ?? '—'),
-          _kv('Coverage', claim.coverageType ?? claim.claimType),
+          _kv('Coverage', claim.claimType),
           _kv(
             'Identity Verified',
             claim.identityVerified == null
@@ -526,7 +526,7 @@ class _AccidentInfoCardState extends State<_AccidentInfoCard> {
     _locationController =
         TextEditingController(text: widget.claim.incidentLocation ?? '');
     _descriptionController = TextEditingController(
-      text: widget.claim.incidentDescription ?? widget.claim.description ?? '',
+      text: widget.claim.incidentDescription ?? '',
     );
     _incidentDate = widget.claim.incidentDate;
   }
@@ -538,7 +538,7 @@ class _AccidentInfoCardState extends State<_AccidentInfoCard> {
     if (!_editing && widget.claim != oldWidget.claim) {
       _locationController.text = widget.claim.incidentLocation ?? '';
       _descriptionController.text =
-          widget.claim.incidentDescription ?? widget.claim.description ?? '';
+          widget.claim.incidentDescription ?? '';
       _incidentDate = widget.claim.incidentDate;
     }
   }
@@ -554,7 +554,7 @@ class _AccidentInfoCardState extends State<_AccidentInfoCard> {
     setState(() {
       _locationController.text = widget.claim.incidentLocation ?? '';
       _descriptionController.text =
-          widget.claim.incidentDescription ?? widget.claim.description ?? '';
+          widget.claim.incidentDescription ?? '';
       _incidentDate = widget.claim.incidentDate;
       _editing = true;
     });
@@ -683,9 +683,7 @@ class _AccidentInfoCardState extends State<_AccidentInfoCard> {
               ),
               const SizedBox(height: 4),
               Text(
-                widget.claim.incidentDescription ??
-                    widget.claim.description ??
-                    '—',
+                widget.claim.incidentDescription ?? '—',
                 style: const TextStyle(
                   fontSize: 14,
                   color: AppColors.textPrimary,

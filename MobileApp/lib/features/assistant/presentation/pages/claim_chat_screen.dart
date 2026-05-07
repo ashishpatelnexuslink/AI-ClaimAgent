@@ -2537,7 +2537,6 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         case 'vehicle number':
         case 'vehicle registration number':
         case 'registration number':
-          mapped['vehicleNumber'] = value;
           mapped['vehicleRegistrationNumber'] = value;
           break;
         case 'vin':
@@ -2548,10 +2547,6 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         case 'vehicle':
         case 'vehicle model':
           mapped['vehicleModel'] = value;
-          break;
-        case 'coverage':
-        case 'coverage type':
-          mapped['coverageType'] = value;
           break;
         case 'status':
         case 'policy status':
@@ -2587,7 +2582,6 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         case 'damage details':
         case 'description':
           mapped['incidentDescription'] = value;
-          mapped['description'] = value;
           break;
         case 'claim amount':
         case 'amount':
@@ -2597,35 +2591,6 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
             final parsed = num.tryParse(value.toString());
             if (parsed != null) mapped['amount'] = parsed;
           }
-          break;
-        case 'vehicle photos':
-        case 'vehicle photos count':
-          mapped['vehiclePhotosCount'] = _extractCount(value);
-          break;
-        case 'damage photos':
-        case 'damage photos count':
-          mapped['damagePhotosCount'] = _extractCount(value);
-          break;
-        case 'driver license':
-        case 'driving license':
-        case 'license photos':
-        case 'license photos count':
-          mapped['licensePhotosCount'] = _extractCount(value);
-          break;
-        case 'police report':
-        case 'police report count':
-          mapped['policeReportCount'] = _extractCount(value);
-          break;
-        case 'repair bill':
-        case 'bill invoice':
-        case 'invoice':
-        case 'invoice count':
-        case 'repair bill count':
-          mapped['repairBillCount'] = _extractCount(value);
-          break;
-        case 'supporting docs':
-        case 'supporting documents':
-          mapped['supportingDocsCount'] = _extractCount(value);
           break;
         default:
           // Keep unrecognised keys so the server stores them under AdditionalData.

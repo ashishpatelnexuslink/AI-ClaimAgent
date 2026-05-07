@@ -63,7 +63,6 @@ export default function ClaimDetailPage() {
               <InfoItem label="Submitted Date" value={format(new Date(claim.submittedAt), 'dd MMM yyyy')} />
               <InfoItem label="Vehicle Registration" value={claim.vehicleReg} />
               <InfoItem label="Claim Type" value={claim.type} />
-              <InfoItem label="Assigned To" value={claim.assignedTo ?? 'Unassigned'} />
               <InfoItem label="Last Updated" value={format(new Date(claim.updatedAt), 'dd MMM yyyy')} />
               <InfoItem label="Incident Location" value={claim.incidentLocation ?? '—'} />
               {claim.amount && <InfoItem label="Claim Amount" value={`₹${claim.amount.toLocaleString('en-IN')}`} />}
@@ -73,9 +72,9 @@ export default function ClaimDetailPage() {
           {/* Description */}
           <div className="bg-card rounded-2xl p-5 shadow-sm">
             <h3 className="text-base font-semibold text-secondary mb-3">Description</h3>
-            {claim.description ? (
+            {claim.incidentDescription ? (
               <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">
-                {claim.description}
+                {claim.incidentDescription}
               </p>
             ) : (
               <p className="text-sm text-gray-400">No description</p>

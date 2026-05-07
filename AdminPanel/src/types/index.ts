@@ -21,12 +21,11 @@ export interface Claim {
   incidentDate: string;
   submittedAt: string;
   updatedAt: string;
-  description?: string;
+  incidentDescription?: string;
   incidentLocation?: string;
   photos?: string[];
   claimantType?: string;
   amount?: number;
-  assignedTo?: string;
 }
 
 export interface User {

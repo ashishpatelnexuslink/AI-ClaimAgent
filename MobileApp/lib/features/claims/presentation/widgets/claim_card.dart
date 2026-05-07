@@ -177,9 +177,6 @@ class ClaimCard extends StatelessWidget {
 
   String _secondaryLine() {
     if (claim.title.isNotEmpty) return claim.title;
-    if (claim.patientName != null && claim.patientName!.isNotEmpty) {
-      return claim.patientName!;
-    }
     return claim.claimType;
   }
 

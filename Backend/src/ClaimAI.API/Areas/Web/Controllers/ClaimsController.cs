@@ -67,7 +67,8 @@ public class ClaimsController : ControllerBase
                 (x.Profile != null && (
                     x.Profile.FirstName.ToLower().Contains(s) ||
                     x.Profile.LastName.ToLower().Contains(s))) ||
-                (x.Claim.VehicleNumber != null && x.Claim.VehicleNumber.ToLower().Contains(s)));
+                (x.Claim.VehicleRegistrationNumber != null &&
+                    x.Claim.VehicleRegistrationNumber.ToLower().Contains(s)));
         }
 
         var totalCount = await q.CountAsync(cancellationToken);
@@ -86,12 +87,11 @@ public class ClaimsController : ControllerBase
                     : (x.Claim.FullName ?? string.Empty),
                 Type = x.Claim.ClaimType,
                 Status = x.Claim.Status.ToString(),
-                VehicleReg = x.Claim.VehicleRegistrationNumber ?? x.Claim.VehicleNumber,
+                VehicleReg = x.Claim.VehicleRegistrationNumber,
                 IncidentDate = x.Claim.IncidentDate,
                 SubmittedAt = x.Claim.CreatedAt,
                 UpdatedAt = x.Claim.UpdatedAt,
                 Amount = x.Claim.Amount,
-                AssignedTo = x.Claim.AssignedTo,
                 ClaimantType = x.Claim.ClaimantType,
             })
             .ToListAsync(cancellationToken);
@@ -130,14 +130,12 @@ public class ClaimsController : ControllerBase
                 : (row.Claim.FullName ?? string.Empty),
             Type = row.Claim.ClaimType,
             Status = row.Claim.Status.ToString(),
-            VehicleReg = row.Claim.VehicleRegistrationNumber ?? row.Claim.VehicleNumber,
+            VehicleReg = row.Claim.VehicleRegistrationNumber,
             IncidentDate = row.Claim.IncidentDate,
             SubmittedAt = row.Claim.CreatedAt,
             UpdatedAt = row.Claim.UpdatedAt,
             Amount = row.Claim.Amount,
-            AssignedTo = row.Claim.AssignedTo,
             ClaimantType = row.Claim.ClaimantType,
-            Description = row.Claim.Description,
             FullName = row.Claim.FullName,
             PolicyNumber = row.Claim.PolicyNumber,
             VehicleModel = row.Claim.VehicleModel,
@@ -145,17 +143,9 @@ public class ClaimsController : ControllerBase
             VehicleRegistrationNumber = row.Claim.VehicleRegistrationNumber,
             IncidentLocation = row.Claim.IncidentLocation,
             IncidentDescription = row.Claim.IncidentDescription,
-            CoverageType = row.Claim.CoverageType,
             PolicyStatus = row.Claim.PolicyStatus,
             PolicyValidUntil = row.Claim.PolicyValidUntil,
             IdentityVerified = row.Claim.IdentityVerified,
-            VehiclePhotosCount = row.Claim.VehiclePhotosCount,
-            DamagePhotosCount = row.Claim.DamagePhotosCount,
-            LicensePhotosCount = row.Claim.LicensePhotosCount,
-            PoliceReportCount = row.Claim.PoliceReportCount,
-            RepairBillCount = row.Claim.RepairBillCount,
-            SupportingDocsCount = row.Claim.SupportingDocsCount,
-            AdditionalData = row.Claim.AdditionalData,
         };
 
         return Ok(ApiResponse<AdminClaimDetailDto>.SuccessResponse(dto));
