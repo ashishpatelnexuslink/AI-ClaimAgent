@@ -178,11 +178,24 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   // ─── Speech-synced typewriter ──────────────────────────────────────────
   // Bot bubbles reveal their text progressively, in sync with TTS playback,
   // so reading and listening stay aligned. We queue an entry per utterance
-  // because flutter_tts queues replies (setQueueMode(1)) and only fires the
-  // start handler when each one actually begins.
+  // because flutter_tts queues replies and only fires the start handler
+  // when each one actually begins.
   final List<_SpeechEntry> _pendingSpeech = [];
   _SpeechEntry? _currentSpeech;
   int _spokenChars = 0;
+
+  // Bot replies arrive (via SSE stream) faster than TTS can speak them. Rather
+  // than render every bubble immediately and have later ones sit fully formed
+  // until TTS catches up, we hold them here and promote one at a time as each
+  // utterance completes. Keeps the gradual reveal in sync with the audio.
+  final List<_ChatMessage> _pendingBotReplies = [];
+
+  // Android binds com.google.android.tts asynchronously after the plugin is
+  // created. If we call _tts.speak() before the binder is fully connected,
+  // the call fails silently ("speak failed: not bound to TTS engine") — no
+  // audio, and no setStartHandler/setCompletionHandler ever fire. We complete
+  // this signal once init is verified ready, and _speakBotReply awaits it.
+  final Completer<void> _ttsReady = Completer<void>();
 
   // ─── Auto-listen after bot finishes speaking ───────────────────────────
   Timer? _autoListenTimer;
@@ -194,6 +207,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
   // ─── Controllers ────────────────────────────────────────────────────────
   final TextEditingController _textController = TextEditingController();
+  final FocusNode _inputFocus = FocusNode();
   bool _hasDraftText = false;
   final ScrollController _scrollController = ScrollController();
   late final AnimationController _pulseController;
@@ -233,6 +247,12 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       }
       // User is composing → don't auto-listen over them.
       if (hasText) _cancelAutoListen();
+    });
+
+    // Repaint the input pill when focus changes so the border can switch
+    // between idle (grey) and focused (blue) states.
+    _inputFocus.addListener(() {
+      if (mounted) setState(() {});
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -332,14 +352,38 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         // and accept whatever the default session is.
       }
     }
-    await _tts.setLanguage('en-US');
+    // Android: the TTS service binds asynchronously. setLanguage internally
+    // calls Android's isLanguageAvailable, and on a dead binder Android
+    // returns LANG_NOT_SUPPORTED *without throwing*. flutter_tts then resolves
+    // setLanguage with status 0 — a silent "didn't actually set the language"
+    // result that leaves the engine unconfigured, and the first speak()
+    // produces no audio.
+    //
+    // Poll setLanguage until it returns 1 (success). The binder typically
+    // becomes live within a couple hundred ms after the plugin is created.
+    if (Platform.isAndroid) {
+      for (int attempt = 0; attempt < 30; attempt++) {
+        final result = await _tts.setLanguage('en-US');
+        if (result == 1) break;
+        await Future.delayed(const Duration(milliseconds: 200));
+      }
+    } else {
+      await _tts.setLanguage('en-US');
+    }
     await _tts.setSpeechRate(0.5);
     await _tts.setPitch(1.0);
     await _tts.setVolume(1.0);
+    // Keep speak() fire-and-forget. awaitSpeakCompletion(true) seemed
+    // attractive (await would mark "done"), but on Android it caused
+    // speak() to resolve immediately without producing audio — no sound,
+    // and both bubbles flushed through the queue instantly.
     await _tts.awaitSpeakCompletion(false);
-    // Queue replies so back-to-back bot messages are spoken sequentially
-    // (no-op on iOS, which queues by default).
-    await _tts.setQueueMode(1);
+    // Queue replies so back-to-back bot messages are spoken sequentially.
+    // setQueueMode is Android-only; iOS queues utterances by default and
+    // throws MissingPluginException if called.
+    if (Platform.isAndroid) {
+      await _tts.setQueueMode(1);
+    }
 
     _tts.setStartHandler(() {
       if (!mounted) return;
@@ -371,7 +415,13 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       // suggestion chips) only render once speech finishes — scroll so the
       // newly-revealed control is visible without a manual swipe.
       _scrollToBottom();
-      _scheduleAutoListen();
+      // Drain the next queued bot reply, if any. Auto-listen only kicks in
+      // once the whole batch has finished.
+      if (_pendingBotReplies.isNotEmpty) {
+        _pumpBotReplies();
+      } else {
+        _scheduleAutoListen();
+      }
     });
     _tts.setCancelHandler(() {
       if (!mounted) return;
@@ -380,6 +430,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         _currentSpeech = null;
         _spokenChars = 0;
         _pendingSpeech.clear();
+        _pendingBotReplies.clear();
       });
       _speakController.stop();
       _speakController.reset();
@@ -391,10 +442,16 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         _currentSpeech = null;
         _spokenChars = 0;
         _pendingSpeech.clear();
+        _pendingBotReplies.clear();
       });
       _speakController.stop();
       _speakController.reset();
     });
+
+    // Init complete — let any pending _speakBotReply calls proceed. On
+    // Android this is reached only after setLanguage stopped throwing (i.e.
+    // the TTS service is bound and ready to accept speak()).
+    if (!_ttsReady.isCompleted) _ttsReady.complete();
   }
 
   /// Arm a timer to auto-start listening 5s after the bot finishes speaking.
@@ -467,12 +524,73 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   }
 
   Future<void> _speakBotReply(String text, {int? messageIndex}) async {
+    // Wait for the TTS engine to finish binding before speaking. On Android,
+    // calling speak() before the binder is connected fails silently — no
+    // audio plays and no completion handler ever fires, which leaves the
+    // bot-reply queue permanently stuck.
+    if (!_ttsReady.isCompleted) {
+      await _ttsReady.future;
+    }
+    if (!mounted) return;
     final spoken = _sanitizeForSpeech(text);
     if (spoken.isEmpty) return;
     if (messageIndex != null) {
       _pendingSpeech.add(_SpeechEntry(messageIndex, spoken.length));
     }
     await _tts.speak(spoken);
+  }
+
+  /// Hold a bot reply until its TTS turn comes. If nothing is being spoken,
+  /// the next pump promotes it into [_messages] right away; otherwise it sits
+  /// in [_pendingBotReplies] until [setCompletionHandler] drains the queue.
+  /// Avoids the "bubble #2 appears fully formed, then empties when TTS
+  /// catches up" flash on both iOS and Android.
+  void _enqueueBotReply(_ChatMessage reply) {
+    _pendingBotReplies.add(reply);
+    _pumpBotReplies();
+  }
+
+  /// Promote the next queued bot reply (if any) into the visible chat list and
+  /// kick off its TTS. Bails out if speech is already in flight — the
+  /// completion handler will call us again once TTS frees up. Bot messages
+  /// with no speakable text don't block the queue; we keep dequeuing until we
+  /// find one that needs spoken or run out.
+  void _pumpBotReplies() {
+    if (_currentSpeech != null || _pendingSpeech.isNotEmpty || _botSpeaking) {
+      return;
+    }
+    if (_pendingBotReplies.isEmpty) return;
+
+    String? speechText;
+    int speechIndex = -1;
+    setState(() {
+      while (_pendingBotReplies.isNotEmpty) {
+        final next = _pendingBotReplies.removeAt(0);
+        _messages.add(next);
+        _messageTimestamps.add(DateTime.now());
+        final spoken = _sanitizeForSpeech(next.text);
+        if (spoken.isEmpty) continue;
+        speechText = spoken;
+        speechIndex = _messages.length - 1;
+        break;
+      }
+      // Eagerly enter the "revealing" state in the same setState that adds
+      // the bubble. Without this, _visibleBotText sees _currentSpeech == null
+      // for the few frames before setStartHandler fires and renders the full
+      // text — then the handler resets _spokenChars to 0 and the bubble
+      // visibly snaps back to empty before revealing. setStartHandler will
+      // re-assign _currentSpeech to the same entry; the assignment is
+      // idempotent so the redundancy is harmless.
+      if (speechText != null) {
+        _currentSpeech = _SpeechEntry(speechIndex, speechText!.length);
+        _spokenChars = 0;
+      }
+    });
+    _scrollToBottom();
+
+    if (speechText != null) {
+      unawaited(_speakBotReply(speechText!, messageIndex: speechIndex));
+    }
   }
 
   /// Returns the portion of [text] that should be visible right now, based on
@@ -496,6 +614,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     _voice.dispose();
     _tts.stop();
     _textController.dispose();
+    _inputFocus.dispose();
     _locationController.dispose();
     _scrollController.dispose();
     _pulseController.dispose();
@@ -513,6 +632,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     List<String> documentNames = const [],
   }) {
     unawaited(_tts.stop());
+    _pendingBotReplies.clear();
     _cancelAutoListen();
     setState(() {
       _messages.add(
@@ -534,6 +654,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     // keeps the prior utterance in its queue and the new reply either plays
     // late or gets swallowed (most visible on GET_DOCUMENT → Skip).
     unawaited(_tts.stop());
+    // Drop any queued-but-not-yet-shown bot replies for the same reason.
+    // _tts.stop() triggers the cancel handler only when something is actually
+    // speaking, so clear the dart-side queue here unconditionally.
+    _pendingBotReplies.clear();
     _cancelAutoListen();
     setState(() {
       _messages.add(_ChatMessage(text: text, type: 'user'));
@@ -576,23 +700,19 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         if (!mounted) return;
         setState(() {
           _messages.removeWhere((m) => m.isTyping);
-          _messages.add(
-            _ChatMessage(
-              text: msg.content,
-              type: 'bot',
-              chips: msg.suggestions.isNotEmpty ? msg.suggestions : null,
-              messageType: msg.messageType,
-              triggers: msg.triggers,
-              claimData: msg.claimData,
-              payloadType: msg.payloadType,
-              payload: msg.payload,
-            ),
-          );
-          _messageTimestamps.add(DateTime.now());
         });
-        _scrollToBottom();
-        final botIndex = _messages.length - 1;
-        unawaited(_speakBotReply(msg.content, messageIndex: botIndex));
+        _enqueueBotReply(
+          _ChatMessage(
+            text: msg.content,
+            type: 'bot',
+            chips: msg.suggestions.isNotEmpty ? msg.suggestions : null,
+            messageType: msg.messageType,
+            triggers: msg.triggers,
+            claimData: msg.claimData,
+            payloadType: msg.payloadType,
+            payload: msg.payload,
+          ),
+        );
         // Bot has streamed the final summary — fire-and-forget the save so
         // the Close button only has to write the local transcript file.
         if (msg.payloadType == 'save_summary') {
@@ -604,16 +724,19 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       }
     } catch (_) {
       if (!mounted) return;
+      // Drop any pending replies that haven't surfaced yet — the stream
+      // failed, so they're stale. The error message becomes the next thing
+      // the user hears/sees.
+      _pendingBotReplies.clear();
       setState(() {
         _messages.removeWhere((m) => m.isTyping);
-        _messages.add(
-          const _ChatMessage(
-            text: 'Sorry, something went wrong. Please try again.',
-            type: 'bot',
-          ),
-        );
-        _messageTimestamps.add(DateTime.now());
       });
+      _enqueueBotReply(
+        const _ChatMessage(
+          text: 'Sorry, something went wrong. Please try again.',
+          type: 'bot',
+        ),
+      );
     }
 
     if (!mounted) return;
@@ -1088,10 +1211,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     // (not the original GET_IMAGE trigger card — that one stays in chat).
     final _ChatMessage? failureCardToReplace =
         (originatingMsg != null &&
-                (originatingMsg.validationFailedAngles.isNotEmpty ||
-                    originatingMsg.validationFailedLegacy))
-            ? originatingMsg
-            : null;
+            (originatingMsg.validationFailedAngles.isNotEmpty ||
+                originatingMsg.validationFailedLegacy))
+        ? originatingMsg
+        : null;
     if (category == 'vehicle_photos') {
       final validation = await _runImageValidation(
         questionLabel: category,
@@ -3095,9 +3218,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     // entries from a different group's still-open failure card.
     final filledCount = angles.where(_angleImages.containsKey).length;
     final canSubmit =
-        filledCount >= minCount &&
-        !_uploadingFiles &&
-        !_botTyping;
+        filledCount >= minCount && !_uploadingFiles && !_botTyping;
 
     return Container(
       width: double.infinity,
@@ -4376,69 +4497,99 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   }
 
   Widget _buildInputBar() {
+    final isFocused = _inputFocus.hasFocus;
+    final micActive = _isRecording || _botSpeaking;
+    // Idle mic icon is a neutral dark grey to match the soft white pill;
+    // active states (recording / interrupting) stay red for clarity.
+    final micIconColor = micActive ? _kRed : const Color(0xFF4A4F5C);
+
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
-          ),
-        ],
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 18),
+      decoration: const BoxDecoration(
+        // Soft grey base so the white pill reads as a floating element
+        // rather than blending into a pure-white bottom bar.
+        color: Color(0xFFF3F4F8),
       ),
       child: Row(
         children: [
           Expanded(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              curve: Curves.easeOut,
+              padding: const EdgeInsets.fromLTRB(20, 6, 8, 6),
               decoration: BoxDecoration(
-                color: _kBg,
-                borderRadius: BorderRadius.circular(100),
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(32),
+
+                // Hairline border defines the pill; the shadow is just a
+                // very gentle lift so it doesn't look bottom-heavy.
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(
+                      alpha: isFocused ? 0.05 : 0.03,
+                    ),
+                    blurRadius: isFocused ? 10 : 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
               child: Row(
+                // crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Expanded(
                     child: TextField(
                       controller: _textController,
+                      focusNode: _inputFocus,
                       textInputAction: TextInputAction.send,
                       onSubmitted: (_) => _submitTypedMessage(),
-                      style: const TextStyle(fontSize: 14, color: _kDark),
+                      minLines: 1,
+                      maxLines: 4,
+                      cursorColor: _kBlue,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        color: _kDark,
+                        height: 1.35,
+                      ),
                       decoration: InputDecoration(
                         hintText: _botSpeaking
                             ? 'Tap mic to interrupt'
-                            : 'Type a message...',
+                            : 'Describe here…',
                         hintStyle: TextStyle(
-                          fontSize: 14,
+                          fontSize: 15,
                           color: Colors.grey.shade500,
                         ),
                         border: InputBorder.none,
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                          vertical: 12,
-                        ),
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        isCollapsed: true,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
                       ),
                     ),
                   ),
+                  const SizedBox(width: 8),
                   GestureDetector(
                     onTap: _voiceAvailable ? _onMicTap : null,
                     behavior: HitTestBehavior.opaque,
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 8),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      width: 38,
+                      height: 38,
+                      alignment: Alignment.center,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFF1F2F6),
+                        shape: BoxShape.circle,
+                      ),
                       child: _voiceAvailable
                           ? Icon(
                               _botSpeaking
                                   ? Icons.stop_circle_rounded
                                   : Icons.mic_none_rounded,
                               size: 20,
-                              color: _isRecording
-                                  ? _kRed
-                                  : (_botSpeaking ? _kRed : _kBlue),
+                              color: micIconColor,
                             )
                           : const SizedBox(
-                              width: 20,
-                              height: 20,
+                              width: 16,
+                              height: 16,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
                                 color: _kBlue,
@@ -4450,7 +4601,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           GestureDetector(
             onTap: _hasDraftText
                 ? _submitTypedMessage
@@ -4459,22 +4610,32 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: _isRecording ? _kRed : _kBlue,
+                gradient: _isRecording
+                    ? LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [_kRed, _kRed.withValues(alpha: 0.85)],
+                      )
+                    : const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Color(0xFF3D7DE6), Color(0xFF1F4FB8)],
+                      ),
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
                     color: (_isRecording ? _kRed : _kBlue).withValues(
-                      alpha: 0.3,
+                      alpha: 0.35,
                     ),
-                    blurRadius: 10,
-                    offset: const Offset(0, 3),
+                    blurRadius: 14,
+                    offset: const Offset(0, 5),
                   ),
                 ],
               ),
               child: const Icon(
                 Icons.send_rounded,
                 color: Colors.white,
-                size: 20,
+                size: 22,
               ),
             ),
           ),
