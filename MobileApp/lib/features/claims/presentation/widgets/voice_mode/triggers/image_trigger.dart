@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import '../voice_mode_colors.dart';
 
 /// "front_left" → "Front Left".
-String _humanizeAngle(String angle) {
+String humanizeAngle(String angle) {
   return angle
       .split(RegExp(r'[_\s]+'))
       .where((p) => p.isNotEmpty)
@@ -103,13 +103,14 @@ class ImageTrigger extends StatelessWidget {
           const SizedBox(height: 12),
           for (int i = 0; i < angles.length; i++) ...[
             if (i > 0) const SizedBox(height: 8),
-            _AngleRow(
+            AngleRow(
               angle: angles[i],
               picked: angleImages[angles[i]],
               atCap:
                   angleImages.length >= maxCount &&
                   !angleImages.containsKey(angles[i]),
               uploadingFiles: uploadingFiles,
+              stillRejected: false,
               onPick: () => onPickAngleImage(angles[i]),
               onRemove: () => onRemoveAngleImage(angles[i]),
             ),
@@ -314,25 +315,46 @@ class ImageTrigger extends StatelessWidget {
   }
 }
 
-class _AngleRow extends StatelessWidget {
+/// One row of the per-angle uploader: thumbnail + label/status + Upload /
+/// Replace / Remove. When [stillRejected] is true the row renders in the
+/// re-upload state (red status text, broken-image placeholder, no Remove
+/// button) so the same widget can back both [ImageTrigger] and the
+/// validation-failure card.
+class AngleRow extends StatelessWidget {
   final String angle;
   final File? picked;
   final bool atCap;
   final bool uploadingFiles;
+  final bool stillRejected;
   final VoidCallback onPick;
   final VoidCallback onRemove;
 
-  const _AngleRow({
+  const AngleRow({
+    super.key,
     required this.angle,
     required this.picked,
     required this.atCap,
     required this.uploadingFiles,
+    required this.stillRejected,
     required this.onPick,
     required this.onRemove,
   });
 
   @override
   Widget build(BuildContext context) {
+    final String statusText;
+    final Color statusColor;
+    if (stillRejected) {
+      statusText =
+          '${humanizeAngle(angle)} does not match the required view. Please re-upload.';
+      statusColor = const Color(0xFFB00020);
+    } else if (picked == null) {
+      statusText = 'Not uploaded';
+      statusColor = Colors.grey.shade600;
+    } else {
+      statusText = 'Uploaded';
+      statusColor = kVmBlue;
+    }
     return Row(
       children: [
         if (picked != null) ...[
@@ -350,7 +372,9 @@ class _AngleRow extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
-              Icons.image_outlined,
+              stillRejected
+                  ? Icons.broken_image_outlined
+                  : Icons.image_outlined,
               color: Colors.grey.shade500,
               size: 22,
             ),
@@ -362,7 +386,7 @@ class _AngleRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                _humanizeAngle(angle),
+                humanizeAngle(angle),
                 style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -371,16 +395,13 @@ class _AngleRow extends StatelessWidget {
               ),
               const SizedBox(height: 2),
               Text(
-                picked == null ? 'Not uploaded' : 'Uploaded',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: picked == null ? Colors.grey.shade600 : kVmBlue,
-                ),
+                statusText,
+                style: TextStyle(fontSize: 11, color: statusColor),
               ),
             ],
           ),
         ),
-        if (picked != null)
+        if (picked != null && !stillRejected)
           IconButton(
             tooltip: 'Remove',
             onPressed: onRemove,
@@ -390,11 +411,13 @@ class _AngleRow extends StatelessWidget {
         TextButton.icon(
           onPressed: (atCap || uploadingFiles) ? null : onPick,
           icon: Icon(
-            picked == null ? Icons.camera_alt_outlined : Icons.refresh,
+            (picked == null || stillRejected)
+                ? Icons.camera_alt_outlined
+                : Icons.refresh,
             size: 16,
           ),
           label: Text(
-            picked == null ? 'Upload' : 'Replace',
+            (picked == null || stillRejected) ? 'Upload' : 'Replace',
             style: const TextStyle(fontSize: 12),
           ),
           style: TextButton.styleFrom(

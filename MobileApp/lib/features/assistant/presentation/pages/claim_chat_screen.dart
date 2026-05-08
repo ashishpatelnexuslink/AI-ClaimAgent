@@ -1456,8 +1456,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     final isUser = msg.isUser;
     final isLastBot = !isUser && _messages.last == msg && !_botTyping;
     final showSuggestions = isLastBot && msg.suggestions.isNotEmpty;
-    final showTriggers =
-        isLastBot && (msg.triggers.isNotEmpty || _isSkippable(msg));
+    final showTriggers = msg.triggers.isNotEmpty || _isSkippable(msg);
     final showCloseButton = isLastBot && msg.messageType == 'done';
 
     // Check if this is a policy detail message
@@ -1601,7 +1600,11 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
               children: msg.suggestions
                   .where(
                     (s) =>
-                        s != 'Skip' || !msg.triggers.contains('GET_DOCUMENT'),
+                        // Hide the "Skip" chip when Skip is already rendered
+                        // as a trigger pill (skippable GET_DOCUMENT /
+                        // GET_IMAGE turn) to avoid showing it twice.
+                        s.trim().toLowerCase() != 'skip' ||
+                        !_isSkippable(msg),
                   )
                   .map((s) {
                     return GestureDetector(
@@ -1698,7 +1701,10 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       imageQuality: 80,
     );
     if (picked == null || !mounted) return;
-    setState(() => _angleImages[angle] = File(picked.path));
+    setState(() {
+      _angleImages[angle] = File(picked.path);
+      _failedAnglePaths.remove(angle);
+    });
     _scrollToBottom();
   }
 
@@ -1874,7 +1880,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     ImageValidationResult result;
     try {
       result = await ChatService.validateImages(
-        questionLabel: questionLabel,
+        groupKey: questionLabel,
         threadId: _threadId,
         images: images,
       );
@@ -1906,23 +1912,33 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         if (result.groupKey != null && result.groupKey!.isNotEmpty) {
           _uploadedGroupKeys.remove(result.groupKey);
         }
+        // When the API didn't return any invalid_angles (e.g., timeout or
+        // network failure caught above), fall back to flagging every angle
+        // we sent so the angle-wise re-upload card still renders instead of
+        // the single-button legacy widget. The legacy widget is reserved
+        // for true legacy (no allowed_angles) GET_IMAGE flows.
+        final effectiveFailedAngles =
+            (failedAngles.isEmpty && !isLegacy && allowedAngles.isNotEmpty)
+                ? allowedAngles
+                : failedAngles;
         // Snapshot the rejected images' paths so the failure card can detect
         // when the user picks a replacement (and re-enable Submit). The
         // images themselves stay in `_angleImages` so their thumbnails
         // remain visible alongside the per-angle error status.
         _failedAnglePaths.clear();
-        for (final a in failedAngles) {
+        for (final a in effectiveFailedAngles) {
           final f = _angleImages[a];
           if (f != null) _failedAnglePaths[a] = f.path;
         }
-        final useLegacy = isLegacy || failedAngles.isEmpty;
+        final useLegacy = isLegacy || effectiveFailedAngles.isEmpty;
         _messages.add(
           _ChatMsg(
-            text: useLegacy
-                ? 'Image validation failed. Please re-upload.'
-                : '',
+            text: result.failureReason?.trim().isNotEmpty == true
+                ? result.failureReason!
+                : 'Image validation failed. Please re-upload.',
             isUser: false,
-            validationFailedAngles: useLegacy ? const [] : failedAngles,
+            validationFailedAngles:
+                useLegacy ? const [] : List<String>.from(effectiveFailedAngles),
             validationFailedLegacy: useLegacy,
             validationGroupKey: result.groupKey,
             validationAllowedAngles: allowedAngles,
@@ -1952,152 +1968,146 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   /// Upload/Replace button), and a Submit button that re-runs the validate +
   /// upload flow. Self-contained because the original GET_IMAGE trigger card
   /// is no longer the "last bot message" once this bubble is added.
+  /// Re-upload card shown after `/validate-images` returns invalid angles.
+  /// Mirrors [_buildImageTrigger]'s card layout (same title, counter,
+  /// per-angle rows, DONE pill) so the user sees the same upload component
+  /// they used initially — with a red banner up top carrying the AI's
+  /// failure reason.
   Widget _buildValidationFailureList(_ChatMsg msg, List<String> angles) {
     bool isStillRejected(String a) =>
         _failedAnglePaths[a] != null &&
         _angleImages[a]?.path == _failedAnglePaths[a];
     final allReplaced = angles.every((a) => !isStillRejected(a));
     // Once this card's group has been validated + uploaded successfully,
-    // freeze its Submit so a stale card can't re-fire validation against an
+    // freeze Submit so a stale card can't re-fire validation against an
     // already-stored group.
     final groupAlreadyDone =
         msg.validationGroupKey != null &&
         _uploadedGroupKeys.contains(msg.validationGroupKey);
     final canSubmit =
         allReplaced && !_uploadingFiles && !_botTyping && !groupAlreadyDone;
-    return Padding(
-      padding: const EdgeInsets.only(top: 6),
+    final filledCount = angles.where(_angleImages.containsKey).length;
+    final reason = msg.text.trim();
+    return Container(
+      margin: const EdgeInsets.only(top: 6),
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
           const Text(
-            'Some images need to be re-uploaded',
+            'Upload Photos',
             style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFFB00020),
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: _kDark,
             ),
           ),
-          const SizedBox(height: 8),
-          ...angles.map((angle) {
-            final picked = _angleImages[angle];
-            final stillRejected = isStillRejected(angle);
-            return Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Row(
-                children: [
-                  if (picked != null) ...[
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.file(
-                        picked,
-                        width: 48,
-                        height: 48,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                  ] else ...[
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF0F2F7),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Icon(
-                        Icons.broken_image_outlined,
-                        color: Colors.grey.shade500,
-                        size: 22,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                  ],
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _humanizeAngle(angle),
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: _kDark,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          stillRejected
-                              ? '${_humanizeAngle(angle)} does not match the required view. Please re-upload.'
-                              : 'Ready to submit',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: stillRejected
-                                ? const Color(0xFFB00020)
-                                : _kBlue,
-                          ),
-                        ),
-                      ],
-                    ),
+          const SizedBox(height: 4),
+          Text(
+            '$filledCount of ${angles.length} uploaded · min ${angles.length}',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey.shade600,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFDECEC),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Some images need to be re-uploaded',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFB00020),
                   ),
-                  TextButton.icon(
-                    onPressed: _uploadingFiles
-                        ? null
-                        : () => _onPickAngleImage(angle),
-                    icon: Icon(
-                      stillRejected
-                          ? Icons.camera_alt_outlined
-                          : Icons.refresh,
-                      size: 16,
-                    ),
-                    label: Text(
-                      stillRejected ? 'Upload' : 'Replace',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    style: TextButton.styleFrom(
-                      foregroundColor: _kBlue,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      visualDensity: VisualDensity.compact,
+                ),
+                if (reason.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    reason,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFFB00020),
                     ),
                   ),
                 ],
-              ),
-            );
-          }),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: canSubmit
-                  ? () => _onSubmitAngleImages(originatingMsg: msg)
-                  : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _kBlue,
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: Colors.grey.shade300,
-                disabledForegroundColor: Colors.grey.shade600,
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (int i = 0; i < angles.length; i++) ...[
+            if (i > 0) const SizedBox(height: 8),
+            _buildAngleRow(angles[i], angles.length),
+          ],
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: canSubmit
+                ? () => _onSubmitAngleImages(originatingMsg: msg)
+                : null,
+            child: Opacity(
+              opacity: canSubmit ? 1.0 : 0.5,
+              child: Container(
+                width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 10),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+                decoration: BoxDecoration(
+                  color: _kBlue,
+                  borderRadius: BorderRadius.circular(24),
                 ),
-              ),
-              child: _uploadingFiles
-                  ? const SizedBox(
-                      height: 16,
-                      width: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (_uploadingFiles)
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white,
+                          ),
+                        ),
+                      )
+                    else
+                      const Icon(
+                        Icons.check_circle_outline,
+                        size: 18,
                         color: Colors.white,
                       ),
-                    )
-                  : const Text(
-                      'Submit',
+                    const SizedBox(width: 8),
+                    const Text(
+                      'DONE',
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
+                        color: Colors.white,
                       ),
                     ),
+                  ],
+                ),
+              ),
             ),
           ),
         ],
@@ -2420,8 +2430,18 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   /// a standalone `SKIP` trigger.
   bool _isSkippable(_ChatMsg msg) {
     final raw = msg.payload?['is_skippable'];
-    if (raw is bool) return raw;
-    if (raw is String) return raw.toLowerCase() == 'true';
+    if (raw is bool && raw) return true;
+    if (raw is num && raw != 0) return true;
+    if (raw is String) {
+      final v = raw.trim().toLowerCase();
+      if (v == 'true' || v == '1' || v == 'yes') return true;
+    }
+    // Some AI turns advertise skippability only via a "Skip" suggestion
+    // chip (e.g. GET_DOCUMENT for supporting_docs). Treat that as skippable
+    // so the inline Skip pill renders alongside the trigger card.
+    if (msg.suggestions.any((s) => s.trim().toLowerCase() == 'skip')) {
+      return true;
+    }
     return false;
   }
 
@@ -3366,6 +3386,22 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   Widget _buildAngleRow(String angle, int maxCount) {
     final picked = _angleImages[angle];
     final atCap = _angleImages.length >= maxCount && picked == null;
+    final stillRejected =
+        _failedAnglePaths[angle] != null &&
+        picked?.path == _failedAnglePaths[angle];
+    final String statusText;
+    final Color statusColor;
+    if (stillRejected) {
+      statusText =
+          '${_humanizeAngle(angle)} does not match the required view. Please re-upload.';
+      statusColor = const Color(0xFFB00020);
+    } else if (picked == null) {
+      statusText = 'Not uploaded';
+      statusColor = Colors.grey.shade600;
+    } else {
+      statusText = 'Uploaded';
+      statusColor = _kBlue;
+    }
     return Row(
       children: [
         if (picked != null) ...[
@@ -3383,7 +3419,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
-              Icons.image_outlined,
+              stillRejected
+                  ? Icons.broken_image_outlined
+                  : Icons.image_outlined,
               color: Colors.grey.shade500,
               size: 22,
             ),
@@ -3404,16 +3442,13 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
               ),
               const SizedBox(height: 2),
               Text(
-                picked == null ? 'Not uploaded' : 'Uploaded',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: picked == null ? Colors.grey.shade600 : _kBlue,
-                ),
+                statusText,
+                style: TextStyle(fontSize: 11, color: statusColor),
               ),
             ],
           ),
         ),
-        if (picked != null)
+        if (picked != null && !stillRejected)
           IconButton(
             tooltip: 'Remove',
             onPressed: () => _onRemoveAngleImage(angle),
@@ -3425,11 +3460,13 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
               ? null
               : () => _onPickAngleImage(angle),
           icon: Icon(
-            picked == null ? Icons.camera_alt_outlined : Icons.refresh,
+            (picked == null || stillRejected)
+                ? Icons.camera_alt_outlined
+                : Icons.refresh,
             size: 16,
           ),
           label: Text(
-            picked == null ? 'Upload' : 'Replace',
+            (picked == null || stillRejected) ? 'Upload' : 'Replace',
             style: const TextStyle(fontSize: 12),
           ),
           style: TextButton.styleFrom(

@@ -19,6 +19,9 @@ class ChatService {
       '/chat/stream',
       queryParams: {'message': message, 'thread_id': ?threadId},
     )) {
+      if (kDebugMode) {
+        debugPrint('[chat/stream] ← ${jsonEncode(raw)}');
+      }
       yield ChatStreamMessage.fromJson(raw);
     }
   }
@@ -27,7 +30,7 @@ class ChatService {
   /// `images` maps an angle / slot key (e.g. "front_left") to base64-encoded
   /// image bytes (no data-URI prefix).
   static Future<ImageValidationResult> validateImages({
-    required String questionLabel,
+    required String groupKey,
     required String threadId,
     required Map<String, String> images,
   }) async {
@@ -37,14 +40,14 @@ class ChatService {
       );
       debugPrint(
         '[validate-images] POST ${AppConfig.chatbotBaseUrl}/validate-images '
-        'body={question_label: $questionLabel, thread_id: $threadId, '
+        'body={group_key: $groupKey, thread_id: $threadId, '
         'images: $imageSizes}',
       );
     }
     final response = await ApiClient.post(
       '/validate-images',
       body: {
-        'question_label': questionLabel,
+        'group_key': groupKey,
         'thread_id': threadId,
         'images': images,
       },
@@ -65,7 +68,7 @@ class ChatService {
             ?.map((e) => e.toString())
             .toList() ??
         const <String>[];
-    final groupKey = body['group_key']?.toString();
+    final responseGroupKey = body['group_key']?.toString() ?? groupKey;
     if (response.statusCode < 200 || response.statusCode >= 300) {
       return ImageValidationResult(
         valid: false,
@@ -73,7 +76,7 @@ class ChatService {
             (body['failure_reason'] ?? body['detail'] ?? 'Validation failed')
                 .toString(),
         invalidAngles: invalidAngles,
-        groupKey: groupKey,
+        groupKey: responseGroupKey,
         raw: body,
       );
     }
@@ -81,7 +84,7 @@ class ChatService {
       valid: body['valid'] == true,
       failureReason: body['failure_reason']?.toString(),
       invalidAngles: invalidAngles,
-      groupKey: groupKey,
+      groupKey: responseGroupKey,
       raw: body,
     );
   }

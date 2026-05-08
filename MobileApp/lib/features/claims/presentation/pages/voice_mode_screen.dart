@@ -1090,7 +1090,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       imageQuality: 80,
     );
     if (picked == null || !mounted) return;
-    setState(() => _angleImages[angle] = File(picked.path));
+    setState(() {
+      _angleImages[angle] = File(picked.path);
+      _failedAnglePaths.remove(angle);
+    });
     _scrollToBottom();
   }
 
@@ -1252,7 +1255,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     ImageValidationResult result;
     try {
       result = await ChatService.validateImages(
-        questionLabel: questionLabel,
+        groupKey: questionLabel,
         threadId: _threadId,
         images: images,
       );
@@ -1276,21 +1279,32 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         _messages.remove(previousFailureMsg);
       }
       if (!result.valid) {
+        // When the API didn't return any invalid_angles (e.g., timeout or
+        // network failure caught above), fall back to flagging every angle
+        // we sent so the angle-wise re-upload card still renders instead of
+        // the single-button legacy widget.
+        final effectiveFailedAngles =
+            (failedAngles.isEmpty && !isLegacy && allowedAngles.isNotEmpty)
+                ? allowedAngles
+                : failedAngles;
         // Snapshot the rejected paths so the failure card can detect when
         // the user picks a replacement (re-enabling Submit). The picked
         // images themselves stay in `_angleImages` so their thumbnails
         // remain visible alongside the per-angle error status.
         _failedAnglePaths.clear();
-        for (final a in failedAngles) {
+        for (final a in effectiveFailedAngles) {
           final f = _angleImages[a];
           if (f != null) _failedAnglePaths[a] = f.path;
         }
-        final useLegacy = isLegacy || failedAngles.isEmpty;
+        final useLegacy = isLegacy || effectiveFailedAngles.isEmpty;
         _messages.add(
           ChatMessage(
-            text: useLegacy ? 'Image validation failed. Please re-upload.' : '',
+            text: result.failureReason?.trim().isNotEmpty == true
+                ? result.failureReason!
+                : 'Image validation failed. Please re-upload.',
             type: 'bot',
-            validationFailedAngles: useLegacy ? const [] : failedAngles,
+            validationFailedAngles:
+                useLegacy ? const [] : List<String>.from(effectiveFailedAngles),
             validationFailedLegacy: useLegacy,
             validationGroupKey: result.groupKey,
             validationAllowedAngles: allowedAngles,
@@ -2060,10 +2074,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   Widget _buildBotBubble(ChatMessage msg, int index) {
     final isLastBot = index == _lastBotIndex();
     final visibleText = _visibleBotText(index, msg.text);
-    // The GET_DOCUMENT trigger renders its own Skip control inside the upload
-    // card, so suppress a duplicate "Skip" chip on the same turn.
+    // Hide the "Skip" chip when Skip is already rendered as a trigger pill
+    // (skippable GET_DOCUMENT / GET_IMAGE turn) to avoid showing it twice.
     final List<String> visibleChips = (msg.chips ?? [])
-        .where((s) => s != 'Skip' || !msg.triggers.contains('GET_DOCUMENT'))
+        .where((s) => s.trim().toLowerCase() != 'skip' || !_isSkippable(msg))
         .toList();
 
     // Final summary uses the dedicated "Review Your Claim" card with a
@@ -2166,6 +2180,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                           angles: msg.validationFailedAngles,
                           angleImages: _angleImages,
                           failedAnglePaths: _failedAnglePaths,
+                          failureReason: msg.text,
                           uploadingFiles: _uploadingFiles,
                           botTyping: _botTyping,
                           groupAlreadyUploaded:
@@ -2345,8 +2360,20 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   /// trigger.
   bool _isSkippable(ChatMessage msg) {
     final raw = msg.payload?['is_skippable'];
-    if (raw is bool) return raw;
-    if (raw is String) return raw.toLowerCase() == 'true';
+    if (raw is bool && raw) return true;
+    if (raw is num && raw != 0) return true;
+    if (raw is String) {
+      final v = raw.trim().toLowerCase();
+      if (v == 'true' || v == '1' || v == 'yes') return true;
+    }
+    // Some AI turns advertise skippability only via a "Skip" suggestion
+    // chip (e.g. GET_DOCUMENT for supporting_docs). Treat that as skippable
+    // so the inline Skip pill renders alongside the trigger card.
+    final chips = msg.chips;
+    if (chips != null &&
+        chips.any((s) => s.trim().toLowerCase() == 'skip')) {
+      return true;
+    }
     return false;
   }
 
