@@ -3,26 +3,21 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../voice_mode_colors.dart';
+import 'image_trigger.dart';
 
-String _humanizeAngle(String angle) {
-  return angle
-      .split(RegExp(r'[_\s]+'))
-      .where((p) => p.isNotEmpty)
-      .map((p) => p[0].toUpperCase() + p.substring(1).toLowerCase())
-      .join(' ');
-}
-
-/// Shown after `/validate-images` rejects one or more angles. Lists each
-/// failed angle with the rejected/replacement thumbnail, status, and an
-/// Upload/Replace button. Submit is enabled once every failed angle has a
-/// fresh path (and the screen confirms the group hasn't already uploaded).
+/// Re-upload card shown after `/validate-images` rejects one or more angles.
+/// Mirrors [ImageTrigger]'s angle-mode card (same title, counter, [AngleRow]
+/// rows, DONE pill) so the user sees the same upload component they used
+/// initially, with a red banner up top carrying the AI's failure reason.
 class ImageValidationFailureList extends StatelessWidget {
   final List<String> angles;
   final Map<String, File> angleImages;
   /// For each failed angle, the path of the file at the time of failure.
-  /// Used to detect whether the user has supplied a *replacement* — until
-  /// they do, Submit stays disabled.
+  /// A row stays in the rejected state while [angleImages] still points at
+  /// that same path — once the user picks a fresh file, the screen clears
+  /// the entry and Submit unlocks.
   final Map<String, String> failedAnglePaths;
+  final String? failureReason;
   final bool uploadingFiles;
   final bool botTyping;
   final bool groupAlreadyUploaded;
@@ -39,6 +34,7 @@ class ImageValidationFailureList extends StatelessWidget {
     required this.groupAlreadyUploaded,
     required this.onPickAngleImage,
     required this.onSubmit,
+    this.failureReason,
   });
 
   bool _isStillRejected(String a) =>
@@ -50,135 +46,134 @@ class ImageValidationFailureList extends StatelessWidget {
     final allReplaced = angles.every((a) => !_isStillRejected(a));
     final canSubmit =
         allReplaced && !uploadingFiles && !botTyping && !groupAlreadyUploaded;
-    return Padding(
-      padding: const EdgeInsets.only(top: 6),
+    final filledCount = angles.where(angleImages.containsKey).length;
+    final reason = (failureReason ?? '').trim();
+    return Container(
+      margin: const EdgeInsets.only(top: 6),
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
           const Text(
-            'Some images need to be re-uploaded',
+            'Upload Photos',
             style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFFB00020),
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+              color: kVmDark,
             ),
           ),
-          const SizedBox(height: 8),
-          ...angles.map((angle) {
-            final picked = angleImages[angle];
-            final stillRejected = _isStillRejected(angle);
-            return Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Row(
-                children: [
-                  if (picked != null) ...[
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.file(
-                        picked,
-                        width: 48,
-                        height: 48,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                  ] else ...[
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF0F2F7),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Icon(
-                        Icons.broken_image_outlined,
-                        color: Colors.grey.shade500,
-                        size: 22,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                  ],
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _humanizeAngle(angle),
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: kVmDark,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          stillRejected
-                              ? '${_humanizeAngle(angle)} does not match the required view. Please re-upload.'
-                              : 'Ready to submit',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: stillRejected
-                                ? const Color(0xFFB00020)
-                                : kVmBlue,
-                          ),
-                        ),
-                      ],
-                    ),
+          const SizedBox(height: 4),
+          Text(
+            '$filledCount of ${angles.length} uploaded · min ${angles.length}',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey.shade600,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFDECEC),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Some images need to be re-uploaded',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFB00020),
                   ),
-                  TextButton.icon(
-                    onPressed: uploadingFiles
-                        ? null
-                        : () => onPickAngleImage(angle),
-                    icon: Icon(
-                      stillRejected ? Icons.camera_alt_outlined : Icons.refresh,
-                      size: 16,
-                    ),
-                    label: Text(
-                      stillRejected ? 'Upload' : 'Replace',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    style: TextButton.styleFrom(
-                      foregroundColor: kVmBlue,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      visualDensity: VisualDensity.compact,
+                ),
+                if (reason.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    reason,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFFB00020),
                     ),
                   ),
                 ],
-              ),
-            );
-          }),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: canSubmit ? onSubmit : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: kVmBlue,
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: Colors.grey.shade300,
-                disabledForegroundColor: Colors.grey.shade600,
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (int i = 0; i < angles.length; i++) ...[
+            if (i > 0) const SizedBox(height: 8),
+            AngleRow(
+              angle: angles[i],
+              picked: angleImages[angles[i]],
+              atCap: false,
+              uploadingFiles: uploadingFiles,
+              stillRejected: _isStillRejected(angles[i]),
+              onPick: () => onPickAngleImage(angles[i]),
+              onRemove: () {},
+            ),
+          ],
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: canSubmit ? onSubmit : null,
+            child: Opacity(
+              opacity: canSubmit ? 1.0 : 0.5,
+              child: Container(
+                width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 10),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+                decoration: BoxDecoration(
+                  color: kVmBlue,
+                  borderRadius: BorderRadius.circular(24),
                 ),
-              ),
-              child: uploadingFiles
-                  ? const SizedBox(
-                      height: 16,
-                      width: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (uploadingFiles)
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white,
+                          ),
+                        ),
+                      )
+                    else
+                      const Icon(
+                        Icons.check_circle_outline,
+                        size: 18,
                         color: Colors.white,
                       ),
-                    )
-                  : const Text(
-                      'Submit',
+                    const SizedBox(width: 8),
+                    const Text(
+                      'DONE',
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
+                        color: Colors.white,
                       ),
                     ),
+                  ],
+                ),
+              ),
             ),
           ),
         ],

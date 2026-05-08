@@ -517,12 +517,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          _inputField(
-            'Full Name',
-            Icons.person_outline,
-            _nameController,
-            TextInputType.name,
-          ),
+          _inputField('Full Name', Icons.person_outline, _nameController, TextInputType.name, required: true),
           const SizedBox(height: 12),
           _inputField(
             'Email Address',
@@ -544,16 +539,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _inputField(
-    String label,
-    IconData icon,
-    TextEditingController controller,
-    TextInputType type,
-  ) {
+  Widget _inputField(String label, IconData icon, TextEditingController controller, TextInputType type, {bool required = false}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+        RichText(
+          text: TextSpan(
+            text: label,
+            style: const TextStyle(fontSize: 11, color: Colors.grey),
+            children: required
+                ? const [
+                    TextSpan(
+                      text: ' *',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                  ]
+                : const [],
+          ),
+        ),
         Row(
           children: [
             Icon(icon, color: Colors.grey, size: 18),
@@ -673,10 +676,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _saveProfile() async {
+    final fullName = _nameController.text.trim();
+    if (fullName.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Full name is required')),
+      );
+      return;
+    }
     setState(() => _isSaving = true);
     try {
       await _authDataSource.updateProfile(
-        fullName: _nameController.text.trim(),
+        fullName: fullName,
         email: _emailController.text.trim(),
         phone: _phoneController.text.trim(),
       );
@@ -807,7 +817,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _showLanguageDialog() {
-    const languages = ['English', 'Hindi', 'Spanish', 'French', 'Arabic'];
+    const languages = ['English', 'German', 'Italian'];
     showDialog(
       context: context,
       builder: (ctx) => SimpleDialog(

@@ -418,8 +418,8 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
                               blendMode: BlendMode.srcIn,
                               child: Image.asset(
                                 'assets/images/draudita_logo.png',
-                                width: 340,
-                                height: 170,
+                                width: 240,
+                                height: 120,
                                 fit: BoxFit.contain,
                               ),
                             ),

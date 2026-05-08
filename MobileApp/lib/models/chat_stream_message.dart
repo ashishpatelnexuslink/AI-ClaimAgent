@@ -19,6 +19,15 @@ class ChatStreamMessage {
   });
 
   factory ChatStreamMessage.fromJson(Map<String, dynamic> json) {
+    final rawPayload = json['payload'] as Map<String, dynamic>?;
+    // The AI server is inconsistent about where it puts `is_skippable` —
+    // sometimes it's a sibling of `payload`, sometimes inside it. Normalize
+    // by promoting a top-level value into the payload map so downstream
+    // helpers only need to check one location.
+    Map<String, dynamic>? payload = rawPayload;
+    if (json.containsKey('is_skippable')) {
+      payload = {...?rawPayload, 'is_skippable': json['is_skippable']};
+    }
     return ChatStreamMessage(
       content: json['content'] as String? ?? '',
       messageType: json['message_type'] as String? ?? '',
@@ -32,7 +41,7 @@ class ChatStreamMessage {
           const [],
       claimData: json['claim_data'] as Map<String, dynamic>?,
       payloadType: json['payload_type'] as String?,
-      payload: json['payload'] as Map<String, dynamic>?,
+      payload: payload,
     );
   }
 
