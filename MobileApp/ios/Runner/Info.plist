@@ -80,8 +80,10 @@
 	<string>ClaimAI needs permission to save claim-related photos to your library.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>ClaimAI needs your location to record where the incident occurred.</string>
-	<key>NSLocationAlwaysUsageDescription</key>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>ClaimAI needs your location to record where the incident occurred.</string>
+	<!-- <key>NSLocationAlwaysUsageDescription</key>
+	<string>ClaimAI needs your location to record where the incident occurred.</string> -->
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
