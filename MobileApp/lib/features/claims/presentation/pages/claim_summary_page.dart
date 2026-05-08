@@ -24,9 +24,9 @@ class ClaimSummaryPage extends StatelessWidget {
               const SizedBox(height: AppSpacing.md),
               Text(
                 'AI Summary for Claim',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(
