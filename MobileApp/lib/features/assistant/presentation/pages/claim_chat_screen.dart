@@ -551,6 +551,20 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     });
   }
 
+  /// Snap to bottom while the typewriter grows the current bubble. Uses
+  /// `jumpTo` (not `animateTo`) so rapid 18 ms ticks don't queue conflicting
+  /// animations, and only follows when the user is already near the bottom so
+  /// scrolling up to read history doesn't get yanked back down.
+  void _followGrowth() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      final pos = _scrollController.position;
+      if (pos.maxScrollExtent - pos.pixels < 200) {
+        pos.jumpTo(pos.maxScrollExtent);
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1375,9 +1389,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
             child: Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: _effectiveTriggers(msg)
-                  .map((t) => _buildTriggerButton(t, msg))
-                  .toList(),
+              children: _effectiveTriggers(
+                msg,
+              ).map((t) => _buildTriggerButton(t, msg)).toList(),
             ),
           ),
       ],
@@ -1425,14 +1439,16 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     final fallback = CircleAvatar(
       radius: 18,
       backgroundColor: _kUserInitialsBg,
-      child: Text(
-        initials.isNotEmpty ? initials : '?',
-        style: const TextStyle(
-          color: _kUserInitialsText,
-          fontSize: 13,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
+      child: initials.isNotEmpty
+          ? Text(
+              initials,
+              style: const TextStyle(
+                color: _kUserInitialsText,
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
+            )
+          : const Icon(Icons.person, size: 22, color: _kUserInitialsText),
     );
     return SizedBox(
       width: 36,
@@ -1566,6 +1582,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                                       height: 1.4,
                                     ),
                                     onComplete: _showNextPendingMessage,
+                                    onUpdate: _followGrowth,
                                   )
                                 : MarkdownBody(
                                     data: msg.text,
@@ -1640,9 +1657,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
             child: Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: _effectiveTriggers(msg)
-                  .map((t) => _buildTriggerButton(t, msg))
-                  .toList(),
+              children: _effectiveTriggers(
+                msg,
+              ).map((t) => _buildTriggerButton(t, msg)).toList(),
             ),
           ),
         // Close button — appears on `message_type == 'done'`
@@ -1748,9 +1765,12 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     final List<String> allowedAngles =
         (originatingMsg?.validationAllowedAngles.isNotEmpty ?? false)
         ? originatingMsg!.validationAllowedAngles
-        : (originatingMsg != null ? _allowedAnglesOf(originatingMsg) : const []);
-    final List<String>? scopedAngles =
-        allowedAngles.isEmpty ? null : allowedAngles;
+        : (originatingMsg != null
+              ? _allowedAnglesOf(originatingMsg)
+              : const []);
+    final List<String>? scopedAngles = allowedAngles.isEmpty
+        ? null
+        : allowedAngles;
     final entries = scopedAngles == null
         ? _angleImages.entries.toList(growable: false)
         : _angleImages.entries
@@ -1761,7 +1781,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
 
     // Read bytes once; reused for both upload + validation.
     final List<({String angle, String name, List<int> bytes, String path})>
-        prepared = [];
+    prepared = [];
     for (final entry in entries) {
       final bytes = await entry.value.readAsBytes();
       final name = entry.value.path.split(RegExp(r'[\\/]')).last;
@@ -1790,9 +1810,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         category == 'driver_license') {
       final validation = await _runImageValidation(
         questionLabel: category,
-        images: {
-          for (final p in prepared) p.angle: base64Encode(p.bytes),
-        },
+        images: {for (final p in prepared) p.angle: base64Encode(p.bytes)},
         allowedAngles: allowedAngles,
         previousFailureMsg: failureCardToReplace,
       );
@@ -3284,9 +3302,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     // entries from a different group's still-open failure card.
     final filledCount = angles.where(_angleImages.containsKey).length;
     final canSubmit =
-        filledCount >= minCount &&
-        !_uploadingFiles &&
-        !_botTyping;
+        filledCount >= minCount && !_uploadingFiles && !_botTyping;
 
     return Container(
       width: double.infinity,
@@ -3897,11 +3913,13 @@ class _TypewriterText extends StatefulWidget {
   final String text;
   final TextStyle style;
   final VoidCallback? onComplete;
+  final VoidCallback? onUpdate;
 
   const _TypewriterText({
     required this.text,
     required this.style,
     this.onComplete,
+    this.onUpdate,
   });
 
   @override
@@ -3928,6 +3946,7 @@ class _TypewriterTextState extends State<_TypewriterText> {
       setState(() {
         _charCount = (_charCount + 2).clamp(0, widget.text.length);
       });
+      widget.onUpdate?.call();
     });
   }
 
@@ -3939,7 +3958,10 @@ class _TypewriterTextState extends State<_TypewriterText> {
 
   @override
   Widget build(BuildContext context) {
-    final visibleText = widget.text.substring(0, _charCount);
+    final visibleText = widget.text.substring(
+      0,
+      _safeUtf16Boundary(widget.text, _charCount),
+    );
     return MarkdownBody(
       data: visibleText,
       selectable: _done,
@@ -3947,6 +3969,17 @@ class _TypewriterTextState extends State<_TypewriterText> {
       shrinkWrap: true,
       styleSheet: _botMarkdownStyle,
     );
+  }
+
+  // Snap [end] back by one code unit if it lands between the high and low
+  // halves of a UTF-16 surrogate pair (e.g. emoji). Slicing inside a pair
+  // produces a malformed string that crashes ParagraphBuilder.addText.
+  static int _safeUtf16Boundary(String text, int end) {
+    if (end <= 0) return 0;
+    if (end >= text.length) return text.length;
+    final unit = text.codeUnitAt(end - 1);
+    if (unit >= 0xD800 && unit <= 0xDBFF) return end - 1;
+    return end;
   }
 }
 
@@ -3969,12 +4002,15 @@ class _ChatMsg {
   /// non-empty, the bubble renders a per-angle "Upload `<angle>`" button that
   /// re-picks just that slot in `_angleImages`.
   final List<String> validationFailedAngles;
+
   /// Set when `/validate-images` fails for the legacy free-form flow (no
   /// per-angle breakdown). Drives a single "Re-upload Photos" button.
   final bool validationFailedLegacy;
+
   /// `group_key` echoed back by `/validate-images`. Scopes the failure card
   /// to a particular upload group (e.g. `vehicle_photos`).
   final String? validationGroupKey;
+
   /// Full set of allowed angles for this group, carried forward from the
   /// original GET_IMAGE trigger so retry submits can re-validate every angle
   /// (failed + previously valid) — `/validate-images` expects the complete

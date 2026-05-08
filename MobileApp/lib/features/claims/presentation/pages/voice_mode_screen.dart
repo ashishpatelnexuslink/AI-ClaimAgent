@@ -354,6 +354,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     _tts.setProgressHandler((text, start, end, word) {
       if (!mounted || _currentSpeech == null) return;
       setState(() => _spokenChars = end);
+      _followGrowth();
     });
     _tts.setCompletionHandler(() {
       if (!mounted) return;
@@ -627,6 +628,20 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut,
         );
+      }
+    });
+  }
+
+  /// Snap to bottom while the bot bubble grows during TTS playback. Uses
+  /// `jumpTo` (not `animateTo`) so rapid progress callbacks don't queue
+  /// conflicting animations, and only follows when the user is already near
+  /// the bottom so scrolling up to read history doesn't get yanked back down.
+  void _followGrowth() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      final pos = _scrollController.position;
+      if (pos.maxScrollExtent - pos.pixels < 200) {
+        pos.jumpTo(pos.maxScrollExtent);
       }
     });
   }

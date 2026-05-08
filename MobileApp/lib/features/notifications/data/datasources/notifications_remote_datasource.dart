@@ -12,15 +12,16 @@ class NotificationsRemoteDataSourceImpl
   final DioClient _client;
 
   NotificationsRemoteDataSourceImpl({required DioClient client})
-      : _client = client;
+    : _client = client;
 
   @override
   Future<List<PendingActionModel>> getPendingActions() async {
     final response = await _client.get(ApiConstants.pendingActions);
     final list = response.data['data'] as List;
     return list
-        .map((json) =>
-            PendingActionModel.fromJson(json as Map<String, dynamic>))
+        .map(
+          (json) => PendingActionModel.fromJson(json as Map<String, dynamic>),
+        )
         .toList();
   }
 
