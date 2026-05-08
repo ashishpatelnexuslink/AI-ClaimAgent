@@ -2,13 +2,16 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:claim_ai/core/constants/api_constants.dart';
 import 'package:claim_ai/core/constants/app_theme.dart';
 import 'package:claim_ai/core/network/dio_client.dart';
+import 'package:claim_ai/core/platform/android_downloads.dart';
 import 'package:claim_ai/core/utils/date_utils.dart';
 import 'package:claim_ai/core/widgets/loading_widget.dart';
 import 'package:claim_ai/core/widgets/error_widget.dart';
@@ -243,9 +246,9 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
 
   Future<bool> _ensureStoragePermission() async {
     if (!Platform.isAndroid) return true;
-    if (await Permission.storage.request().isGranted) return true;
-    final manage = await Permission.manageExternalStorage.request();
-    return manage.isGranted;
+    // Only reachable on Android 9 and below (Q+ writes via MediaStore through
+    // the platform channel, no permission needed).
+    return Permission.storage.request().isGranted;
   }
 
   String _uniqueFilePath(String dir, String name) {
@@ -266,19 +269,90 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
     if (_downloadingDocs.contains(url)) return;
     setState(() => _downloadingDocs.add(url));
     try {
-      if (!await _ensureStoragePermission()) {
-        _snack('Storage permission denied');
-        return;
-      }
-      final dir = await _resolveDownloadsDir();
       final safeName = name.trim().isEmpty ? 'document.pdf' : name.trim();
-      final filePath = _uniqueFilePath(dir.path, safeName);
-      await di.sl<DioClient>().dio.download(url, filePath);
-      _snack('Saved to $filePath');
+
+      if (Platform.isIOS) {
+        // iOS app sandbox isn't user-visible, so download to a temp file and
+        // hand it to the system share sheet (Save to Files, AirDrop, …).
+        final tempDir = await getTemporaryDirectory();
+        final filePath = _uniqueFilePath(tempDir.path, safeName);
+        await di.sl<DioClient>().dio.download(url, filePath);
+        if (!mounted) return;
+        // iPad anchors the popover to this rect; iOS also rejects an empty
+        // rect, so derive a real one from the page's render box.
+        final box = context.findRenderObject() as RenderBox?;
+        final origin = (box != null && box.hasSize)
+            ? box.localToGlobal(Offset.zero) & box.size
+            : const Rect.fromLTWH(0, 0, 1, 1);
+        await Share.shareXFiles(
+          [XFile(filePath)],
+          subject: safeName,
+          sharePositionOrigin: origin,
+        );
+      } else if (Platform.isAndroid) {
+        final tempDir = await getTemporaryDirectory();
+        final tempPath = _uniqueFilePath(tempDir.path, safeName);
+        await di.sl<DioClient>().dio.download(url, tempPath);
+        try {
+          await AndroidDownloads.saveToDownloads(
+            srcPath: tempPath,
+            fileName: safeName,
+            mimeType: _mimeForName(safeName),
+          );
+          _snack('Saved to Downloads');
+        } on PlatformException catch (e) {
+          if (e.code == 'UNSUPPORTED') {
+            // Android 9 and below — keep the legacy permission flow.
+            if (!await _ensureStoragePermission()) {
+              _snack('Storage permission denied');
+              return;
+            }
+            final dir = await _resolveDownloadsDir();
+            final dest = _uniqueFilePath(dir.path, safeName);
+            await File(tempPath).copy(dest);
+            _snack('Saved to $dest');
+          } else {
+            rethrow;
+          }
+        } finally {
+          try {
+            await File(tempPath).delete();
+          } catch (_) {}
+        }
+      } else {
+        if (!await _ensureStoragePermission()) {
+          _snack('Storage permission denied');
+          return;
+        }
+        final dir = await _resolveDownloadsDir();
+        final filePath = _uniqueFilePath(dir.path, safeName);
+        await di.sl<DioClient>().dio.download(url, filePath);
+        _snack('Saved to $filePath');
+      }
     } catch (e) {
       _snack('Download failed: $e');
     } finally {
       if (mounted) setState(() => _downloadingDocs.remove(url));
+    }
+  }
+
+  String _mimeForName(String name) {
+    final i = name.lastIndexOf('.');
+    if (i < 0) return 'application/octet-stream';
+    switch (name.substring(i + 1).toLowerCase()) {
+      case 'pdf':
+        return 'application/pdf';
+      case 'png':
+        return 'image/png';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'doc':
+        return 'application/msword';
+      case 'docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      default:
+        return 'application/octet-stream';
     }
   }
 

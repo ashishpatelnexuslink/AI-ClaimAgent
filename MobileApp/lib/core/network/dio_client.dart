@@ -1,4 +1,6 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
+import 'package:pretty_dio_logger/pretty_dio_logger.dart';
 import 'package:claim_ai/core/config/env_config.dart';
 import 'package:claim_ai/core/constants/api_constants.dart';
 import 'package:claim_ai/core/error/exceptions.dart';
@@ -27,6 +29,23 @@ class DioClient {
       ),
     );
     _dio.interceptors.add(apiInterceptor);
+
+    // Add pretty logger only in debug builds. Registered AFTER ApiInterceptor
+    // so the logged request includes the bearer token attached upstream, and
+    // it sees responses before ApiInterceptor's 401-refresh logic runs.
+    if (kDebugMode) {
+      _dio.interceptors.add(
+        PrettyDioLogger(
+          requestHeader: true,
+          requestBody: true,
+          responseHeader: false,
+          responseBody: true,
+          error: true,
+          compact: true,
+          maxWidth: 120,
+        ),
+      );
+    }
   }
 
   Dio get dio => _dio;
