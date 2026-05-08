@@ -27,11 +27,17 @@ class VoiceService {
   static const Duration silenceWatcherInterval = Duration(milliseconds: 500);
 
   /// Errors that do not warrant tearing down the session — restart instead.
+  /// `error_client` is the Android ERROR_CLIENT race that fires intermittently
+  /// when listen() is invoked before the previous native session has fully
+  /// released, or on OEM ASR hiccups. We restart with the same tight delay
+  /// used for the natural mid-sentence cutoff so the platform doesn't get a
+  /// chance to play the mic end/start sounds between sessions.
   static const Set<String> _transientErrors = {
     'error_no_match',
     'error_speech_timeout',
     'error_busy',
     'error_recognizer_busy',
+    'error_client',
   };
 
   // ─── Callbacks ─────────────────────────────────────────────────────────
