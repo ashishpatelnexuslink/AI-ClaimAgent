@@ -101,7 +101,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => _biometricEnabled = value);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Biometric login ${value ? 'enabled' : 'disabled'}')),
+        SnackBar(
+          content: Text('Biometric login ${value ? 'enabled' : 'disabled'}'),
+        ),
       );
     }
   }
@@ -136,7 +138,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 16),
             const Text(
               'Upload Photo',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _kDark),
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: _kDark,
+              ),
             ),
             const SizedBox(height: 8),
             ListTile(
@@ -174,15 +180,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
       await _authDataSource.uploadProfilePhoto(filePath: picked.path);
       if (mounted) {
         context.read<AuthCubit>().fetchUserProfile();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Profile photo updated')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Profile photo updated')));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to upload photo: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to upload photo: $e')));
         setState(() => _avatarPath = null);
       }
     } finally {
@@ -210,35 +216,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _populateFromUser(state.user);
       },
       child: Scaffold(
-      backgroundColor: _kBg,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 390),
-              child: Column(
-                children: [
-                  const SizedBox(height: 24),
-                  _buildProfileHeader(),
-                  const SizedBox(height: 20),
-                  _buildAvatarPersonalityCard(),
-                  const SizedBox(height: 16),
-                  _buildProfileManagementCard(),
-                  const SizedBox(height: 16),
-                  _buildSaveButton(),
-                  const SizedBox(height: 16),
-                  _buildAppSettingsCard(),
-                  const SizedBox(height: 8),
-                  _buildLogoutButton(),
-                  _buildAppVersion(),
-                  const SizedBox(height: 16),
-                ],
+        backgroundColor: _kBg,
+        body: SafeArea(
+          child: SingleChildScrollView(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 390),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 24),
+                    _buildProfileHeader(),
+                    const SizedBox(height: 20),
+                    _buildAvatarPersonalityCard(),
+                    const SizedBox(height: 16),
+                    _buildProfileManagementCard(),
+                    const SizedBox(height: 16),
+                    _buildSaveButton(),
+                    const SizedBox(height: 16),
+                    _buildAppSettingsCard(),
+                    const SizedBox(height: 8),
+                    _buildLogoutButton(),
+                    _buildAppVersion(),
+                    const SizedBox(height: 16),
+                  ],
+                ),
               ),
             ),
           ),
         ),
       ),
-    ),
     );
   }
 
@@ -272,14 +278,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           height: 96,
                         )
                       : avatarUrl != null && avatarUrl.isNotEmpty
-                          ? Image.network(
-                              avatarUrl,
-                              fit: BoxFit.cover,
-                              width: 96,
-                              height: 96,
-                              errorBuilder: (_, _, _) => _buildInitials(user?.fullName),
-                            )
-                          : _buildInitials(user?.fullName),
+                      ? Image.network(
+                          avatarUrl,
+                          fit: BoxFit.cover,
+                          width: 96,
+                          height: 96,
+                          errorBuilder: (_, _, _) =>
+                              _buildInitials(user?.fullName),
+                        )
+                      : _buildInitials(user?.fullName),
                 ),
               ),
               if (_isUploadingPhoto)
@@ -311,7 +318,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     color: _kBlue,
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.camera_alt, color: Colors.white, size: 14),
+                  child: const Icon(
+                    Icons.camera_alt,
+                    color: Colors.white,
+                    size: 14,
+                  ),
                 ),
               ),
             ],
@@ -320,7 +331,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         const SizedBox(height: 12),
         Text(
           user?.fullName ?? '',
-          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: _kDark),
+          style: const TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+            color: _kDark,
+          ),
         ),
         Text(
           user?.role.isNotEmpty == true ? user!.role : '',
@@ -342,10 +357,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
       height: 96,
       color: _kBlueBg,
       alignment: Alignment.center,
-      child: Text(
-        initials.isNotEmpty ? initials : '?',
-        style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: _kBlue),
-      ),
+      child: initials.isNotEmpty
+          ? Text(
+              initials,
+              style: const TextStyle(
+                fontSize: 32,
+                fontWeight: FontWeight.bold,
+                color: _kBlue,
+              ),
+            )
+          : const Icon(Icons.person, size: 48, color: _kBlue),
     );
   }
 
@@ -359,16 +380,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           const Text(
             'Avatar Personality',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _kDark),
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: _kDark,
+            ),
           ),
           const SizedBox(height: 16),
 
           // Voice speed header
           Row(
             children: [
-              const Text('Voice Response Speed', style: TextStyle(fontSize: 13, color: Colors.grey)),
+              const Text(
+                'Voice Response Speed',
+                style: TextStyle(fontSize: 13, color: Colors.grey),
+              ),
               const Spacer(),
-              Text(_speedLabel, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: _kBlue)),
+              Text(
+                _speedLabel,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: _kBlue,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 4),
@@ -396,9 +431,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
           // Slider labels
           const Row(
             children: [
-              Text('Deliberate', style: TextStyle(fontSize: 11, color: Colors.grey)),
+              Text(
+                'Deliberate',
+                style: TextStyle(fontSize: 11, color: Colors.grey),
+              ),
               Spacer(),
-              Text('Efficient', style: TextStyle(fontSize: 11, color: Colors.grey)),
+              Text(
+                'Efficient',
+                style: TextStyle(fontSize: 11, color: Colors.grey),
+              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -406,7 +447,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
           // Select Avatar label
           const Text(
             'SELECT AVATAR',
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1.2),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey,
+              letterSpacing: 1.2,
+            ),
           ),
           const SizedBox(height: 10),
 
@@ -436,10 +482,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           decoration: BoxDecoration(
             color: selected ? _kBlueBg : Colors.white,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: selected ? _kBlue : _kBorder,
-              width: 1.5,
-            ),
+            border: Border.all(color: selected ? _kBlue : _kBorder, width: 1.5),
           ),
           child: Column(
             children: [
@@ -467,14 +510,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           const Text(
             'Profile Management',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _kDark),
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: _kDark,
+            ),
           ),
           const SizedBox(height: 16),
-          _inputField('Full Name', Icons.person_outline, _nameController, TextInputType.name),
+          _inputField(
+            'Full Name',
+            Icons.person_outline,
+            _nameController,
+            TextInputType.name,
+          ),
           const SizedBox(height: 12),
-          _inputField('Email Address', Icons.mail_outline, _emailController, TextInputType.emailAddress),
+          _inputField(
+            'Email Address',
+            Icons.mail_outline,
+            _emailController,
+            TextInputType.emailAddress,
+          ),
           const SizedBox(height: 12),
-          _inputField('Phone Number', Icons.phone_outlined, _phoneController, TextInputType.phone),
+          _inputField(
+            'Phone Number',
+            Icons.phone_outlined,
+            _phoneController,
+            TextInputType.phone,
+          ),
           const SizedBox(height: 12),
           _countryDropdown(),
         ],
@@ -482,7 +544,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _inputField(String label, IconData icon, TextEditingController controller, TextInputType type) {
+  Widget _inputField(
+    String label,
+    IconData icon,
+    TextEditingController controller,
+    TextInputType type,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -495,7 +562,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: TextFormField(
                 controller: controller,
                 keyboardType: type,
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: _kDark),
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: _kDark,
+                ),
                 decoration: const InputDecoration(
                   enabledBorder: UnderlineInputBorder(
                     borderSide: BorderSide(color: _kBorder),
@@ -514,11 +585,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _countryDropdown() {
-    const countries = ['India', 'United States', 'United Kingdom', 'Australia', 'Canada'];
+    const countries = [
+      'India',
+      'United States',
+      'United Kingdom',
+      'Australia',
+      'Canada',
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Country', style: TextStyle(fontSize: 11, color: Colors.grey)),
+        const Text(
+          'Country',
+          style: TextStyle(fontSize: 11, color: Colors.grey),
+        ),
         Row(
           children: [
             const Icon(Icons.language_outlined, color: Colors.grey, size: 18),
@@ -526,9 +606,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
             Expanded(
               child: DropdownButtonFormField<String>(
                 initialValue: _selectedCountry,
-                items: countries.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                items: countries
+                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                    .toList(),
                 onChanged: (v) => setState(() => _selectedCountry = v!),
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: _kDark),
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: _kDark,
+                ),
                 icon: const Icon(Icons.keyboard_arrow_down, color: Colors.grey),
                 decoration: const InputDecoration(
                   enabledBorder: UnderlineInputBorder(
@@ -563,14 +649,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
             backgroundColor: _kBlue,
             foregroundColor: Colors.white,
             disabledBackgroundColor: _kBlue.withValues(alpha: 0.5),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
             elevation: 0,
           ),
           child: _isSaving
               ? const SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
                 )
               : const Text(
                   'Save Profile',
@@ -599,9 +690,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       debugPrint('Profile update error: $e');
       debugPrint('Stack trace: $stackTrace');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update profile: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to update profile: $e')));
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -618,7 +709,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           const Text(
             'App Settings',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _kDark),
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: _kDark,
+            ),
           ),
           const SizedBox(height: 12),
 
@@ -632,7 +727,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(_selectedLanguage, style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                  Text(
+                    _selectedLanguage,
+                    style: const TextStyle(fontSize: 13, color: Colors.grey),
+                  ),
                   const Icon(Icons.chevron_right, color: Colors.grey, size: 20),
                 ],
               ),
@@ -687,8 +785,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: _kDark)),
-                Text(subtitle, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: _kDark,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                ),
               ],
             ),
           ),
@@ -703,7 +811,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     showDialog(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: const Text('Select Language', style: TextStyle(fontWeight: FontWeight.bold, color: _kDark)),
+        title: const Text(
+          'Select Language',
+          style: TextStyle(fontWeight: FontWeight.bold, color: _kDark),
+        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         children: languages.map((lang) {
           return SimpleDialogOption(
@@ -716,7 +827,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
             },
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Text(lang, style: const TextStyle(fontSize: 15, color: _kDark)),
+              child: Text(
+                lang,
+                style: const TextStyle(fontSize: 15, color: _kDark),
+              ),
             ),
           );
         }).toList(),
@@ -736,7 +850,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           onPressed: _showLogoutDialog,
           style: OutlinedButton.styleFrom(
             side: const BorderSide(color: Colors.red, width: 1.5),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(30),
+            ),
             padding: const EdgeInsets.symmetric(vertical: 16),
           ),
           child: const Row(
@@ -744,7 +860,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               Icon(Icons.logout_rounded, color: Colors.red, size: 20),
               SizedBox(width: 8),
-              Text('Logout', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.red)),
+              Text(
+                'Logout',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red,
+                ),
+              ),
             ],
           ),
         ),
@@ -757,7 +880,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Logout', style: TextStyle(fontWeight: FontWeight.bold, color: _kDark)),
+        title: const Text(
+          'Logout',
+          style: TextStyle(fontWeight: FontWeight.bold, color: _kDark),
+        ),
         content: const Text('Are you sure you want to logout?'),
         actions: [
           TextButton(
@@ -771,9 +897,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
               // cold start finds a stored token and skips the login screen.
               await context.read<AuthCubit>().logout();
               if (!mounted) return;
-              Navigator.of(context).pushNamedAndRemoveUntil(AppRoutes.login, (_) => false);
+              Navigator.of(
+                context,
+              ).pushNamedAndRemoveUntil(AppRoutes.login, (_) => false);
             },
-            child: const Text('Logout', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Logout',
+              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
