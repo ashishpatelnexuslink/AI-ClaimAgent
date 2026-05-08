@@ -2427,8 +2427,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   // Helpers to read GET_IMAGE constraints from a message payload.
   List<String> _allowedAnglesOf(_ChatMsg msg) {
     final raw = msg.payload?['allowed_angles'];
-    if (raw is List)
+    if (raw is List) {
       return raw.map((e) => e.toString()).toList(growable: false);
+    }
     return const [];
   }
 
