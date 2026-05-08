@@ -558,7 +558,13 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       return text;
     }
     final ratio = (_spokenChars / cur.totalChars).clamp(0.0, 1.0);
-    final n = (text.length * ratio).ceil().clamp(0, text.length);
+    var n = (text.length * ratio).ceil().clamp(0, text.length);
+    // Avoid splitting a UTF-16 surrogate pair (e.g. emoji), which produces a
+    // malformed string and crashes ParagraphBuilder.addText.
+    if (n > 0 && n < text.length) {
+      final unit = text.codeUnitAt(n - 1);
+      if (unit >= 0xD800 && unit <= 0xDBFF) n -= 1;
+    }
     return text.substring(0, n);
   }
 
