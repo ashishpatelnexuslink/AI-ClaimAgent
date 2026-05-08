@@ -3,21 +3,19 @@ import 'package:claim_ai/core/auth/session_event_bus.dart';
 import 'package:claim_ai/core/storage/local_storage.dart';
 import 'package:claim_ai/core/constants/api_constants.dart';
 import 'package:claim_ai/core/config/env_config.dart';
-import 'package:logger/logger.dart';
 
 class ApiInterceptor extends Interceptor {
   final LocalStorage _localStorage;
   final Dio _dio;
   final SessionEventBus _sessionBus;
-  final Logger _logger = Logger();
 
   ApiInterceptor({
     required LocalStorage localStorage,
     required Dio dio,
     required SessionEventBus sessionBus,
-  })  : _localStorage = localStorage,
-        _dio = dio,
-        _sessionBus = sessionBus;
+  }) : _localStorage = localStorage,
+       _dio = dio,
+       _sessionBus = sessionBus;
 
   @override
   Future<void> onRequest(
@@ -34,29 +32,11 @@ class ApiInterceptor extends Interceptor {
     }
     options.headers['Accept'] = 'application/json';
 
-    _logger.d('REQUEST[${options.method}] => PATH: ${options.path}');
     handler.next(options);
   }
 
   @override
-  void onResponse(Response response, ResponseInterceptorHandler handler) {
-    _logger.d(
-      'RESPONSE[${response.statusCode}] => PATH: ${response.requestOptions.path}',
-    );
-    handler.next(response);
-  }
-
-  @override
   void onError(DioException err, ErrorInterceptorHandler handler) async {
-    _logger.e(
-      'ERROR[${err.response?.statusCode}] => PATH: ${err.requestOptions.path}\n'
-      'METHOD: ${err.requestOptions.method}\n'
-      'REQUEST DATA: ${err.requestOptions.data}\n'
-      'QUERY: ${err.requestOptions.queryParameters}\n'
-      'RESPONSE BODY: ${err.response?.data}\n'
-      'DIO MESSAGE: ${err.message}',
-    );
-
     if (err.response?.statusCode == 401) {
       final refreshed = await _tryRefreshToken();
       if (refreshed) {
@@ -78,10 +58,7 @@ class ApiInterceptor extends Interceptor {
 
       final response = await Dio().post(
         '${EnvConfig.baseUrl}${ApiConstants.refreshToken}',
-        data: {
-          'accessToken': accessToken ?? '',
-          'refreshToken': refreshToken,
-        },
+        data: {'accessToken': accessToken ?? '', 'refreshToken': refreshToken},
       );
 
       if (response.statusCode == 200) {
