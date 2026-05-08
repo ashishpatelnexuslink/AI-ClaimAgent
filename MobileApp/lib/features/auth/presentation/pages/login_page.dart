@@ -6,6 +6,7 @@ import 'package:claim_ai/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:claim_ai/features/auth/presentation/cubit/auth_state.dart';
 import 'package:claim_ai/features/auth/presentation/widgets/auth_layout.dart';
 import 'package:claim_ai/features/auth/presentation/widgets/auth_gradient_button.dart';
+import 'package:claim_ai/features/auth/presentation/widgets/country_picker.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -16,6 +17,8 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   final _phoneController = TextEditingController();
+  String _dialCode = '+91';
+  String _countryIso = 'IN';
 
   @override
   void dispose() {
@@ -23,15 +26,33 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
+  Country get _country => countryByIso(_countryIso);
+
+  String get _digits => _phoneController.text.replaceAll(RegExp(r'\D'), '');
+
+  String get _fullPhone => '$_dialCode$_digits';
+
   void _onContinue() {
-    final phone = _phoneController.text.trim();
-    if (phone.isNotEmpty) {
-      context.read<AuthCubit>().sendOtp(phoneOrEmail: '+91$phone');
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter your mobile number')),
-      );
+    final digits = _digits;
+    final country = _country;
+    if (digits.isEmpty) {
+      _showError('Please enter your mobile number');
+      return;
     }
+    if (!country.lengths.contains(digits.length)) {
+      final expected = country.lengths.join('/');
+      _showError(
+        'Enter a valid ${country.name} number ($expected digits)',
+      );
+      return;
+    }
+    context.read<AuthCubit>().sendOtp(phoneOrEmail: _fullPhone);
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   @override
@@ -46,7 +67,7 @@ class _LoginPageState extends State<LoginPage> {
           Navigator.of(context).pushNamed(
             AppRoutes.otp,
             arguments: {
-              'phoneOrEmail': '+91${_phoneController.text.trim()}',
+              'phoneOrEmail': _fullPhone,
               'otp': state.otp,
               'isNewUser': state.isNewUser,
             },
@@ -89,29 +110,16 @@ class _LoginPageState extends State<LoginPage> {
             Row(
               children: [
                 // Country selector pill
-                Container(
-                  height: 50,
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8F8F8),
-                    borderRadius: BorderRadius.circular(25),
-                    border: Border.all(color: const Color(0xFFE5E7EB)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text(
-                        '\u{1F1EE}\u{1F1F3}',
-                        style: TextStyle(fontSize: 18),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        Icons.keyboard_arrow_down,
-                        size: 16,
-                        color: Colors.grey.shade500,
-                      ),
-                    ],
-                  ),
+                _CountrySelector(
+                  iso: _countryIso,
+                  dialCode: _dialCode,
+                  onChanged: (c) {
+                    setState(() {
+                      _dialCode = c.dialCode;
+                      _countryIso = c.iso;
+                      _phoneController.clear();
+                    });
+                  },
                 ),
                 const SizedBox(width: 10),
                 // Phone number input pill
@@ -128,17 +136,17 @@ class _LoginPageState extends State<LoginPage> {
                       keyboardType: TextInputType.phone,
                       inputFormatters: [
                         FilteringTextInputFormatter.digitsOnly,
-                        LengthLimitingTextInputFormatter(10),
+                        LengthLimitingTextInputFormatter(_country.maxLength),
                       ],
-                      decoration: const InputDecoration(
-                        prefixText: '+91  ',
-                        prefixStyle: TextStyle(
+                      decoration: InputDecoration(
+                        prefixText: '$_dialCode  ',
+                        prefixStyle: const TextStyle(
                           fontSize: 14,
                           color: Color(0xFF374151),
                           fontWeight: FontWeight.w500,
                         ),
-                        hintText: '12345 67890',
-                        hintStyle: TextStyle(
+                        hintText: _country.example,
+                        hintStyle: const TextStyle(
                           color: Color(0xFFBDBDBD),
                           fontSize: 14,
                         ),
@@ -146,7 +154,7 @@ class _LoginPageState extends State<LoginPage> {
                         enabledBorder: InputBorder.none,
                         focusedBorder: InputBorder.none,
                         filled: false,
-                        contentPadding: EdgeInsets.only(left: 20),
+                        contentPadding: const EdgeInsets.only(left: 20),
                       ),
                       style: const TextStyle(
                         fontSize: 14,
@@ -169,6 +177,51 @@ class _LoginPageState extends State<LoginPage> {
                   onPressed: _onContinue,
                 );
               },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CountrySelector extends StatelessWidget {
+  final String iso;
+  final String dialCode;
+  final ValueChanged<Country> onChanged;
+
+  const _CountrySelector({
+    required this.iso,
+    required this.dialCode,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final country = countryByIso(iso);
+    return InkWell(
+      borderRadius: BorderRadius.circular(25),
+      onTap: () async {
+        final selected = await showCountryPicker(context);
+        if (selected != null) onChanged(selected);
+      },
+      child: Container(
+        height: 50,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8F8F8),
+          borderRadius: BorderRadius.circular(25),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(country.flag, style: const TextStyle(fontSize: 22)),
+            const SizedBox(width: 4),
+            const Icon(
+              Icons.keyboard_arrow_down_rounded,
+              size: 20,
+              color: Color(0xFF6B7280),
             ),
           ],
         ),

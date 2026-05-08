@@ -1248,18 +1248,10 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                   ),
                   child: Row(
                     children: [
-                      Container(
-                        width: 28,
-                        height: 28,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF34A853),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.check,
-                          color: Colors.white,
-                          size: 16,
-                        ),
+                      const Icon(
+                        Icons.verified,
+                        color: Color(0xFF34A853),
+                        size: 28,
                       ),
                       const SizedBox(width: 10),
                       Text(
@@ -1776,8 +1768,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     }
 
     // ── Validate first (AI image validation) ───────────────────────────
-    // Only `vehicle_photos` goes through `/validate-images` — every other
-    // group (damage_photos, driver_license, …) uploads directly.
+    // `vehicle_photos`, `damage_photos`, and `driver_license` go through
+    // `/validate-images` — every other group (supporting_docs, …) uploads
+    // directly.
     // Only forward the originating msg for removal if it's a failure card
     // (not the original GET_IMAGE trigger card — that one stays in chat).
     final _ChatMsg? failureCardToReplace =
@@ -1786,7 +1779,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                     originatingMsg.validationFailedLegacy))
             ? originatingMsg
             : null;
-    if (category == 'vehicle_photos') {
+    if (category == 'vehicle_photos' ||
+        category == 'damage_photos' ||
+        category == 'driver_license') {
       final validation = await _runImageValidation(
         questionLabel: category,
         images: {
@@ -1903,6 +1898,14 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         _messages.remove(previousFailureMsg);
       }
       if (!result.valid) {
+        // The AI has re-opened this group (fresh GET_IMAGE → user submitted →
+        // validation failed). Any prior success entry is stale — without this,
+        // the new failure card's Submit would be frozen by `groupAlreadyDone`
+        // because the previous successful cycle's group_key is still in the
+        // set, and the user could never re-submit replacements.
+        if (result.groupKey != null && result.groupKey!.isNotEmpty) {
+          _uploadedGroupKeys.remove(result.groupKey);
+        }
         // Snapshot the rejected images' paths so the failure card can detect
         // when the user picks a replacement (and re-enable Submit). The
         // images themselves stay in `_angleImages` so their thumbnails
@@ -2159,9 +2162,11 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       ));
     }
 
-    // Only `vehicle_photos` runs through AI validation; every other group
-    // uploads directly.
-    if (category == 'vehicle_photos') {
+    // `vehicle_photos`, `damage_photos`, and `driver_license` run through
+    // AI validation; every other group uploads directly.
+    if (category == 'vehicle_photos' ||
+        category == 'damage_photos' ||
+        category == 'driver_license') {
       final validation = await _runImageValidation(
         questionLabel: category,
         images: {

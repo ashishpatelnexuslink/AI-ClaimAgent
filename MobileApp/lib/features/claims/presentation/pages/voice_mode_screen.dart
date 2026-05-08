@@ -1082,8 +1082,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     }
 
     // ── Validate first (AI image validation) ───────────────────────────
-    // Only `vehicle_photos` goes through `/validate-images` — every other
-    // group (damage_photos, driver_license, …) uploads directly.
+    // `vehicle_photos`, `damage_photos`, and `driver_license` go through
+    // `/validate-images` — every other group (supporting_docs, …) uploads
+    // directly.
     // Only forward the originating msg for removal if it's a failure card
     // (not the original GET_IMAGE trigger card — that one stays in chat).
     final _ChatMessage? failureCardToReplace =
@@ -1092,7 +1093,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                     originatingMsg.validationFailedLegacy))
             ? originatingMsg
             : null;
-    if (category == 'vehicle_photos') {
+    if (category == 'vehicle_photos' ||
+        category == 'damage_photos' ||
+        category == 'driver_license') {
       final validation = await _runImageValidation(
         questionLabel: category,
         images: {for (final p in prepared) p.angle: base64Encode(p.bytes)},
@@ -1418,9 +1421,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       ));
     }
 
-    // Only `vehicle_photos` runs through AI validation; every other group
-    // uploads directly.
-    if (category == 'vehicle_photos') {
+    // `vehicle_photos`, `damage_photos`, and `driver_license` run through
+    // AI validation; every other group uploads directly.
+    if (category == 'vehicle_photos' ||
+        category == 'damage_photos' ||
+        category == 'driver_license') {
       final validation = await _runImageValidation(
         questionLabel: category,
         images: {

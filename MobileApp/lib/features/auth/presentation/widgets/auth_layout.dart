@@ -17,27 +17,22 @@ class AuthLayout extends StatelessWidget {
         child: SingleChildScrollView(
           child: Column(
             children: [
-                    const SizedBox(height: 16),
-                    // Logo - source PNG is 500x500 with whitespace,
-                    // display larger so visible content matches Figma
+                    const SizedBox(height: 24),
                     Image.asset(
                       'assets/images/draudita_logo.png',
-                      width: 420,
-                      height: 168,
+                      width: 200,
+                      height: 100,
                       fit: BoxFit.contain,
                     ),
-                    // Title — pulled up to reduce gap from logo's built-in whitespace
-                    Transform.translate(
-                      offset: const Offset(0, -14),
-                      child: const Text(
-                        'AI-Powered\nClaim Handling',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1A1A2E),
-                          height: 1.3,
-                        ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'AI-Powered\nClaim Handling',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1A1A2E),
+                        height: 1.3,
                       ),
                     ),
                     const SizedBox(height: 6),
