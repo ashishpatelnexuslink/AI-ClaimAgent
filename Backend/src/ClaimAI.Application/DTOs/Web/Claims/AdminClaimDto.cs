@@ -19,13 +19,11 @@ public class AdminClaimListItemDto
     public DateTime SubmittedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public decimal? Amount { get; set; }
-    public string? AssignedTo { get; set; }
     public string? ClaimantType { get; set; }
 }
 
 public class AdminClaimDetailDto : AdminClaimListItemDto
 {
-    public string? Description { get; set; }
     public string? FullName { get; set; }
     public string? PolicyNumber { get; set; }
     public string? VehicleModel { get; set; }
@@ -33,17 +31,9 @@ public class AdminClaimDetailDto : AdminClaimListItemDto
     public string? VehicleRegistrationNumber { get; set; }
     public string? IncidentLocation { get; set; }
     public string? IncidentDescription { get; set; }
-    public string? CoverageType { get; set; }
     public string? PolicyStatus { get; set; }
     public DateTime? PolicyValidUntil { get; set; }
     public bool? IdentityVerified { get; set; }
-    public int VehiclePhotosCount { get; set; }
-    public int DamagePhotosCount { get; set; }
-    public int LicensePhotosCount { get; set; }
-    public int PoliceReportCount { get; set; }
-    public int RepairBillCount { get; set; }
-    public int SupportingDocsCount { get; set; }
-    public string? AdditionalData { get; set; }
 }
 
 public class AdminClaimListQuery

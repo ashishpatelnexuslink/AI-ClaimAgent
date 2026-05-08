@@ -23,12 +23,11 @@ interface AdminClaimListItemDto {
   submittedAt: string;
   updatedAt?: string | null;
   amount?: number | null;
-  assignedTo?: string | null;
   claimantType?: string | null;
 }
 
 interface AdminClaimDetailDto extends AdminClaimListItemDto {
-  description?: string | null;
+  incidentDescription?: string | null;
   incidentLocation?: string | null;
 }
 
@@ -45,9 +44,8 @@ function toClaim(row: AdminClaimDetailDto): Claim {
     submittedAt: row.submittedAt,
     updatedAt: row.updatedAt ?? row.submittedAt,
     amount: row.amount ?? undefined,
-    assignedTo: row.assignedTo ?? undefined,
     claimantType: row.claimantType ?? undefined,
-    description: row.description ?? undefined,
+    incidentDescription: row.incidentDescription ?? undefined,
     incidentLocation: row.incidentLocation ?? undefined,
   };
 }

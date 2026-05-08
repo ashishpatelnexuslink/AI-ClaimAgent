@@ -10,7 +10,6 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
-  ChevronUp,
   FolderPlus,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -369,7 +368,6 @@ function IdentityFieldRow({
   register,
   error,
 }: IdentityFieldRowProps) {
-  const [showRegex, setShowRegex] = useState(false);
   const err = (k: keyof CreateIdentityField) => error?.[k]?.message as string | undefined;
 
   return (
@@ -406,7 +404,7 @@ function IdentityFieldRow({
             {err('label') && <p className="text-xs text-danger mt-1">{err('label')}</p>}
           </label>
 
-          <div className="col-span-2 flex items-center justify-between gap-4 flex-wrap">
+          <div className="col-span-2 flex items-center gap-4 flex-wrap">
             <label className="flex items-center gap-2">
               <input
                 type="checkbox"
@@ -415,31 +413,13 @@ function IdentityFieldRow({
               />
               <span className="text-sm text-gray-700">Skippable</span>
             </label>
-
-            <button
-              type="button"
-              onClick={() => setShowRegex((s) => !s)}
-              className="text-xs text-primary hover:underline inline-flex items-center gap-1"
-            >
-              {showRegex ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-              Advanced (validation regex)
-            </button>
           </div>
 
-          {showRegex && (
-            <div className="col-span-2">
-              <input
-                {...register(`identityFields.${absoluteIndex}.validationRegex` as const)}
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-                placeholder="^[A-Z0-9-]+$"
-              />
-            </div>
-          )}
-
-          {/* Prompt text and placeholder remain in form state via hidden inputs;
-              normalizeWizardForm backfills promptText from label at submit. */}
+          {/* Prompt text, placeholder, regex, and groupKey remain in form state
+              via hidden inputs so existing values aren't lost on submit. */}
           <input type="hidden" {...register(`identityFields.${absoluteIndex}.promptText` as const)} />
           <input type="hidden" {...register(`identityFields.${absoluteIndex}.placeholder` as const)} />
+          <input type="hidden" {...register(`identityFields.${absoluteIndex}.validationRegex` as const)} />
           <input type="hidden" {...register(`identityFields.${absoluteIndex}.groupKey` as const)} />
         </div>
 
