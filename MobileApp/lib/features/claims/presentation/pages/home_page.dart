@@ -38,17 +38,18 @@ class _HomePageState extends State<HomePage> {
     return BlocListener<AuthCubit, AuthState>(
       listener: (context, state) {
         if (state.status == AuthStatus.unauthenticated) {
-          Navigator.of(context).pushNamedAndRemoveUntil(
-            AppRoutes.login,
-            (_) => false,
-          );
+          Navigator.of(
+            context,
+          ).pushNamedAndRemoveUntil(AppRoutes.login, (_) => false);
         }
       },
       child: Scaffold(
         body: IndexedStack(
           index: _currentIndex,
           children: [
-            _WelcomeContent(onTabSwitch: (index) => setState(() => _currentIndex = index)),
+            _WelcomeContent(
+              onTabSwitch: (index) => setState(() => _currentIndex = index),
+            ),
             const ClaimsListPage(),
             const ProfileScreen(),
           ],
@@ -98,9 +99,9 @@ class _WelcomeContent extends StatelessWidget {
               const SizedBox(height: AppSpacing.md),
               _HeroCard(
                 onClaimNow: () async {
-                  final result = await Navigator.of(context).pushNamed(
-                    AppRoutes.avatarAssistant,
-                  );
+                  final result = await Navigator.of(
+                    context,
+                  ).pushNamed(AppRoutes.avatarAssistant);
                   if (result is int && result != 0) {
                     onTabSwitch(result);
                   }
@@ -117,13 +118,12 @@ class _WelcomeContent extends StatelessWidget {
 }
 
 String _initialsFrom(String? fullName) {
-  final initials = (fullName ?? '')
+  return (fullName ?? '')
       .split(' ')
       .where((p) => p.isNotEmpty)
       .take(2)
       .map((p) => p[0].toUpperCase())
       .join();
-  return initials.isNotEmpty ? initials : '?';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -140,19 +140,22 @@ class _HeaderSection extends StatelessWidget {
       builder: (context, state) {
         final avatarUrl = state.user?.avatarUrl;
         final hasAvatar = avatarUrl != null && avatarUrl.isNotEmpty;
+        final initialsText = _initialsFrom(state.user?.fullName);
         final initials = Container(
           width: 44,
           height: 44,
           alignment: Alignment.center,
           color: const Color(0xFFEEF3FC),
-          child: Text(
-            _initialsFrom(state.user?.fullName),
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF2A6FDB),
-            ),
-          ),
+          child: initialsText.isNotEmpty
+              ? Text(
+                  initialsText,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF2A6FDB),
+                  ),
+                )
+              : const Icon(Icons.person, size: 26, color: Color(0xFF2A6FDB)),
         );
         return Row(
           children: [
@@ -187,10 +190,7 @@ class _HeaderSection extends StatelessWidget {
                   ),
                   Text(
                     state.user?.fullName ?? '',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey,
-                    ),
+                    style: const TextStyle(fontSize: 13, color: Colors.grey),
                   ),
                 ],
               ),
@@ -225,7 +225,6 @@ class _HeaderSection extends StatelessWidget {
       },
     );
   }
-
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -256,10 +255,7 @@ class _ActionRequiredSection extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: const Color(0xFFE8E4FF),
-              width: 1.2,
-            ),
+            border: Border.all(color: const Color(0xFFE8E4FF), width: 1.2),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -287,10 +283,7 @@ class _ActionRequiredSection extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       '${action.message}$claimRef',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey,
-                      ),
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
                     ),
                     const SizedBox(height: 6),
                     GestureDetector(
@@ -299,9 +292,9 @@ class _ActionRequiredSection extends StatelessWidget {
                           AppRoutes.documents,
                           arguments: {'claimId': action.claimId ?? ''},
                         );
-                        context
-                            .read<NotificationsCubit>()
-                            .markAsRead(action.id);
+                        context.read<NotificationsCubit>().markAsRead(
+                          action.id,
+                        );
                       },
                       child: const Row(
                         children: [
@@ -378,12 +371,14 @@ class _HeroCardState extends State<_HeroCard> with TickerProviderStateMixin {
       vsync: this,
       duration: const Duration(milliseconds: 2800),
     )..repeat();
-    _pulseScale = Tween<double>(begin: 1.0, end: 1.8).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeOut),
-    );
-    _pulseOpacity = Tween<double>(begin: 0.5, end: 0.0).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeOut),
-    );
+    _pulseScale = Tween<double>(
+      begin: 1.0,
+      end: 1.8,
+    ).animate(CurvedAnimation(parent: _pulseController, curve: Curves.easeOut));
+    _pulseOpacity = Tween<double>(
+      begin: 0.5,
+      end: 0.0,
+    ).animate(CurvedAnimation(parent: _pulseController, curve: Curves.easeOut));
 
     _glowController = AnimationController(
       vsync: this,
@@ -504,9 +499,9 @@ class _HeroCardState extends State<_HeroCard> with TickerProviderStateMixin {
             'Need Help With A Claim?',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: AppSpacing.sm),
 
@@ -515,9 +510,9 @@ class _HeroCardState extends State<_HeroCard> with TickerProviderStateMixin {
             'Connect with our smart avatar assistant to easily file, manage, and track your claim with personalized guidance at every step.',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.white.withValues(alpha: 0.7),
-                  height: 1.5,
-                ),
+              color: Colors.white.withValues(alpha: 0.7),
+              height: 1.5,
+            ),
           ),
           const SizedBox(height: AppSpacing.lg),
 
@@ -528,10 +523,7 @@ class _HeroCardState extends State<_HeroCard> with TickerProviderStateMixin {
               backgroundColor: Colors.white,
               foregroundColor: const Color(0xFF1A1D3B),
               shape: const StadiumBorder(),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 48,
-                vertical: 14,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 14),
               elevation: 0,
               textStyle: const TextStyle(
                 fontSize: 16,
@@ -568,9 +560,9 @@ class _ClaimSummarySection extends StatelessWidget {
             Text(
               'Claim Summary',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
             ),
             const SizedBox(height: AppSpacing.md),
 
@@ -656,9 +648,9 @@ class _LargeSummaryCard extends StatelessWidget {
         children: [
           Text(
             label,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: AppColors.textSecondary,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
           ),
           const SizedBox(height: AppSpacing.sm),
           isLoading
@@ -670,9 +662,9 @@ class _LargeSummaryCard extends StatelessWidget {
               : Text(
                   count.toString().padLeft(2, '0'),
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                      ),
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
           const SizedBox(height: AppSpacing.sm),
           // Progress bar accent
@@ -727,9 +719,9 @@ class _SmallSummaryCard extends StatelessWidget {
           const SizedBox(width: AppSpacing.sm),
           Text(
             label,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: AppColors.textSecondary,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
           ),
           const Spacer(),
           isLoading
@@ -741,9 +733,9 @@ class _SmallSummaryCard extends StatelessWidget {
               : Text(
                   count.toString().padLeft(2, '0'),
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                      ),
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
         ],
       ),
@@ -759,10 +751,7 @@ class _BottomNavBar extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
 
-  const _BottomNavBar({
-    required this.currentIndex,
-    required this.onTap,
-  });
+  const _BottomNavBar({required this.currentIndex, required this.onTap});
 
   @override
   Widget build(BuildContext context) {

@@ -204,14 +204,16 @@ class _InitialsAvatar extends StatelessWidget {
     return CircleAvatar(
       radius: 18,
       backgroundColor: kVmUserInitialsBg,
-      child: Text(
-        initials.isNotEmpty ? initials : '?',
-        style: const TextStyle(
-          color: kVmUserInitialsText,
-          fontSize: 13,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
+      child: initials.isNotEmpty
+          ? Text(
+              initials,
+              style: const TextStyle(
+                color: kVmUserInitialsText,
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+              ),
+            )
+          : const Icon(Icons.person, size: 22, color: kVmUserInitialsText),
     );
   }
 }
