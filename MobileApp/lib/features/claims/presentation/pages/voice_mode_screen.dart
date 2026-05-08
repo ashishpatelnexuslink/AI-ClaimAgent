@@ -2032,10 +2032,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                       itemCount: _messages.length,
                       itemBuilder: (_, index) {
                         final msg = _messages[index];
-                        if (msg.isTyping)
+                        if (msg.isTyping) {
                           return TypingIndicator(
                             typingController: _typingController,
                           );
+                        }
                         if (msg.type == 'bot') {
                           return _buildBotBubble(msg, index);
                         }
@@ -2363,8 +2364,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   // Helpers to read GET_IMAGE constraints from a message payload.
   List<String> _allowedAnglesOf(ChatMessage msg) {
     final raw = msg.payload?['allowed_angles'];
-    if (raw is List)
+    if (raw is List) {
       return raw.map((e) => e.toString()).toList(growable: false);
+    }
     return const [];
   }
 

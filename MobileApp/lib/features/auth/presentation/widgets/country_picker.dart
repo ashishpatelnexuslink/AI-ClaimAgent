@@ -174,7 +174,7 @@ class _CountryPickerSheetState extends State<_CountryPickerSheet> {
             Expanded(
               child: ListView.separated(
                 itemCount: filtered.length,
-                separatorBuilder: (_, __) => const Divider(
+                separatorBuilder: (_, _) => const Divider(
                   height: 1,
                   color: Color(0xFFF1F1F1),
                 ),
