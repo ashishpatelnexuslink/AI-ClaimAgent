@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:claim_ai/core/navigation/app_routes.dart';
-// import 'package:claim_ai/core/services/biometric_service.dart';
-// import 'package:claim_ai/core/storage/local_storage.dart';
 import 'package:claim_ai/core/usecases/usecase.dart';
 import 'package:claim_ai/features/auth/domain/repositories/auth_repository.dart';
 import 'package:claim_ai/features/auth/domain/usecases/get_user_profile_usecase.dart';
@@ -174,8 +172,6 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
 
       final authRepo = sl<AuthRepository>();
       debugPrint('[splash] _checkAuth: authRepo resolved');
-      // final localStorage = sl<LocalStorage>();
-      // final biometricService = sl<BiometricService>();
       var isLoggedIn = await authRepo.isLoggedIn();
       debugPrint('[splash] _checkAuth: hasToken=$isLoggedIn');
 
@@ -197,21 +193,6 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
       if (!mounted) return;
 
       if (isLoggedIn) {
-      // Biometric gate temporarily disabled — was hanging on splash in release
-      // builds when the prompt failed to surface.
-      // if (localStorage.isBiometricEnabled) {
-      //   final authenticated = await biometricService.authenticate(
-      //     reason: 'Verify your identity to open ClaimAI',
-      //   );
-      //   if (!mounted) return;
-      //   if (!authenticated) {
-      //     Navigator.of(context).pushNamedAndRemoveUntil(
-      //       AppRoutes.login,
-      //       (_) => false,
-      //     );
-      //     return;
-      //   }
-      // }
         Navigator.of(context).pushNamedAndRemoveUntil(
           AppRoutes.home,
           (_) => false,

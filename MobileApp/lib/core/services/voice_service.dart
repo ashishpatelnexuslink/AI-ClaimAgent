@@ -378,23 +378,45 @@ class VoiceService {
 
     final prevWords = p.split(RegExp(r'\s+'));
     final nextWords = n.split(RegExp(r'\s+'));
-    final maxCheck = prevWords.length < nextWords.length
-        ? prevWords.length
-        : nextWords.length;
 
-    int overlap = 0;
-    for (int i = maxCheck; i > 0; i--) {
-      final prevSuffix =
-          prevWords.sublist(prevWords.length - i).join(' ').toLowerCase();
-      final nextPrefix = nextWords.sublist(0, i).join(' ').toLowerCase();
-      if (prevSuffix == nextPrefix) {
-        overlap = i;
-        break;
+    // Search for the longest prev-suffix that matches a slice near the start
+    // of `next`. `k` is the number of leading `next` words skipped — k=0 is
+    // the strict prefix match (handles ordinary engine re-emission); k>0
+    // tolerates a short hallucinated/noise prefix the recognizer sometimes
+    // inserts on restart (e.g. "jije" before re-emitting "01 ab 998").
+    const maxNoisePrefix = 3;
+    final kLimit = nextWords.length <= 1
+        ? 0
+        : (nextWords.length - 1 < maxNoisePrefix
+            ? nextWords.length - 1
+            : maxNoisePrefix);
+
+    int bestK = -1;
+    int bestOverlap = 0;
+    for (int k = 0; k <= kLimit; k++) {
+      final remaining = nextWords.length - k;
+      final maxCheck =
+          prevWords.length < remaining ? prevWords.length : remaining;
+      for (int i = maxCheck; i > 0; i--) {
+        // Single-word coincidences are too noisy once we're skipping prefix
+        // words — only the strict k=0 path accepts a one-word overlap.
+        if (k > 0 && i < 2) break;
+        final prevSuffix =
+            prevWords.sublist(prevWords.length - i).join(' ').toLowerCase();
+        final nextSlice = nextWords.sublist(k, k + i).join(' ').toLowerCase();
+        if (prevSuffix == nextSlice) {
+          if (i > bestOverlap) {
+            bestOverlap = i;
+            bestK = k;
+          }
+          break;
+        }
       }
     }
 
-    if (overlap > 0) {
-      return '$p ${nextWords.sublist(overlap).join(' ')}'.trim();
+    if (bestOverlap > 0) {
+      final remaining = nextWords.sublist(bestK + bestOverlap).join(' ');
+      return remaining.isEmpty ? p : '$p $remaining'.trim();
     }
     return '$p $n';
   }

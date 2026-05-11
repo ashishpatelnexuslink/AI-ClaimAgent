@@ -36,6 +36,16 @@ class LocalStorage {
     await _secureStorage.delete(key: _refreshTokenKey);
   }
 
+  /// True if either an access or refresh token is present in secure storage.
+  /// Used to gate biometric login so we don't prompt when there's no session
+  /// to unlock.
+  Future<bool> hasStoredSession() async {
+    final access = await getAccessToken();
+    if (access != null && access.isNotEmpty) return true;
+    final refresh = await getRefreshToken();
+    return refresh != null && refresh.isNotEmpty;
+  }
+
   // SharedPreferences for non-sensitive data
   Future<void> setBool(String key, bool value) async {
     await _prefs.setBool(key, value);
