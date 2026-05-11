@@ -8,9 +8,7 @@ import 'package:claim_ai/features/auth/presentation/pages/splash_page.dart';
 import 'package:claim_ai/features/claims/presentation/pages/claims_list_page.dart';
 import 'package:claim_ai/features/claims/presentation/pages/claim_detail_page.dart';
 import 'package:claim_ai/features/claims/presentation/pages/claim_summary_page.dart';
-import 'package:claim_ai/features/claims/presentation/pages/home_page.dart';
-import 'package:claim_ai/features/chat/presentation/pages/chat_page.dart';
-import 'package:claim_ai/features/chat/presentation/cubit/chat_cubit.dart';
+import 'package:claim_ai/features/home/presentation/pages/home_page.dart';
 import 'package:claim_ai/features/documents/presentation/pages/documents_page.dart';
 import 'package:claim_ai/features/documents/presentation/pages/document_templates_page.dart';
 import 'package:claim_ai/features/documents/presentation/cubit/documents_cubit.dart';
@@ -59,16 +57,6 @@ class AppRouter {
         final args = settings.arguments as Map<String, dynamic>?;
         return _buildRoute(
           ClaimSummaryPage(claimId: args?['claimId'] as String? ?? ''),
-          settings,
-        );
-
-      case AppRoutes.chat:
-        final args = settings.arguments as Map<String, dynamic>?;
-        return _buildRoute(
-          BlocProvider<ChatCubit>(
-            create: (_) => sl<ChatCubit>(),
-            child: ChatPage(claimId: args?['claimId'] as String? ?? ''),
-          ),
           settings,
         );
 

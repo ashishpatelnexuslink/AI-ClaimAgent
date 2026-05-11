@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 import 'package:http/http.dart' as http;
 
 import 'package:claim_ai/config/app_config.dart';
-import 'package:claim_ai/services/auth_service.dart';
+import 'package:claim_ai/features/assistant/data/datasources/chatbot_auth_service.dart';
 
 /// Single place for all authenticated HTTP calls to the chatbot API.
 ///

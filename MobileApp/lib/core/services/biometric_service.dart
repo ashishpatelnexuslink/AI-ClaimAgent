@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:local_auth/local_auth.dart';
 
 class BiometricService {
@@ -22,8 +23,15 @@ class BiometricService {
       return await _auth.authenticate(
         localizedReason: reason,
         biometricOnly: true,
+        persistAcrossBackgrounding: true,
       );
-    } catch (_) {
+    } on LocalAuthException catch (e) {
+      // Surface the platform-level reason in logs so silent prompt failures
+      // (the original splash-gate bug) are diagnosable from adb logcat.
+      debugPrint('[biometric] LocalAuthException code=${e.code.name} description=${e.description}');
+      return false;
+    } catch (e) {
+      debugPrint('[biometric] unexpected error: $e');
       return false;
     }
   }

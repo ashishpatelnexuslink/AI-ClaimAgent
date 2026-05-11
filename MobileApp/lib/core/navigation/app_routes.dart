@@ -16,9 +16,6 @@ class AppRoutes {
   // Assistant
   static const String avatarAssistant = '/avatar-assistant';
 
-  // Chat
-  static const String chat = '/chat';
-
   // Documents
   static const String documents = '/documents';
   static const String documentTemplates = '/documents/templates';

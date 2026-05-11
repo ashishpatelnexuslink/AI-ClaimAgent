@@ -2,11 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:claim_ai/core/navigation/app_routes.dart';
+// Biometric login temporarily disabled — re-enable by uncommenting these
+// imports and the biometric block below.
+// import 'package:claim_ai/core/services/biometric_service.dart';
+// import 'package:claim_ai/core/storage/local_storage.dart';
+// import 'package:claim_ai/core/usecases/usecase.dart';
+// import 'package:claim_ai/features/auth/domain/repositories/auth_repository.dart';
+// import 'package:claim_ai/features/auth/domain/usecases/get_user_profile_usecase.dart';
 import 'package:claim_ai/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:claim_ai/features/auth/presentation/cubit/auth_state.dart';
 import 'package:claim_ai/features/auth/presentation/widgets/auth_layout.dart';
 import 'package:claim_ai/features/auth/presentation/widgets/auth_gradient_button.dart';
 import 'package:claim_ai/features/auth/presentation/widgets/country_picker.dart';
+// import 'package:claim_ai/injection_container.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -19,6 +27,79 @@ class _LoginPageState extends State<LoginPage> {
   final _phoneController = TextEditingController();
   String _dialCode = '+91';
   String _countryIso = 'IN';
+
+  // Biometric login temporarily disabled.
+  // bool _showBiometricButton = false;
+  // bool _biometricBusy = false;
+  // int _bioFailCount = 0;
+  // static const _maxBioFailures = 3;
+
+  // @override
+  // void initState() {
+  //   super.initState();
+  //   _evaluateBiometricEligibility();
+  // }
+
+  // Future<void> _evaluateBiometricEligibility() async {
+  //   final localStorage = sl<LocalStorage>();
+  //   if (!localStorage.isBiometricEnabled) return;
+  //   final biometricService = sl<BiometricService>();
+  //   final available = await biometricService.isAvailable();
+  //   if (!available) return;
+  //   final hasSession = await localStorage.hasStoredSession();
+  //   if (!hasSession) return;
+  //   if (!mounted) return;
+  //   setState(() => _showBiometricButton = true);
+  // }
+
+  // Future<void> _onBiometricLogin() async {
+  //   if (_biometricBusy) return;
+  //   setState(() => _biometricBusy = true);
+  //   try {
+  //     final biometricService = sl<BiometricService>();
+  //     final ok = await biometricService.authenticate(
+  //       reason: 'Sign in to ClaimAI',
+  //     );
+  //     if (!mounted) return;
+  //     if (!ok) {
+  //       _bioFailCount += 1;
+  //       if (_bioFailCount >= _maxBioFailures) {
+  //         await sl<LocalStorage>().setBiometricEnabled(false);
+  //         if (!mounted) return;
+  //         setState(() => _showBiometricButton = false);
+  //         _showError(
+  //           'Biometric login disabled after $_maxBioFailures failed attempts. Please sign in with OTP.',
+  //         );
+  //       } else {
+  //         _showError('Biometric authentication failed — try again.');
+  //       }
+  //       return;
+  //     }
+  //
+  //     // Biometric ok — validate the stored session against the server. The
+  //     // Dio interceptor will refresh-on-401, so a Right means we can route
+  //     // straight to Home; a Left means both tokens are dead and we must
+  //     // fall back to OTP.
+  //     final probe = await sl<GetUserProfileUseCase>()(const NoParams());
+  //     if (!mounted) return;
+  //     probe.fold(
+  //       (_) async {
+  //         await sl<AuthRepository>().logout();
+  //         if (!mounted) return;
+  //         setState(() => _showBiometricButton = false);
+  //         _showError('Session expired, please sign in again.');
+  //       },
+  //       (_) {
+  //         Navigator.of(context).pushNamedAndRemoveUntil(
+  //           AppRoutes.home,
+  //           (_) => false,
+  //         );
+  //       },
+  //     );
+  //   } finally {
+  //     if (mounted) setState(() => _biometricBusy = false);
+  //   }
+  // }
 
   @override
   void dispose() {
@@ -178,6 +259,52 @@ class _LoginPageState extends State<LoginPage> {
                 );
               },
             ),
+            // Biometric login temporarily disabled.
+            // if (_showBiometricButton) ...[
+            //   const SizedBox(height: 16),
+            //   Row(
+            //     children: const [
+            //       Expanded(child: Divider(color: Color(0xFFE5E7EB))),
+            //       Padding(
+            //         padding: EdgeInsets.symmetric(horizontal: 12),
+            //         child: Text(
+            //           'or',
+            //           style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
+            //         ),
+            //       ),
+            //       Expanded(child: Divider(color: Color(0xFFE5E7EB))),
+            //     ],
+            //   ),
+            //   const SizedBox(height: 16),
+            //   SizedBox(
+            //     width: double.infinity,
+            //     height: 50,
+            //     child: OutlinedButton.icon(
+            //       onPressed: _biometricBusy ? null : _onBiometricLogin,
+            //       style: OutlinedButton.styleFrom(
+            //         foregroundColor: const Color(0xFF1A1A2E),
+            //         side: const BorderSide(color: Color(0xFFE5E7EB)),
+            //         shape: RoundedRectangleBorder(
+            //           borderRadius: BorderRadius.circular(25),
+            //         ),
+            //       ),
+            //       icon: _biometricBusy
+            //           ? const SizedBox(
+            //               width: 18,
+            //               height: 18,
+            //               child: CircularProgressIndicator(strokeWidth: 2),
+            //             )
+            //           : const Icon(Icons.fingerprint, size: 22),
+            //       label: const Text(
+            //         'Sign in with biometrics',
+            //         style: TextStyle(
+            //           fontSize: 14,
+            //           fontWeight: FontWeight.w500,
+            //         ),
+            //       ),
+            //     ),
+            //   ),
+            // ],
           ],
         ),
       ),

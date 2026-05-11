@@ -3,7 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:claim_ai/features/assistant/presentation/pages/claim_chat_screen.dart';
 import 'package:claim_ai/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:claim_ai/features/auth/presentation/cubit/auth_state.dart';
-import 'package:claim_ai/features/claims/presentation/pages/voice_mode_screen.dart';
+import 'package:claim_ai/features/assistant/presentation/pages/voice_mode_screen.dart';
 
 // ─── Design Tokens ───────────────────────────────────────────────────────────
 const _kBg = Color(0xFFF0F2F7);

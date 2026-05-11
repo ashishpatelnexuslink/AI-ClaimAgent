@@ -34,15 +34,6 @@ import 'package:claim_ai/features/claims/domain/usecases/get_claim_detail_usecas
 import 'package:claim_ai/features/claims/domain/usecases/get_dashboard_summary_usecase.dart';
 import 'package:claim_ai/features/claims/presentation/cubit/claims_cubit.dart';
 
-// Chat
-import 'package:claim_ai/features/chat/data/datasources/chat_local_datasource.dart';
-import 'package:claim_ai/features/chat/data/datasources/chat_remote_datasource.dart';
-import 'package:claim_ai/features/chat/data/repositories/chat_repository_impl.dart';
-import 'package:claim_ai/features/chat/domain/repositories/chat_repository.dart';
-import 'package:claim_ai/features/chat/domain/usecases/send_message_usecase.dart';
-import 'package:claim_ai/features/chat/domain/usecases/get_chat_history_usecase.dart';
-import 'package:claim_ai/features/chat/presentation/cubit/chat_cubit.dart';
-
 // Notifications
 import 'package:claim_ai/features/notifications/data/datasources/notifications_remote_datasource.dart';
 import 'package:claim_ai/features/notifications/data/repositories/notifications_repository_impl.dart';
@@ -177,35 +168,8 @@ Future<void> init() async {
     ),
   );
 
-  // ============ CHAT ============
+  // ============ ASSISTANT (chatbot stack) ============
   sl.registerLazySingleton<ChatTranscriptWriter>(() => ChatTranscriptWriter());
-  sl.registerLazySingleton<ChatRemoteDataSource>(
-    () => ChatRemoteDataSourceImpl(client: sl<DioClient>()),
-  );
-  sl.registerLazySingleton<ChatLocalDataSource>(
-    () => ChatLocalDataSourceImpl(),
-  );
-  sl.registerLazySingleton<ChatRepository>(
-    () => ChatRepositoryImpl(
-      remoteDataSource: sl<ChatRemoteDataSource>(),
-      localDataSource: sl<ChatLocalDataSource>(),
-      networkInfo: sl<NetworkInfo>(),
-    ),
-  );
-  sl.registerLazySingleton(
-    () => SendMessageUseCase(repository: sl<ChatRepository>()),
-  );
-  sl.registerLazySingleton(
-    () => GetChatHistoryUseCase(repository: sl<ChatRepository>()),
-  );
-
-  // Cubit
-  sl.registerFactory(
-    () => ChatCubit(
-      sendMessageUseCase: sl<SendMessageUseCase>(),
-      getChatHistoryUseCase: sl<GetChatHistoryUseCase>(),
-    ),
-  );
 
   // ============ NOTIFICATIONS ============
   sl.registerLazySingleton<NotificationsRemoteDataSource>(
