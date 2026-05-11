@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:geocoding/geocoding.dart';
@@ -281,30 +281,51 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     }
   }
 
+  static const MethodChannel _audioRouteChannel = MethodChannel(
+    'com.claimai/audio_route',
+  );
+
+  /// Force TTS output to the built-in speaker on iOS. Without this, the
+  /// `playAndRecord` category routes audio to the receiver (earpiece) — so
+  /// users hear the bot only when holding the phone to their ear.
+  ///
+  /// `flutter_tts`'s `defaultToSpeaker` category option is set up at init,
+  /// but SFSpeechRecognizer flips the audio route back to the receiver
+  /// whenever it activates the mic. The only reliable iOS API to undo that
+  /// is `AVAudioSession.overrideOutputAudioPort(.speaker)`, which is exposed
+  /// via the native `AudioRoutePlugin`. Re-applied before every `speak()`.
+  Future<void> _applyIosSpeakerRoute() async {
+    if (!Platform.isIOS) return;
+    try {
+      await _tts.setSharedInstance(true);
+      await _tts.setIosAudioCategory(
+        IosTextToSpeechAudioCategory.playAndRecord,
+        [
+          IosTextToSpeechAudioCategoryOptions.defaultToSpeaker,
+          IosTextToSpeechAudioCategoryOptions.allowBluetooth,
+          IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
+        ],
+        IosTextToSpeechAudioMode.voicePrompt,
+      );
+    } catch (_) {
+      // Older flutter_tts builds may lack one of these APIs — fall through
+      // and accept whatever the default session is.
+    }
+    try {
+      await _audioRouteChannel.invokeMethod<bool>('routeToSpeaker');
+    } catch (_) {
+      // Native channel may not be registered (debug hot-restart edge case).
+      // The flutter_tts category set above is the fallback.
+    }
+  }
+
   Future<void> _initTts() async {
     // iOS-only: opt into a shared `playAndRecord` audio session so the mic
     // stays usable after TTS playback. flutter_tts defaults to `playback`,
     // which is exclusive — once it has been activated, SFSpeechRecognizer
     // can't acquire the input route, so on iPhone the listening UI silently
     // does nothing after the first bot reply.
-    if (Platform.isIOS) {
-      try {
-        await _tts.setSharedInstance(true);
-        await _tts.setIosAudioCategory(
-          IosTextToSpeechAudioCategory.playAndRecord,
-          [
-            IosTextToSpeechAudioCategoryOptions.defaultToSpeaker,
-            IosTextToSpeechAudioCategoryOptions.allowBluetooth,
-            IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
-            IosTextToSpeechAudioCategoryOptions.mixWithOthers,
-          ],
-          IosTextToSpeechAudioMode.voicePrompt,
-        );
-      } catch (_) {
-        // Older flutter_tts builds may lack one of these APIs — fall through
-        // and accept whatever the default session is.
-      }
-    }
+    await _applyIosSpeakerRoute();
     // Android: the TTS service binds asynchronously. setLanguage internally
     // calls Android's isLanguageAvailable, and on a dead binder Android
     // returns LANG_NOT_SUPPORTED *without throwing*. flutter_tts then resolves
@@ -491,6 +512,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     if (messageIndex != null) {
       _pendingSpeech.add(SpeechEntry(messageIndex, spoken.length));
     }
+    // Force speaker output before each utterance. SFSpeechRecognizer can flip
+    // the iOS audio route to the receiver while listening, so without this the
+    // bot's voice plays out of the earpiece instead of the speaker.
+    await _applyIosSpeakerRoute();
     await _tts.speak(spoken);
   }
 
@@ -573,6 +598,16 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     _cancelAutoListen();
     _voice.dispose();
     _tts.stop();
+    // Stop the iOS route-change observer from force-routing audio to the
+    // speaker once the user leaves voice mode (other screens may want the
+    // receiver, e.g. a phone-call-style UI).
+    if (Platform.isIOS) {
+      unawaited(
+        _audioRouteChannel
+            .invokeMethod<bool>('releaseSpeakerRoute')
+            .catchError((_) => false),
+      );
+    }
     _textController.dispose();
     _inputFocus.dispose();
     _locationController.dispose();
@@ -727,6 +762,13 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
   void _handleChipSelection(String value) {
     if (_botTyping) return;
+    // Tapping a suggestion is a deliberate user action — kill any in-progress
+    // mic session and pending auto-listen timer so the recognizer doesn't keep
+    // listening (or fire later) while we process the tap.
+    _cancelAutoListen();
+    if (_voice.isListening) {
+      unawaited(_voice.cancel());
+    }
     _addUserMessage(value);
     _streamBotReply(value);
   }
@@ -1189,10 +1231,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     // (not the original GET_IMAGE trigger card — that one stays in chat).
     final ChatMessage? failureCardToReplace =
         (originatingMsg != null &&
-                (originatingMsg.validationFailedAngles.isNotEmpty ||
-                    originatingMsg.validationFailedLegacy))
-            ? originatingMsg
-            : null;
+            (originatingMsg.validationFailedAngles.isNotEmpty ||
+                originatingMsg.validationFailedLegacy))
+        ? originatingMsg
+        : null;
     if (category == 'vehicle_photos' ||
         category == 'damage_photos' ||
         category == 'driver_license') {
@@ -1306,8 +1348,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         // the single-button legacy widget.
         final effectiveFailedAngles =
             (failedAngles.isEmpty && !isLegacy && allowedAngles.isNotEmpty)
-                ? allowedAngles
-                : failedAngles;
+            ? allowedAngles
+            : failedAngles;
         // Snapshot the rejected paths so the failure card can detect when
         // the user picks a replacement (re-enabling Submit). The picked
         // images themselves stay in `_angleImages` so their thumbnails
@@ -1324,8 +1366,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                 ? result.failureReason!
                 : 'Image validation failed. Please re-upload.',
             type: 'bot',
-            validationFailedAngles:
-                useLegacy ? const [] : List<String>.from(effectiveFailedAngles),
+            validationFailedAngles: useLegacy
+                ? const []
+                : List<String>.from(effectiveFailedAngles),
             validationFailedLegacy: useLegacy,
             validationGroupKey: result.groupKey,
             validationAllowedAngles: allowedAngles,
@@ -1556,6 +1599,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
   void _onSkipDocuments() {
     if (_botTyping) return;
+    _cancelAutoListen();
+    if (_voice.isListening) {
+      unawaited(_voice.cancel());
+    }
     setState(() => _pickedDocuments.clear());
     _addUserMessage('Skip');
     _streamBotReply('Skip');
@@ -2362,6 +2409,26 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           onSubmit: _onSubmitClaim,
           isSubmitting: _submittingClaim,
         );
+      case 'SKIP':
+        return GestureDetector(
+          onTap: () => _handleChipSelection('Skip'),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: kVmBlue),
+            ),
+            child: const Text(
+              'Skip',
+              style: TextStyle(
+                fontSize: 13,
+                color: kVmBlue,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        );
       default:
         return const SizedBox.shrink();
     }
@@ -2393,8 +2460,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     // chip (e.g. GET_DOCUMENT for supporting_docs). Treat that as skippable
     // so the inline Skip pill renders alongside the trigger card.
     final chips = msg.chips;
-    if (chips != null &&
-        chips.any((s) => s.trim().toLowerCase() == 'skip')) {
+    if (chips != null && chips.any((s) => s.trim().toLowerCase() == 'skip')) {
       return true;
     }
     return false;
