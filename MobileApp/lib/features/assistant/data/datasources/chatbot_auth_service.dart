@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:claim_ai/config/app_config.dart';
-import 'package:claim_ai/models/token_model.dart';
+import 'package:claim_ai/features/assistant/data/models/token_model.dart';
 
 /// Handles silent, background authentication.
 ///

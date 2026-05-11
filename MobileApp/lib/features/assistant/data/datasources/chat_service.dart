@@ -3,8 +3,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 
 import 'package:claim_ai/config/app_config.dart';
-import 'package:claim_ai/models/chat_stream_message.dart';
-import 'package:claim_ai/services/api_client.dart';
+import 'package:claim_ai/features/assistant/data/models/chat_stream_message.dart';
+import 'package:claim_ai/features/assistant/data/datasources/chatbot_api_client.dart';
 
 /// Simplified chat service that delegates all auth handling to [ApiClient].
 ///

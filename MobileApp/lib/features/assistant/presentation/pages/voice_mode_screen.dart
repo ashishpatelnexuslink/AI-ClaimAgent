@@ -21,27 +21,27 @@ import 'package:claim_ai/features/assistant/presentation/widgets/sample_images_d
 import 'package:claim_ai/features/claims/presentation/cubit/claims_cubit.dart';
 import 'package:claim_ai/features/claims/data/datasources/claims_remote_datasource.dart';
 import 'package:claim_ai/injection_container.dart' as di;
-import 'package:claim_ai/services/chat_service.dart';
-import 'package:claim_ai/features/claims/presentation/widgets/voice_mode/bot_avatar.dart';
-import 'package:claim_ai/features/claims/presentation/widgets/voice_mode/chat_chips.dart';
-import 'package:claim_ai/features/claims/presentation/widgets/voice_mode/formatted_text.dart';
-import 'package:claim_ai/features/claims/presentation/widgets/voice_mode/user_bubble.dart';
-import 'package:claim_ai/features/claims/presentation/widgets/voice_mode/listening_banner.dart';
-import 'package:claim_ai/features/claims/presentation/widgets/voice_mode/pill_button.dart';
-import 'package:claim_ai/features/claims/presentation/widgets/voice_mode/state_avatar.dart';
-import 'package:claim_ai/features/claims/presentation/widgets/voice_mode/typing_indicator.dart';
-import 'package:claim_ai/features/claims/presentation/widgets/voice_mode/voice_mode_colors.dart';
-import 'package:claim_ai/features/claims/presentation/widgets/voice_mode/voice_mode_header.dart';
-import 'package:claim_ai/features/claims/presentation/widgets/voice_mode/voice_mode_input_bar.dart';
-import 'package:claim_ai/features/claims/presentation/widgets/voice_mode/voice_mode_models.dart';
-import 'package:claim_ai/features/claims/presentation/widgets/voice_mode/triggers/date_time_trigger.dart';
-import 'package:claim_ai/features/claims/presentation/widgets/voice_mode/triggers/document_trigger.dart';
-import 'package:claim_ai/features/claims/presentation/widgets/voice_mode/triggers/final_summary_card.dart';
-import 'package:claim_ai/features/claims/presentation/widgets/voice_mode/triggers/policy_card.dart';
-import 'package:claim_ai/features/claims/presentation/widgets/voice_mode/triggers/image_trigger.dart';
-import 'package:claim_ai/features/claims/presentation/widgets/voice_mode/triggers/image_validation_card.dart';
-import 'package:claim_ai/features/claims/presentation/widgets/voice_mode/triggers/location_trigger.dart';
-import 'package:claim_ai/features/claims/presentation/widgets/voice_mode/triggers/submit_claim_trigger.dart';
+import 'package:claim_ai/features/assistant/data/datasources/chat_service.dart';
+import 'package:claim_ai/features/assistant/presentation/widgets/voice_mode/bot_avatar.dart';
+import 'package:claim_ai/features/assistant/presentation/widgets/voice_mode/chat_chips.dart';
+import 'package:claim_ai/features/assistant/presentation/widgets/voice_mode/formatted_text.dart';
+import 'package:claim_ai/features/assistant/presentation/widgets/voice_mode/user_bubble.dart';
+import 'package:claim_ai/features/assistant/presentation/widgets/voice_mode/listening_banner.dart';
+import 'package:claim_ai/features/assistant/presentation/widgets/voice_mode/pill_button.dart';
+import 'package:claim_ai/features/assistant/presentation/widgets/voice_mode/state_avatar.dart';
+import 'package:claim_ai/features/assistant/presentation/widgets/voice_mode/typing_indicator.dart';
+import 'package:claim_ai/features/assistant/presentation/widgets/voice_mode/voice_mode_colors.dart';
+import 'package:claim_ai/features/assistant/presentation/widgets/voice_mode/voice_mode_header.dart';
+import 'package:claim_ai/features/assistant/presentation/widgets/voice_mode/voice_mode_input_bar.dart';
+import 'package:claim_ai/features/assistant/presentation/widgets/voice_mode/voice_mode_models.dart';
+import 'package:claim_ai/features/assistant/presentation/widgets/voice_mode/triggers/date_time_trigger.dart';
+import 'package:claim_ai/features/assistant/presentation/widgets/voice_mode/triggers/document_trigger.dart';
+import 'package:claim_ai/features/assistant/presentation/widgets/voice_mode/triggers/final_summary_card.dart';
+import 'package:claim_ai/features/assistant/presentation/widgets/voice_mode/triggers/policy_card.dart';
+import 'package:claim_ai/features/assistant/presentation/widgets/voice_mode/triggers/image_trigger.dart';
+import 'package:claim_ai/features/assistant/presentation/widgets/voice_mode/triggers/image_validation_card.dart';
+import 'package:claim_ai/features/assistant/presentation/widgets/voice_mode/triggers/location_trigger.dart';
+import 'package:claim_ai/features/assistant/presentation/widgets/voice_mode/triggers/submit_claim_trigger.dart';
 
 /// Running progress for a single GET_DOCUMENT trigger so the user can satisfy
 /// `min_count` across multiple separate uploads.

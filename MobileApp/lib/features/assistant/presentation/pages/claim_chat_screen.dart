@@ -14,7 +14,7 @@ import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import 'package:claim_ai/core/navigation/app_routes.dart';
 import 'package:claim_ai/core/storage/chat_transcript_writer.dart';
-import 'package:claim_ai/services/chat_service.dart';
+import 'package:claim_ai/features/assistant/data/datasources/chat_service.dart';
 import 'package:claim_ai/features/assistant/presentation/widgets/sample_images_dialog.dart';
 import 'package:claim_ai/features/claims/data/datasources/claims_remote_datasource.dart';
 import 'package:claim_ai/injection_container.dart' as di;

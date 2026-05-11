@@ -8,7 +8,7 @@ import 'package:claim_ai/features/auth/presentation/cubit/auth_state.dart';
 import 'package:claim_ai/features/claims/presentation/cubit/claims_cubit.dart';
 import 'package:claim_ai/features/claims/presentation/cubit/claims_state.dart';
 import 'package:claim_ai/features/claims/presentation/pages/claims_list_page.dart';
-import 'package:claim_ai/features/claims/presentation/pages/profile_screen.dart';
+import 'package:claim_ai/features/profile/presentation/pages/profile_screen.dart';
 import 'package:claim_ai/features/notifications/presentation/cubit/notifications_cubit.dart';
 import 'package:claim_ai/features/notifications/presentation/cubit/notifications_state.dart';
 

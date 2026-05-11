@@ -3,7 +3,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:claim_ai/app.dart';
 import 'package:claim_ai/core/config/env_config.dart';
 import 'package:claim_ai/injection_container.dart' as di;
-import 'package:claim_ai/services/auth_service.dart';
+import 'package:claim_ai/features/assistant/data/datasources/chatbot_auth_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
