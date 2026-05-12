@@ -88,6 +88,9 @@ dependencies:
   flutter_secure_storage: ^9.2.3
   local_auth: ^3.0.1
 
+  # International phone number input (country picker + dial code + validation)
+  intl_phone_number_input: ^0.7.4
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
