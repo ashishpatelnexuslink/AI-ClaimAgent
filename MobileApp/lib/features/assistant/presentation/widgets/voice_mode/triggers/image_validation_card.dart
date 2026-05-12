@@ -41,28 +41,19 @@ class ImageValidationFailureList extends StatelessWidget {
       failedAnglePaths[a] != null &&
       angleImages[a]?.path == failedAnglePaths[a];
 
+
   @override
   Widget build(BuildContext context) {
     final allReplaced = angles.every((a) => !_isStillRejected(a));
     final canSubmit =
         allReplaced && !uploadingFiles && !botTyping && !groupAlreadyUploaded;
     final filledCount = angles.where(angleImages.containsKey).length;
-    final reason = (failureReason ?? '').trim();
+    // The bot bubble already provides the white background + rounded corners
+    // + shadow, so the failure card stays as a transparent inner layout to
+    // avoid the double-bordered "card-in-a-card" look.
     return Container(
       margin: const EdgeInsets.only(top: 6),
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -104,15 +95,34 @@ class ImageValidationFailureList extends StatelessWidget {
                     color: Color(0xFFB00020),
                   ),
                 ),
-                if (reason.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    reason,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFFB00020),
+                if (angles.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  for (final a in angles)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '• ',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFFB00020),
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              '${humanizeAngle(a)} image is not proper. Please re-upload.',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFFB00020),
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
                 ],
               ],
             ),

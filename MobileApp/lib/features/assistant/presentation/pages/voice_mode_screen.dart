@@ -937,9 +937,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     final initial = _dtDate ?? now;
     final date = await showDatePicker(
       context: context,
-      initialDate: initial,
+      initialDate: initial.isAfter(now) ? now : initial,
       firstDate: DateTime(2020),
-      lastDate: DateTime(2030),
+      lastDate: now,
       builder: (context, child) => Theme(
         data: Theme.of(
           context,
@@ -1235,9 +1235,12 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                 originatingMsg.validationFailedLegacy))
         ? originatingMsg
         : null;
-    if (category == 'vehicle_photos' ||
+    // TEMP: `/validate-images` is currently scoped to `vehicle_photos` only.
+    // `damage_photos` and `driver_license` validation is disabled and falls
+    // through to a direct upload until the AI side is ready again.
+    if (category == 'vehicle_photos' /* ||
         category == 'damage_photos' ||
-        category == 'driver_license') {
+        category == 'driver_license' */) {
       final validation = await _runImageValidation(
         questionLabel: category,
         images: {for (final p in prepared) p.angle: base64Encode(p.bytes)},
@@ -1322,6 +1325,30 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         threadId: _threadId,
         images: images,
       );
+    } on TimeoutException catch (e) {
+      debugPrint('[Validate] image validation timed out: $e');
+      if (!mounted) {
+        return ImageValidationResult(valid: false, failureReason: '');
+      }
+      setState(() {
+        _messages.remove(waitingMsg);
+        if (previousFailureMsg != null) {
+          _messages.remove(previousFailureMsg);
+        }
+        _messages.add(
+          ChatMessage(
+            text: 'Something happen Please try again',
+            type: 'bot',
+            validationTimeoutRetry: true,
+            validationRetryImages: Map<String, String>.from(images),
+            validationRetryQuestion: questionLabel,
+            validationRetryIsLegacy: isLegacy,
+            validationAllowedAngles: allowedAngles,
+          ),
+        );
+      });
+      _scrollToBottom();
+      return ImageValidationResult(valid: false, failureReason: '');
     } catch (e) {
       debugPrint('[Validate] image validation failed: $e');
       result = ImageValidationResult(
@@ -1381,6 +1408,19 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     return result;
   }
 
+  Future<void> _onValidationTimeoutRetry(ChatMessage msg) async {
+    final images = msg.validationRetryImages;
+    final question = msg.validationRetryQuestion;
+    if (images == null || question == null) return;
+    setState(() => _messages.remove(msg));
+    await _runImageValidation(
+      questionLabel: question,
+      images: images,
+      isLegacy: msg.validationRetryIsLegacy,
+      allowedAngles: msg.validationAllowedAngles,
+    );
+  }
+
   Future<void> _onSubmitImages() async {
     debugPrint(
       '[Upload] _onSubmitImages enter '
@@ -1411,9 +1451,12 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
     // `vehicle_photos`, `damage_photos`, and `driver_license` run through
     // AI validation; every other group uploads directly.
-    if (category == 'vehicle_photos' ||
+    // TEMP: `/validate-images` is currently scoped to `vehicle_photos` only.
+    // `damage_photos` and `driver_license` validation is disabled and falls
+    // through to a direct upload until the AI side is ready again.
+    if (category == 'vehicle_photos' /* ||
         category == 'damage_photos' ||
-        category == 'driver_license') {
+        category == 'driver_license' */) {
       final validation = await _runImageValidation(
         questionLabel: category,
         images: {
@@ -2219,14 +2262,19 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      FormattedText(
-                        text: visibleText,
-                        baseStyle: const TextStyle(
-                          fontSize: 14,
-                          color: kVmDark,
-                          height: 1.4,
+                      // Suppress the bot text on validation-failure cards —
+                      // the card itself shows the failure reason, so rendering
+                      // `visibleText` here would duplicate it.
+                      if (!(msg.validationFailedAngles.isNotEmpty ||
+                          msg.validationFailedLegacy))
+                        FormattedText(
+                          text: visibleText,
+                          baseStyle: const TextStyle(
+                            fontSize: 14,
+                            color: kVmDark,
+                            height: 1.4,
+                          ),
                         ),
-                      ),
                       if (_showSampleOf(msg))
                         Padding(
                           padding: const EdgeInsets.only(top: 6),
@@ -2260,6 +2308,32 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                           onPickAngleImage: _onPickAngleImage,
                           onSubmit: () =>
                               _onSubmitAngleImages(originatingMsg: msg),
+                        ),
+                      if (msg.validationTimeoutRetry)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 10),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: ElevatedButton.icon(
+                              onPressed: _botTyping || _uploadingFiles
+                                  ? null
+                                  : () => _onValidationTimeoutRetry(msg),
+                              icon: const Icon(Icons.refresh, size: 16),
+                              label: const Text('Try Again'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: kVmBlue,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 10,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                       if (msg.validationFailedLegacy)
                         Padding(
@@ -2468,7 +2542,14 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
   /// Returns `msg.triggers` plus an implicit `SKIP` when `is_skippable` is
   /// set on the payload but `SKIP` isn't already in triggers. De-duplicated.
+  ///
+  /// `GET_DOCUMENT` renders its own Skip pill via [DocumentTrigger], so we
+  /// strip any sibling `SKIP` to avoid showing two Skip controls on the
+  /// same turn.
   List<String> _effectiveTriggers(ChatMessage msg) {
+    if (msg.triggers.contains('GET_DOCUMENT')) {
+      return msg.triggers.where((t) => t != 'SKIP').toList(growable: false);
+    }
     if (!_isSkippable(msg) || msg.triggers.contains('SKIP')) {
       return msg.triggers;
     }

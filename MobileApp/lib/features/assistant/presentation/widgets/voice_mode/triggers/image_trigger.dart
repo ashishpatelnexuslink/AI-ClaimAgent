@@ -342,13 +342,11 @@ class AngleRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Per-angle error text now lives only in the failure card's banner —
+    // the row keeps a neutral "Not uploaded" so the Upload button sits flush.
     final String statusText;
     final Color statusColor;
-    if (stillRejected) {
-      statusText =
-          '${humanizeAngle(angle)} does not match the required view. Please re-upload.';
-      statusColor = const Color(0xFFB00020);
-    } else if (picked == null) {
+    if (stillRejected || picked == null) {
       statusText = 'Not uploaded';
       statusColor = Colors.grey.shade600;
     } else {
@@ -408,24 +406,27 @@ class AngleRow extends StatelessWidget {
             icon: const Icon(Icons.close, size: 18, color: Colors.red),
             visualDensity: VisualDensity.compact,
           ),
-        TextButton.icon(
-          onPressed: (atCap || uploadingFiles) ? null : onPick,
-          icon: Icon(
-            (picked == null || stillRejected)
-                ? Icons.camera_alt_outlined
-                : Icons.refresh,
-            size: 16,
-          ),
-          label: Text(
-            (picked == null || stillRejected) ? 'Upload' : 'Replace',
-            style: const TextStyle(fontSize: 12),
-          ),
-          style: TextButton.styleFrom(
-            foregroundColor: kVmBlue,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+        // "Replace" collapses to a bare refresh icon to match the X next to
+        // it; "Upload" keeps its label + camera icon so the affordance is
+        // obvious on empty rows.
+        if (picked == null || stillRejected)
+          TextButton.icon(
+            onPressed: (atCap || uploadingFiles) ? null : onPick,
+            icon: const Icon(Icons.camera_alt_outlined, size: 16),
+            label: const Text('Upload', style: TextStyle(fontSize: 12)),
+            style: TextButton.styleFrom(
+              foregroundColor: kVmBlue,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              visualDensity: VisualDensity.compact,
+            ),
+          )
+        else
+          IconButton(
+            tooltip: 'Replace',
+            onPressed: (atCap || uploadingFiles) ? null : onPick,
+            icon: const Icon(Icons.refresh, size: 18, color: kVmBlue),
             visualDensity: VisualDensity.compact,
           ),
-        ),
       ],
     );
   }
