@@ -24,12 +24,24 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   final _phoneController = TextEditingController();
+  final _phoneFocusNode = FocusNode();
   PhoneNumber _phoneNumber = PhoneNumber(isoCode: 'IN', dialCode: '+91');
   bool _isPhoneValid = false;
+  bool _isFocused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _phoneFocusNode.addListener(() {
+      if (!mounted) return;
+      setState(() => _isFocused = _phoneFocusNode.hasFocus);
+    });
+  }
 
   @override
   void dispose() {
     _phoneController.dispose();
+    _phoneFocusNode.dispose();
     super.dispose();
   }
 
@@ -47,9 +59,9 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -103,13 +115,31 @@ class _LoginPageState extends State<LoginPage> {
               ),
             ),
             const SizedBox(height: 8),
-            Container(
-              height: 50,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(28),
+              child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              height: 56,
+              padding: const EdgeInsets.symmetric(horizontal: 6),
               decoration: BoxDecoration(
                 color: const Color(0xFFF8F8F8),
-                borderRadius: BorderRadius.circular(25),
-                border: Border.all(color: const Color(0xFFE5E7EB)),
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(
+                  color: _isFocused
+                      ? const Color(0xFF1A1A2E)
+                      : const Color(0xFFE5E7EB),
+                  width: _isFocused ? 1.5 : 1,
+                ),
+                boxShadow: _isFocused
+                    ? [
+                        BoxShadow(
+                          color: const Color(0xFF1A1A2E).withValues(alpha: 0.06),
+                          blurRadius: 12,
+                          offset: const Offset(0, 2),
+                        ),
+                      ]
+                    : null,
               ),
               child: InternationalPhoneNumberInput(
                 onInputChanged: (PhoneNumber number) {
@@ -122,46 +152,85 @@ class _LoginPageState extends State<LoginPage> {
                   selectorType: PhoneInputSelectorType.BOTTOM_SHEET,
                   useEmoji: true,
                   setSelectorButtonAsPrefixIcon: true,
-                  leadingPadding: 8,
+                  leadingPadding: 10,
                   trailingSpace: false,
+                  useBottomSheetSafeArea: true,
                 ),
                 ignoreBlank: false,
                 autoValidateMode: AutovalidateMode.disabled,
                 selectorTextStyle: const TextStyle(
-                  fontSize: 14,
-                  color: Color(0xFF374151),
-                  fontWeight: FontWeight.w500,
+                  fontSize: 15,
+                  color: Color(0xFF1A1A2E),
+                  fontWeight: FontWeight.w600,
                 ),
                 initialValue: _phoneNumber,
                 textFieldController: _phoneController,
-                formatInput: false,
+                focusNode: _phoneFocusNode,
+                cursorColor: const Color(0xFF1A1A2E),
+                formatInput: true,
                 keyboardType: const TextInputType.numberWithOptions(
                   signed: true,
                   decimal: false,
                 ),
-                inputDecoration: const InputDecoration(
+                inputDecoration: InputDecoration(
                   border: InputBorder.none,
                   enabledBorder: InputBorder.none,
                   focusedBorder: InputBorder.none,
+                  filled: true,
+                  fillColor: Colors.transparent,
                   hintText: 'Mobile number',
-                  hintStyle: TextStyle(
+                  hintStyle: const TextStyle(
                     color: Color(0xFFBDBDBD),
-                    fontSize: 14,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w400,
                   ),
-                  contentPadding: EdgeInsets.symmetric(vertical: 14),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 16),
+                  prefixIcon: Container(
+                    margin: const EdgeInsets.only(left: 4, right: 10),
+                    width: 1,
+                    height: 24,
+                    color: const Color(0xFFE5E7EB),
+                  ),
+                  prefixIconConstraints: const BoxConstraints(
+                    minWidth: 15,
+                    minHeight: 24,
+                  ),
                 ),
                 textStyle: const TextStyle(
-                  fontSize: 14,
+                  fontSize: 15,
                   color: Color(0xFF1A1A2E),
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 0.2,
                 ),
                 searchBoxDecoration: InputDecoration(
                   hintText: 'Search country or code',
-                  prefixIcon: const Icon(Icons.search, size: 20),
+                  hintStyle: const TextStyle(
+                    color: Color(0xFFBDBDBD),
+                    fontSize: 14,
+                  ),
+                  prefixIcon: const Icon(
+                    Icons.search,
+                    size: 20,
+                    color: Color(0xFF9CA3AF),
+                  ),
+                  filled: true,
+                  fillColor: const Color(0xFFF8F8F8),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 0),
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: Color(0xFF9CA3AF)),
                   ),
                 ),
                 spaceBetweenSelectorAndTextField: 0,
+              ),
               ),
             ),
             const SizedBox(height: 24),
