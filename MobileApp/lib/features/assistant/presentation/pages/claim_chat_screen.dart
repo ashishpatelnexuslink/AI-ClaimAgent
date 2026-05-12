@@ -335,9 +335,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     final initial = _dtDate ?? now;
     final date = await showDatePicker(
       context: context,
-      initialDate: initial,
+      initialDate: initial.isAfter(now) ? now : initial,
       firstDate: DateTime(2020),
-      lastDate: DateTime(2030),
+      lastDate: now,
       builder: (context, child) => Theme(
         data: Theme.of(
           context,
@@ -1573,24 +1573,40 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            msg.animate
-                                ? _TypewriterText(
-                                    text: msg.text,
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      color: _kDark,
-                                      height: 1.4,
+                            // Suppress the bot text on validation-failure cards
+                            // and the timeout-retry card — the card itself
+                            // already carries the failure reason, so rendering
+                            // `msg.text` here would duplicate it.
+                            if (!(msg.validationFailedAngles.isNotEmpty ||
+                                msg.validationFailedLegacy ||
+                                msg.validationTimeoutRetry))
+                              msg.animate
+                                  ? _TypewriterText(
+                                      text: msg.text,
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        color: _kDark,
+                                        height: 1.4,
+                                      ),
+                                      onComplete: _showNextPendingMessage,
+                                      onUpdate: _followGrowth,
+                                    )
+                                  : MarkdownBody(
+                                      data: msg.text,
+                                      selectable: true,
+                                      fitContent: true,
+                                      shrinkWrap: true,
+                                      styleSheet: _botMarkdownStyle,
                                     ),
-                                    onComplete: _showNextPendingMessage,
-                                    onUpdate: _followGrowth,
-                                  )
-                                : MarkdownBody(
-                                    data: msg.text,
-                                    selectable: true,
-                                    fitContent: true,
-                                    shrinkWrap: true,
-                                    styleSheet: _botMarkdownStyle,
-                                  ),
+                            if (msg.validationTimeoutRetry)
+                              Text(
+                                msg.text,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: _kDark,
+                                  height: 1.4,
+                                ),
+                              ),
                             if (_showSampleOf(msg)) _buildSeeSampleLink(msg),
                             if (msg.validationFailedAngles.isNotEmpty)
                               _buildValidationFailureList(
@@ -1599,6 +1615,8 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                               ),
                             if (msg.validationFailedLegacy)
                               _buildLegacyValidationFailure(),
+                            if (msg.validationTimeoutRetry)
+                              _buildValidationTimeoutRetry(msg),
                           ],
                         ),
                 ),
@@ -1805,9 +1823,12 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                     originatingMsg.validationFailedLegacy))
             ? originatingMsg
             : null;
-    if (category == 'vehicle_photos' ||
+    // TEMP: `/validate-images` is currently scoped to `vehicle_photos` only.
+    // `damage_photos` and `driver_license` validation is disabled and falls
+    // through to a direct upload until the AI side is ready again.
+    if (category == 'vehicle_photos' /* ||
         category == 'damage_photos' ||
-        category == 'driver_license') {
+        category == 'driver_license' */) {
       final validation = await _runImageValidation(
         questionLabel: category,
         images: {for (final p in prepared) p.angle: base64Encode(p.bytes)},
@@ -1902,6 +1923,30 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         threadId: _threadId,
         images: images,
       );
+    } on TimeoutException catch (e) {
+      debugPrint('[Validate] image validation timed out: $e');
+      if (!mounted) {
+        return ImageValidationResult(valid: false, failureReason: '');
+      }
+      setState(() {
+        _messages.remove(waitingMsg);
+        if (previousFailureMsg != null) {
+          _messages.remove(previousFailureMsg);
+        }
+        _messages.add(
+          _ChatMsg(
+            text: 'Something happen Please try again',
+            isUser: false,
+            validationTimeoutRetry: true,
+            validationRetryImages: Map<String, String>.from(images),
+            validationRetryQuestion: questionLabel,
+            validationRetryIsLegacy: isLegacy,
+            validationAllowedAngles: allowedAngles,
+          ),
+        );
+      });
+      _scrollToBottom();
+      return ImageValidationResult(valid: false, failureReason: '');
     } catch (e) {
       debugPrint('[Validate] image validation failed: $e');
       result = ImageValidationResult(
@@ -1970,6 +2015,46 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     return result;
   }
 
+  /// Renders only a "Try Again" button for a `/validate-images` TimeoutException.
+  /// Re-fires the exact same request that timed out.
+  Widget _buildValidationTimeoutRetry(_ChatMsg msg) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: ElevatedButton.icon(
+          onPressed: _botTyping || _uploadingFiles
+              ? null
+              : () => _onValidationTimeoutRetry(msg),
+          icon: const Icon(Icons.refresh, size: 16),
+          label: const Text('Try Again'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _kBlue,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _onValidationTimeoutRetry(_ChatMsg msg) async {
+    final images = msg.validationRetryImages;
+    final question = msg.validationRetryQuestion;
+    if (images == null || question == null) return;
+    setState(() => _messages.remove(msg));
+    await _runImageValidation(
+      questionLabel: question,
+      images: images,
+      isLegacy: msg.validationRetryIsLegacy,
+      allowedAngles: msg.validationAllowedAngles,
+    );
+  }
+
   /// Re-renders the same legacy GET_IMAGE trigger card inside the failure
   /// bubble so the user can remove rejected images, add more, and resubmit.
   /// `_pickedImages` is preserved on validation failure, so the originally
@@ -2005,22 +2090,12 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     final canSubmit =
         allReplaced && !_uploadingFiles && !_botTyping && !groupAlreadyDone;
     final filledCount = angles.where(_angleImages.containsKey).length;
-    final reason = msg.text.trim();
+    // The bot bubble already provides the white background + rounded corners
+    // + shadow, so the failure card stays as a transparent inner layout to
+    // avoid the double-bordered "card-in-a-card" look.
     return Container(
       margin: const EdgeInsets.only(top: 6),
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -2062,15 +2137,34 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                     color: Color(0xFFB00020),
                   ),
                 ),
-                if (reason.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    reason,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Color(0xFFB00020),
+                if (angles.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  for (final a in angles)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '• ',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFFB00020),
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              '${_humanizeAngle(a)} image is not proper. Please re-upload.',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFFB00020),
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
                 ],
               ],
             ),
@@ -2192,9 +2286,12 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
 
     // `vehicle_photos`, `damage_photos`, and `driver_license` run through
     // AI validation; every other group uploads directly.
-    if (category == 'vehicle_photos' ||
+    // TEMP: `/validate-images` is currently scoped to `vehicle_photos` only.
+    // `damage_photos` and `driver_license` validation is disabled and falls
+    // through to a direct upload until the AI side is ready again.
+    if (category == 'vehicle_photos' /* ||
         category == 'damage_photos' ||
-        category == 'driver_license') {
+        category == 'driver_license' */) {
       final validation = await _runImageValidation(
         questionLabel: category,
         images: {
@@ -3406,13 +3503,11 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     final stillRejected =
         _failedAnglePaths[angle] != null &&
         picked?.path == _failedAnglePaths[angle];
+    // Per-angle error text now lives only in the failure card's banner —
+    // the row keeps a neutral "Not uploaded" so the Upload button sits flush.
     final String statusText;
     final Color statusColor;
-    if (stillRejected) {
-      statusText =
-          '${_humanizeAngle(angle)} does not match the required view. Please re-upload.';
-      statusColor = const Color(0xFFB00020);
-    } else if (picked == null) {
+    if (stillRejected || picked == null) {
       statusText = 'Not uploaded';
       statusColor = Colors.grey.shade600;
     } else {
@@ -3472,26 +3567,31 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
             icon: const Icon(Icons.close, size: 18, color: Colors.red),
             visualDensity: VisualDensity.compact,
           ),
-        TextButton.icon(
-          onPressed: (atCap || _uploadingFiles)
-              ? null
-              : () => _onPickAngleImage(angle),
-          icon: Icon(
-            (picked == null || stillRejected)
-                ? Icons.camera_alt_outlined
-                : Icons.refresh,
-            size: 16,
-          ),
-          label: Text(
-            (picked == null || stillRejected) ? 'Upload' : 'Replace',
-            style: const TextStyle(fontSize: 12),
-          ),
-          style: TextButton.styleFrom(
-            foregroundColor: _kBlue,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+        // "Replace" collapses to a bare refresh icon to match the X next to
+        // it; "Upload" keeps its label + camera icon so the affordance is
+        // obvious on empty rows.
+        if (picked == null || stillRejected)
+          TextButton.icon(
+            onPressed: (atCap || _uploadingFiles)
+                ? null
+                : () => _onPickAngleImage(angle),
+            icon: const Icon(Icons.camera_alt_outlined, size: 16),
+            label: const Text('Upload', style: TextStyle(fontSize: 12)),
+            style: TextButton.styleFrom(
+              foregroundColor: _kBlue,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              visualDensity: VisualDensity.compact,
+            ),
+          )
+        else
+          IconButton(
+            tooltip: 'Replace',
+            onPressed: (atCap || _uploadingFiles)
+                ? null
+                : () => _onPickAngleImage(angle),
+            icon: const Icon(Icons.refresh, size: 18, color: _kBlue),
             visualDensity: VisualDensity.compact,
           ),
-        ),
       ],
     );
   }
@@ -4018,6 +4118,17 @@ class _ChatMsg {
   /// batch on each call.
   final List<String> validationAllowedAngles;
 
+  /// Set when `/validate-images` aborted with a TimeoutException. Renders a
+  /// minimal bubble that shows only a "Try Again" button which re-fires the
+  /// same request — no re-upload UI, no other failure messaging.
+  final bool validationTimeoutRetry;
+
+  /// Snapshot of the request that timed out, used to re-fire the exact same
+  /// `/validate-images` call when the user taps "Try Again".
+  final Map<String, String>? validationRetryImages;
+  final String? validationRetryQuestion;
+  final bool validationRetryIsLegacy;
+
   const _ChatMsg({
     required this.text,
     required this.isUser,
@@ -4034,6 +4145,10 @@ class _ChatMsg {
     this.validationFailedLegacy = false,
     this.validationGroupKey,
     this.validationAllowedAngles = const [],
+    this.validationTimeoutRetry = false,
+    this.validationRetryImages,
+    this.validationRetryQuestion,
+    this.validationRetryIsLegacy = false,
   });
 }
 

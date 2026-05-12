@@ -31,6 +31,17 @@ class ChatMessage {
   /// batch on each call.
   final List<String> validationAllowedAngles;
 
+  /// Set when `/validate-images` aborted with a TimeoutException. Renders a
+  /// minimal bubble that shows only a "Try Again" button which re-fires the
+  /// same request — no re-upload UI, no other failure messaging.
+  final bool validationTimeoutRetry;
+
+  /// Snapshot of the request that timed out, used to re-fire the exact same
+  /// `/validate-images` call when the user taps "Try Again".
+  final Map<String, String>? validationRetryImages;
+  final String? validationRetryQuestion;
+  final bool validationRetryIsLegacy;
+
   const ChatMessage({
     required this.text,
     required this.type,
@@ -47,6 +58,10 @@ class ChatMessage {
     this.validationFailedLegacy = false,
     this.validationGroupKey,
     this.validationAllowedAngles = const [],
+    this.validationTimeoutRetry = false,
+    this.validationRetryImages,
+    this.validationRetryQuestion,
+    this.validationRetryIsLegacy = false,
   });
 }
 
