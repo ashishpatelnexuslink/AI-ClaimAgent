@@ -2,7 +2,8 @@ class ApiConstants {
   ApiConstants._();
 
   // Base URLs per environment
-  static const String devBaseUrl = 'http://192.168.11.5:5030/api';
+  // static const String devBaseUrl = 'http://192.168.11.5:5030/api';
+  static const String devBaseUrl = 'http://172.21.228.121:5030/api';
   //static const String devBaseUrl = 'https://claimai-api.nexuslink.in/api';
   static const String stagingBaseUrl = 'https://claimai-api.nexuslink.in/api';
   static const String prodBaseUrl = 'https://claimai-api.nexuslink.in/api';
@@ -21,6 +22,8 @@ class ApiConstants {
   static const String userProfile = '/mobile/users/profile';
   static const String updateProfile = '/mobile/users/profile';
   static const String uploadProfilePhoto = '/mobile/users/profile/photo';
+  static const String updateBiometricSetting =
+      '/mobile/users/profile/biometric';
 
   // Claims
   static const String claims = '/mobile/claims';

@@ -22,6 +22,8 @@ import 'package:claim_ai/features/auth/domain/usecases/send_otp_usecase.dart';
 import 'package:claim_ai/features/auth/domain/usecases/verify_otp_usecase.dart';
 import 'package:claim_ai/features/auth/domain/usecases/get_user_profile_usecase.dart';
 import 'package:claim_ai/features/auth/domain/usecases/logout_usecase.dart';
+import 'package:claim_ai/features/auth/domain/usecases/biometric_login_usecase.dart';
+import 'package:claim_ai/features/auth/domain/usecases/update_biometric_setting_usecase.dart';
 import 'package:claim_ai/features/auth/presentation/cubit/auth_cubit.dart';
 
 // Claims
@@ -122,6 +124,19 @@ Future<void> init() async {
   sl.registerLazySingleton(
     () => LogoutUseCase(repository: sl<AuthRepository>()),
   );
+  sl.registerLazySingleton(
+    () => BiometricLoginUseCase(
+      repository: sl<AuthRepository>(),
+      biometricService: sl<BiometricService>(),
+      localStorage: sl<LocalStorage>(),
+    ),
+  );
+  sl.registerLazySingleton(
+    () => UpdateBiometricSettingUseCase(
+      repository: sl<AuthRepository>(),
+      biometricService: sl<BiometricService>(),
+    ),
+  );
 
   // Cubit
   sl.registerFactory(
@@ -131,6 +146,8 @@ Future<void> init() async {
       verifyOtpUseCase: sl<VerifyOtpUseCase>(),
       getUserProfileUseCase: sl<GetUserProfileUseCase>(),
       logoutUseCase: sl<LogoutUseCase>(),
+      biometricLoginUseCase: sl<BiometricLoginUseCase>(),
+      updateBiometricSettingUseCase: sl<UpdateBiometricSettingUseCase>(),
       sessionBus: sl<SessionEventBus>(),
     ),
   );

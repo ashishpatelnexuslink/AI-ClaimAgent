@@ -42,3 +42,50 @@ class TimeoutFailure extends Failure {
     super.message = 'Request timed out. Please try again.',
   });
 }
+
+enum BiometricFailureKind {
+  cancelled,
+  notEnrolled,
+  lockedOut,
+  permanentlyLockedOut,
+  passcodeNotSet,
+  unavailable,
+  unknown,
+}
+
+class BiometricFailure extends Failure {
+  final BiometricFailureKind kind;
+
+  const BiometricFailure({required this.kind, required super.message});
+
+  const BiometricFailure.cancelled()
+      : kind = BiometricFailureKind.cancelled,
+        super(message: 'Biometric prompt cancelled.');
+
+  const BiometricFailure.notEnrolled()
+      : kind = BiometricFailureKind.notEnrolled,
+        super(message: 'No biometrics enrolled on this device.');
+
+  const BiometricFailure.lockedOut()
+      : kind = BiometricFailureKind.lockedOut,
+        super(message: 'Too many attempts. Try again in a moment.');
+
+  const BiometricFailure.permanentlyLockedOut()
+      : kind = BiometricFailureKind.permanentlyLockedOut,
+        super(message: 'Biometrics locked. Unlock with your device passcode.');
+
+  const BiometricFailure.passcodeNotSet()
+      : kind = BiometricFailureKind.passcodeNotSet,
+        super(message: 'Set a device passcode to use biometrics.');
+
+  const BiometricFailure.unavailable()
+      : kind = BiometricFailureKind.unavailable,
+        super(message: 'Biometric authentication is not available on this device.');
+
+  const BiometricFailure.unknown([String? message])
+      : kind = BiometricFailureKind.unknown,
+        super(message: message ?? 'Biometric authentication failed.');
+
+  @override
+  List<Object?> get props => [kind, message];
+}

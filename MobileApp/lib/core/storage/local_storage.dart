@@ -34,6 +34,10 @@ class LocalStorage {
   Future<void> clearTokens() async {
     await _secureStorage.delete(key: _accessTokenKey);
     await _secureStorage.delete(key: _refreshTokenKey);
+    // NOTE: the biometric flag is intentionally NOT cleared here. Token clears
+    // also fire on 401/refresh failures from the Dio interceptor — wiping the
+    // flag in that path silently disables biometric for the user. The flag is
+    // only cleared on explicit logout (see AuthRepositoryImpl.logout).
   }
 
   /// True if either an access or refresh token is present in secure storage.
@@ -68,13 +72,21 @@ class LocalStorage {
     await _prefs.clear();
   }
 
-  // Biometric preference
+  // Biometric preference (stored in secure storage alongside auth tokens
+  // so it gets cleared together on logout).
   static const _biometricKey = 'biometric_enabled';
 
-  bool get isBiometricEnabled => getBool(_biometricKey) ?? false;
+  Future<bool> isBiometricEnabled() async {
+    final value = await _secureStorage.read(key: _biometricKey);
+    return value == 'true';
+  }
 
   Future<void> setBiometricEnabled(bool value) async {
-    await setBool(_biometricKey, value);
+    await _secureStorage.write(key: _biometricKey, value: value ? 'true' : 'false');
+  }
+
+  Future<void> clearBiometricFlag() async {
+    await _secureStorage.delete(key: _biometricKey);
   }
 
   // First launch check
