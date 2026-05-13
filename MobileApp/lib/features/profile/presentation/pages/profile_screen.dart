@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:country_picker/country_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -33,7 +34,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _selectedLanguage = 'English';
   bool _biometricEnabled = false;
   bool _biometricAvailable = false;
-  String _selectedCountry = 'India';
+  String? _selectedCountry;
   bool _isSaving = false;
   bool _isUploadingPhoto = false;
   String? _avatarPath; // local file path after picking
@@ -72,6 +73,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (_phoneController.text.isEmpty) {
       _phoneController.text = user.phone ?? '';
     }
+    _selectedCountry ??= user.country;
   }
 
   Future<void> _loadBiometricState() async {
@@ -589,13 +591,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _countryDropdown() {
-    const countries = [
-      'India',
-      'United States',
-      'United Kingdom',
-      'Australia',
-      'Canada',
-    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -603,36 +598,55 @@ class _ProfileScreenState extends State<ProfileScreen> {
           'Country',
           style: TextStyle(fontSize: 11, color: Colors.grey),
         ),
-        Row(
-          children: [
-            const Icon(Icons.language_outlined, color: Colors.grey, size: 18),
-            const SizedBox(width: 10),
-            Expanded(
-              child: DropdownButtonFormField<String>(
-                initialValue: _selectedCountry,
-                items: countries
-                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                    .toList(),
-                onChanged: (v) => setState(() => _selectedCountry = v!),
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: _kDark,
-                ),
-                icon: const Icon(Icons.keyboard_arrow_down, color: Colors.grey),
-                decoration: const InputDecoration(
-                  enabledBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: _kBorder),
+        InkWell(
+          onTap: () {
+            showCountryPicker(
+              context: context,
+              showPhoneCode: false,
+              searchAutofocus: true,
+              countryListTheme: CountryListThemeData(
+                bottomSheetHeight: MediaQuery.of(context).size.height * 0.7,
+                inputDecoration: InputDecoration(
+                  hintText: 'Search country',
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: _kBorder),
                   ),
-                  focusedBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: _kBlue),
-                  ),
-                  contentPadding: EdgeInsets.symmetric(vertical: 12),
                 ),
-                dropdownColor: Colors.white,
               ),
+              onSelect: (Country country) {
+                setState(() => _selectedCountry = country.name);
+              },
+            );
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: _kBorder)),
             ),
-          ],
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.language_outlined,
+                  color: Colors.grey,
+                  size: 18,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    _selectedCountry ?? 'Select country',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: _selectedCountry == null ? Colors.grey : _kDark,
+                    ),
+                  ),
+                ),
+                const Icon(Icons.keyboard_arrow_down, color: Colors.grey),
+              ],
+            ),
+          ),
         ),
       ],
     );
@@ -690,6 +704,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         fullName: fullName,
         email: _emailController.text.trim(),
         phone: _phoneController.text.trim(),
+        country: _selectedCountry,
       );
       if (mounted) {
         context.read<AuthCubit>().fetchUserProfile();

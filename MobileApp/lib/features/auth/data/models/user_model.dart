@@ -10,6 +10,7 @@ class UserModel extends UserEntity {
     required super.role,
     super.isVerified,
     super.isBiometricEnabled,
+    super.country,
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
@@ -22,6 +23,7 @@ class UserModel extends UserEntity {
       role: json['role'] as String,
       isVerified: json['isVerified'] as bool? ?? false,
       isBiometricEnabled: json['isBiometricEnabled'] as bool? ?? false,
+      country: json['country'] as String?,
     );
   }
 
@@ -35,6 +37,7 @@ class UserModel extends UserEntity {
       'role': role,
       'isVerified': isVerified,
       'isBiometricEnabled': isBiometricEnabled,
+      'country': country,
     };
   }
 }
