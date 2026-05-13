@@ -30,7 +30,7 @@ public class AuthController : ControllerBase
     [HttpPost("send-otp")]
     public async Task<IActionResult> SendOtp([FromBody] SendOtpRequestDto request)
     {
-        var result = await _authService.SendOtpAsync(request.PhoneNumber);
+        var result = await _authService.SendOtpAsync(request.PhoneNumber, request.Country);
         if (!result.Succeeded)
             return BadRequest(ApiResponse<object>.FailResponse(result.Errors));
 

@@ -72,11 +72,11 @@ class AuthCubit extends Cubit<AuthState> {
     );
   }
 
-  Future<void> sendOtp({required String phoneOrEmail}) async {
+  Future<void> sendOtp({required String phoneOrEmail, String? country}) async {
     emit(state.copyWith(status: AuthStatus.loading, errorMessage: null));
 
     final result = await _sendOtpUseCase(
-      SendOtpParams(phoneOrEmail: phoneOrEmail),
+      SendOtpParams(phoneOrEmail: phoneOrEmail, country: country),
     );
 
     result.fold(

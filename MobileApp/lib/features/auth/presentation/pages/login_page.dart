@@ -1,3 +1,4 @@
+import 'package:country_picker/country_picker.dart' as cp;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl_phone_number_input/intl_phone_number_input.dart';
@@ -104,7 +105,19 @@ class _LoginPageState extends State<LoginPage> {
       _showError('Enter a valid mobile number');
       return;
     }
-    context.read<AuthCubit>().sendOtp(phoneOrEmail: complete);
+    String? countryName;
+    final iso = _phoneNumber.isoCode;
+    if (iso != null && iso.isNotEmpty) {
+      try {
+        countryName = cp.Country.parse(iso).name;
+      } catch (_) {
+        countryName = null;
+      }
+    }
+    context.read<AuthCubit>().sendOtp(
+          phoneOrEmail: complete,
+          country: countryName,
+        );
   }
 
   void _showError(String message) {
