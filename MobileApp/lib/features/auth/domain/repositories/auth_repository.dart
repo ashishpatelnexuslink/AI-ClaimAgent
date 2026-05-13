@@ -10,7 +10,7 @@ abstract class AuthRepository {
     required String password,
   });
 
-  Future<Either<Failure, SendOtpResult>> sendOtp({required String phoneOrEmail});
+  Future<Either<Failure, SendOtpResult>> sendOtp({required String phoneOrEmail, String? country});
 
   Future<Either<Failure, AuthTokens>> verifyOtp({
     required String phoneOrEmail,

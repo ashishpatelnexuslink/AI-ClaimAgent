@@ -188,7 +188,7 @@ public class AuthService : IAuthService
             : Result.Failure(result.Errors.Select(e => e.Description).ToList());
     }
 
-    public async Task<Result<SendOtpResponseDto>> SendOtpAsync(string phoneNumber)
+    public async Task<Result<SendOtpResponseDto>> SendOtpAsync(string phoneNumber, string? country = null)
     {
         var isNewUser = false;
         var normalized = NormalizePhone(phoneNumber);
@@ -224,6 +224,7 @@ public class AuthService : IAuthService
             {
                 UserId = user.Id,
                 IsActive = true,
+                Country = country,
             };
             await _profileRepository.AddAsync(profile);
 

@@ -11,12 +11,16 @@ class SendOtpUseCase extends UseCase<SendOtpResult, SendOtpParams> {
 
   @override
   Future<Either<Failure, SendOtpResult>> call(SendOtpParams params) {
-    return repository.sendOtp(phoneOrEmail: params.phoneOrEmail);
+    return repository.sendOtp(
+      phoneOrEmail: params.phoneOrEmail,
+      country: params.country,
+    );
   }
 }
 
 class SendOtpParams {
   final String phoneOrEmail;
+  final String? country;
 
-  const SendOtpParams({required this.phoneOrEmail});
+  const SendOtpParams({required this.phoneOrEmail, this.country});
 }

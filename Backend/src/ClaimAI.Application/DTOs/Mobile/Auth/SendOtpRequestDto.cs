@@ -7,4 +7,6 @@ public class SendOtpRequestDto
     [Required(ErrorMessage = "Phone number is required.")]
     [Phone(ErrorMessage = "Invalid phone number format.")]
     public string PhoneNumber { get; set; } = string.Empty;
+
+    public string? Country { get; set; }
 }

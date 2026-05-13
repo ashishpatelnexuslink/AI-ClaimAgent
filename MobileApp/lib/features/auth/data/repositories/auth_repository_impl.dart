@@ -48,12 +48,12 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
-  Future<Either<Failure, SendOtpResult>> sendOtp({required String phoneOrEmail}) async {
+  Future<Either<Failure, SendOtpResult>> sendOtp({required String phoneOrEmail, String? country}) async {
     if (!await networkInfo.isConnected) {
       return const Left(NetworkFailure());
     }
     try {
-      final result = await remoteDataSource.sendOtp(phoneOrEmail: phoneOrEmail);
+      final result = await remoteDataSource.sendOtp(phoneOrEmail: phoneOrEmail, country: country);
       return Right(result);
     } on ServerException catch (e) {
       return Left(ServerFailure(message: e.message, statusCode: e.statusCode));

@@ -13,6 +13,6 @@ public interface IAuthService
     Task<Result> ForgotPasswordAsync(string email);
     Task<Result> ResetPasswordAsync(string email, string token, string newPassword);
     Task<Result> ChangePasswordAsync(string userId, ChangePasswordDto request);
-    Task<Result<SendOtpResponseDto>> SendOtpAsync(string phoneNumber);
+    Task<Result<SendOtpResponseDto>> SendOtpAsync(string phoneNumber, string? country = null);
     Task<Result<AuthResponseDto>> VerifyOtpAsync(string phoneNumber, string otp);
 }

@@ -10,7 +10,7 @@ abstract class AuthRemoteDataSource {
     required String email,
     required String password,
   });
-  Future<SendOtpResult> sendOtp({required String phoneOrEmail});
+  Future<SendOtpResult> sendOtp({required String phoneOrEmail, String? country});
   Future<AuthTokensModel> verifyOtp({
     required String phoneOrEmail,
     required String otp,
@@ -50,10 +50,10 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   }
 
   @override
-  Future<SendOtpResult> sendOtp({required String phoneOrEmail}) async {
+  Future<SendOtpResult> sendOtp({required String phoneOrEmail, String? country}) async {
     final response = await _client.post(
       ApiConstants.sendOtp,
-      data: {'phoneNumber': phoneOrEmail},
+      data: {'phoneNumber': phoneOrEmail, 'country': country},
     );
     final data = response.data['data'] as Map<String, dynamic>;
     return SendOtpResult(
