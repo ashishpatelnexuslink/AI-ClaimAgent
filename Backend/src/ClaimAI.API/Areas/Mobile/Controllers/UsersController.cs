@@ -56,6 +56,7 @@ public class UsersController : ControllerBase
             Role = roles.FirstOrDefault() ?? string.Empty,
             IsVerified = user.EmailConfirmed || user.PhoneNumberConfirmed,
             IsBiometricEnabled = userProfile?.IsBiometricEnabled ?? false,
+            Country = userProfile?.Country,
         };
 
         return Ok(ApiResponse<UserProfileDto>.SuccessResponse(profile));
@@ -80,6 +81,8 @@ public class UsersController : ControllerBase
         var nameParts = request.FullName.Trim().Split(' ', 2);
         userProfile.FirstName = nameParts[0];
         userProfile.LastName = nameParts.Length > 1 ? nameParts[1] : string.Empty;
+        if (request.Country is not null)
+            userProfile.Country = request.Country;
         await _profileRepository.UpdateAsync(userProfile);
 
         // Update Identity fields (Email, Phone)
@@ -183,6 +186,7 @@ public class UsersController : ControllerBase
             Role = roles.FirstOrDefault() ?? string.Empty,
             IsVerified = user.EmailConfirmed || user.PhoneNumberConfirmed,
             IsBiometricEnabled = userProfile.IsBiometricEnabled,
+            Country = userProfile.Country,
         };
 
         return Ok(ApiResponse<UserProfileDto>.SuccessResponse(
