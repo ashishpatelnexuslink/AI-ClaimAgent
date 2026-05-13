@@ -7,6 +7,7 @@ public class UserProfileDto
     public string Email { get; set; } = string.Empty;
     public string? Phone { get; set; }
     public string? AvatarUrl { get; set; }
+    public string? Country { get; set; }
     public string Role { get; set; } = string.Empty;
     public bool IsVerified { get; set; }
     public bool IsBiometricEnabled { get; set; }
