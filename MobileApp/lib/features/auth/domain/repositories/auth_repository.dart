@@ -22,4 +22,8 @@ abstract class AuthRepository {
   Future<Either<Failure, void>> logout();
 
   Future<bool> isLoggedIn();
+
+  Future<Either<Failure, UserEntity>> updateBiometricEnabled(bool isEnabled);
+
+  Future<Either<Failure, AuthTokens>> refreshTokens();
 }

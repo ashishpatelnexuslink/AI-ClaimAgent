@@ -23,6 +23,11 @@ abstract class AuthRemoteDataSource {
   });
   Future<String> uploadProfilePhoto({required String filePath});
   Future<void> logout();
+  Future<UserModel> updateBiometricEnabled(bool isEnabled);
+  Future<AuthTokensModel> refreshTokens({
+    required String accessToken,
+    required String refreshToken,
+  });
 }
 
 class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
@@ -108,5 +113,31 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
   @override
   Future<void> logout() async {
     await _client.post(ApiConstants.logout);
+  }
+
+  @override
+  Future<UserModel> updateBiometricEnabled(bool isEnabled) async {
+    final response = await _client.put(
+      ApiConstants.updateBiometricSetting,
+      data: {'isEnabled': isEnabled},
+    );
+    return UserModel.fromJson(
+        response.data['data'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<AuthTokensModel> refreshTokens({
+    required String accessToken,
+    required String refreshToken,
+  }) async {
+    final response = await _client.post(
+      ApiConstants.refreshToken,
+      data: {
+        'accessToken': accessToken,
+        'refreshToken': refreshToken,
+      },
+    );
+    return AuthTokensModel.fromJson(
+        response.data['data'] as Map<String, dynamic>);
   }
 }

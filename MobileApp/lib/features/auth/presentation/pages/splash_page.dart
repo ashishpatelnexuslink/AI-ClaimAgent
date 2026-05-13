@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:claim_ai/core/navigation/app_routes.dart';
+import 'package:claim_ai/core/storage/local_storage.dart';
 import 'package:claim_ai/core/usecases/usecase.dart';
 import 'package:claim_ai/features/auth/domain/repositories/auth_repository.dart';
 import 'package:claim_ai/features/auth/domain/usecases/get_user_profile_usecase.dart';
@@ -180,10 +181,15 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
       // so the Dio interceptor exercises refresh-on-401; if both tokens are
       // dead the call returns Left(AuthFailure) and we route to login instead
       // of dropping the user on home with a stuck-loading screen.
+      var biometricEnabled = false;
       if (isLoggedIn) {
         final probe = await sl<GetUserProfileUseCase>()(const NoParams());
         isLoggedIn = probe.isRight();
         debugPrint('[splash] _checkAuth: probe ok=$isLoggedIn');
+        if (isLoggedIn) {
+          biometricEnabled = await sl<LocalStorage>().isBiometricEnabled();
+          debugPrint('[splash] _checkAuth: biometricEnabled=$biometricEnabled');
+        }
       }
 
       if (!mounted) return;
@@ -192,7 +198,11 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
       debugPrint('[splash] _checkAuth: fadeOut done, navigating');
       if (!mounted) return;
 
-      if (isLoggedIn) {
+      // When biometric login is enabled, always route through the login page so
+      // the user must tap the biometric button to unlock — even if tokens are
+      // still valid. Without this gate, a valid token bypasses biometric and
+      // the unlock prompt is never shown.
+      if (isLoggedIn && !biometricEnabled) {
         Navigator.of(context).pushNamedAndRemoveUntil(
           AppRoutes.home,
           (_) => false,

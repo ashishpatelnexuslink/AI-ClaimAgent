@@ -75,35 +75,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _loadBiometricState() async {
+    final cubit = context.read<AuthCubit>();
     final available = await _biometricService.isAvailable();
+    final enabled = await _localStorage.isBiometricEnabled();
+    final user = cubit.state.user;
+    if (!mounted) return;
     setState(() {
       _biometricAvailable = available;
-      _biometricEnabled = _localStorage.isBiometricEnabled;
+      // Prefer server flag when we have a user; fall back to local cache.
+      _biometricEnabled = user?.isBiometricEnabled ?? enabled;
     });
   }
 
   Future<void> _onBiometricToggle(bool value) async {
-    if (value) {
-      // Turning ON — verify biometric first
-      final authenticated = await _biometricService.authenticate(
-        reason: 'Verify your identity to enable biometric login',
-      );
-      if (!authenticated) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Biometric authentication failed')),
-          );
-        }
-        return;
-      }
-    }
-    await _localStorage.setBiometricEnabled(value);
-    setState(() => _biometricEnabled = value);
-    if (mounted) {
+    final cubit = context.read<AuthCubit>();
+    final previousError = cubit.state.errorMessage;
+    await cubit.setBiometricEnabled(value);
+    if (!mounted) return;
+    final newState = cubit.state;
+    final updatedUser = newState.user;
+    if (updatedUser != null && updatedUser.isBiometricEnabled == value) {
+      setState(() => _biometricEnabled = value);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Biometric login ${value ? 'enabled' : 'disabled'}'),
         ),
+      );
+    } else if (newState.errorMessage != null &&
+        newState.errorMessage != previousError) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(newState.errorMessage!)),
       );
     }
   }
