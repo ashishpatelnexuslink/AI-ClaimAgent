@@ -20,6 +20,7 @@ abstract class AuthRemoteDataSource {
     required String fullName,
     required String email,
     String? phone,
+    String? country,
   });
   Future<String> uploadProfilePhoto({required String filePath});
   Future<void> logout();
@@ -86,6 +87,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
     required String fullName,
     required String email,
     String? phone,
+    String? country,
   }) async {
     await _client.put(
       ApiConstants.updateProfile,
@@ -93,6 +95,7 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
         'fullName': fullName,
         'email': email,
         'phone': phone,
+        'country': country,
       },
     );
   }

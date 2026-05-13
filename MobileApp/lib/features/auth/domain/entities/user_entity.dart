@@ -9,6 +9,7 @@ class UserEntity extends Equatable {
   final String role;
   final bool isVerified;
   final bool isBiometricEnabled;
+  final String? country;
 
   const UserEntity({
     required this.id,
@@ -19,9 +20,10 @@ class UserEntity extends Equatable {
     required this.role,
     this.isVerified = false,
     this.isBiometricEnabled = false,
+    this.country,
   });
 
   @override
   List<Object?> get props =>
-      [id, fullName, email, phone, avatarUrl, role, isVerified, isBiometricEnabled];
+      [id, fullName, email, phone, avatarUrl, role, isVerified, isBiometricEnabled, country];
 }
