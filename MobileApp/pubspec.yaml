@@ -91,6 +91,9 @@ dependencies:
   # International phone number input (country picker + dial code + validation)
   intl_phone_number_input: ^0.7.4
 
+  # Country picker (searchable bottom-sheet with flag + name)
+  country_picker: ^2.0.27
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
