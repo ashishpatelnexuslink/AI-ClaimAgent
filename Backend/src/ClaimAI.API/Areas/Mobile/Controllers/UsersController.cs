@@ -55,6 +55,7 @@ public class UsersController : ControllerBase
                 : null,
             Role = roles.FirstOrDefault() ?? string.Empty,
             IsVerified = user.EmailConfirmed || user.PhoneNumberConfirmed,
+            IsBiometricEnabled = userProfile?.IsBiometricEnabled ?? false,
         };
 
         return Ok(ApiResponse<UserProfileDto>.SuccessResponse(profile));
@@ -147,5 +148,45 @@ public class UsersController : ControllerBase
         return Ok(ApiResponse<object>.SuccessResponse(
             new { avatarUrl = fullAvatarUrl },
             "Profile photo updated successfully."));
+    }
+
+    [HttpPut("profile/biometric")]
+    public async Task<IActionResult> UpdateBiometricSetting([FromBody] UpdateBiometricSettingDto request)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId is null)
+            return Unauthorized();
+
+        var user = await _userManager.FindByIdAsync(userId);
+        if (user is null)
+            return NotFound(ApiResponse<object>.FailResponse("User not found.", 404));
+
+        var userProfile = (await _profileRepository.FindAsync(p => p.UserId == userId)).FirstOrDefault();
+        if (userProfile is null)
+            return NotFound(ApiResponse<object>.FailResponse("User profile not found.", 404));
+
+        userProfile.IsBiometricEnabled = request.IsEnabled;
+        await _profileRepository.UpdateAsync(userProfile);
+
+        var roles = await _userManager.GetRolesAsync(user);
+        var profile = new UserProfileDto
+        {
+            Id = user.Id,
+            FullName = $"{userProfile.FirstName} {userProfile.LastName}".Trim(),
+            Email = user.Email != null && !user.Email.EndsWith("@phone.local")
+                ? user.Email
+                : string.Empty,
+            Phone = user.PhoneNumber,
+            AvatarUrl = !string.IsNullOrEmpty(userProfile.AvatarUrl)
+                ? $"{Request.Scheme}://{Request.Host}{userProfile.AvatarUrl}"
+                : null,
+            Role = roles.FirstOrDefault() ?? string.Empty,
+            IsVerified = user.EmailConfirmed || user.PhoneNumberConfirmed,
+            IsBiometricEnabled = userProfile.IsBiometricEnabled,
+        };
+
+        return Ok(ApiResponse<UserProfileDto>.SuccessResponse(
+            profile,
+            request.IsEnabled ? "Biometric login enabled." : "Biometric login disabled."));
     }
 }

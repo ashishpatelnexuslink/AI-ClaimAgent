@@ -14,6 +14,7 @@ public class UserProfileConfiguration : IEntityTypeConfiguration<UserProfile>
         builder.Property(p => p.LastName).HasMaxLength(100).IsRequired();
         builder.Property(p => p.AvatarUrl).HasMaxLength(500);
         builder.Property(p => p.UserId).IsRequired().HasMaxLength(450);
+        builder.Property(p => p.IsBiometricEnabled).HasDefaultValue(false);
 
         builder.HasOne(p => p.User)
                .WithOne(u => u.Profile)

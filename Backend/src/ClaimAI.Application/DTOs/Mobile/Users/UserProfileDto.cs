@@ -9,4 +9,5 @@ public class UserProfileDto
     public string? AvatarUrl { get; set; }
     public string Role { get; set; } = string.Empty;
     public bool IsVerified { get; set; }
+    public bool IsBiometricEnabled { get; set; }
 }
