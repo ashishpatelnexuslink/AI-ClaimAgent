@@ -10,6 +10,10 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # Official Flutter localization delegates (Material/Cupertino/Widgets)
+  flutter_localizations:
+    sdk: flutter
+
   cupertino_icons: ^1.0.8
 
   # State Management
@@ -58,7 +62,7 @@ dependencies:
   pretty_dio_logger: ^1.4.0
 
   # Date Formatting
-  intl: ^0.19.0
+  intl: ^0.20.2
 
   # UUID
   uuid: ^4.5.1
@@ -113,6 +117,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  generate: true
 
   assets:
     - assets/images/

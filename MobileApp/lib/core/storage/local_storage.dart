@@ -95,4 +95,29 @@ class LocalStorage {
   Future<void> setFirstLaunchDone() async {
     await setBool('is_first_launch', false);
   }
+
+  // App locale (e.g. 'en', 'de', 'fr'). Null means "follow device".
+  static const _localeKey = 'app_locale';
+  static const _countryKey = 'app_country';
+
+  String? getLocaleCode() => _prefs.getString(_localeKey);
+
+  Future<void> setLocaleCode(String code) async {
+    await _prefs.setString(_localeKey, code);
+  }
+
+  Future<void> clearLocaleCode() async {
+    await _prefs.remove(_localeKey);
+  }
+
+  /// ISO-3166 country code paired with the selected language (e.g. 'IN', 'IT').
+  String? getCountryCode() => _prefs.getString(_countryKey);
+
+  Future<void> setCountryCode(String code) async {
+    await _prefs.setString(_countryKey, code);
+  }
+
+  Future<void> clearCountryCode() async {
+    await _prefs.remove(_countryKey);
+  }
 }

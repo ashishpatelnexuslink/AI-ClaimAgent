@@ -4,6 +4,9 @@ import 'package:country_picker/country_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:claim_ai/core/l10n/app_locales.dart';
+import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
+import 'package:claim_ai/core/l10n/locale_cubit.dart';
 import 'package:claim_ai/core/navigation/app_routes.dart';
 import 'package:claim_ai/core/services/biometric_service.dart';
 import 'package:claim_ai/core/storage/local_storage.dart';
@@ -31,7 +34,6 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   double _voiceSpeed = 1.0;
   String _selectedAvatar = 'Professional';
-  String _selectedLanguage = 'English';
   bool _biometricEnabled = false;
   bool _biometricAvailable = false;
   String? _selectedCountry;
@@ -90,6 +92,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _onBiometricToggle(bool value) async {
+    final l = AppLocalizations.of(context);
     final cubit = context.read<AuthCubit>();
     final previousError = cubit.state.errorMessage;
     await cubit.setBiometricEnabled(value);
@@ -100,7 +103,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() => _biometricEnabled = value);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Biometric login ${value ? 'enabled' : 'disabled'}'),
+          content: Text(
+            value ? l.profile_biometricEnabled : l.profile_biometricDisabled,
+          ),
         ),
       );
     } else if (newState.errorMessage != null &&
@@ -120,6 +125,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _pickAndUploadPhoto() async {
+    final l = AppLocalizations.of(context);
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -139,9 +145,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            const Text(
-              'Upload Photo',
-              style: TextStyle(
+            Text(
+              l.profile_uploadPhotoTitle,
+              style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
                 color: _kDark,
@@ -150,12 +156,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 8),
             ListTile(
               leading: const Icon(Icons.camera_alt_outlined, color: _kBlue),
-              title: const Text('Take a Photo'),
+              title: Text(l.profile_takePhoto),
               onTap: () => Navigator.pop(ctx, ImageSource.camera),
             ),
             ListTile(
               leading: const Icon(Icons.photo_library_outlined, color: _kBlue),
-              title: const Text('Choose from Gallery'),
+              title: Text(l.profile_chooseFromGallery),
               onTap: () => Navigator.pop(ctx, ImageSource.gallery),
             ),
             const SizedBox(height: 8),
@@ -183,15 +189,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
       await _authDataSource.uploadProfilePhoto(filePath: picked.path);
       if (mounted) {
         context.read<AuthCubit>().fetchUserProfile();
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Profile photo updated')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l.profile_photoUpdated)),
+        );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to upload photo: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l.profile_photoUploadFailed(e.toString())),
+          ),
+        );
         setState(() => _avatarPath = null);
       }
     } finally {
@@ -199,16 +207,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  String get _speedLabel {
+  String _speedLabel(AppLocalizations l) {
     return switch (_voiceSpeed) {
-      0.5 => 'Deliberate (0.5x)',
-      0.75 => 'Slow (0.75x)',
-      1.0 => 'Natural (1.0x)',
-      1.25 => 'Moderate (1.25x)',
-      1.5 => 'Fast (1.5x)',
-      1.75 => 'Faster (1.75x)',
-      2.0 => 'Efficient (2.0x)',
-      _ => '${_voiceSpeed}x',
+      0.5 => l.profile_voice_deliberate_0_5x,
+      0.75 => l.profile_voice_slow_0_75x,
+      1.0 => l.profile_voice_natural_1_0x,
+      1.25 => l.profile_voice_moderate_1_25x,
+      1.5 => l.profile_voice_fast_1_5x,
+      1.75 => l.profile_voice_faster_1_75x,
+      2.0 => l.profile_voice_efficient_2_0x,
+      _ => l.profile_voice_speedX(_voiceSpeed.toString()),
     };
   }
 
@@ -377,13 +385,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // 3. AVATAR PERSONALITY CARD
   // ═══════════════════════════════════════════════════════════════════════════
   Widget _buildAvatarPersonalityCard() {
+    final l = AppLocalizations.of(context);
     return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Avatar Personality',
-            style: TextStyle(
+          Text(
+            l.profile_avatarPersonality,
+            style: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
               color: _kDark,
@@ -393,18 +402,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
           // Voice speed header
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Voice Response Speed',
-                style: TextStyle(fontSize: 13, color: Colors.grey),
+              Expanded(
+                child: Text(
+                  l.profile_voiceResponseSpeed,
+                  style: const TextStyle(fontSize: 13, color: Colors.grey),
+                ),
               ),
-              const Spacer(),
-              Text(
-                _speedLabel,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  color: _kBlue,
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  _speedLabel(l),
+                  textAlign: TextAlign.end,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: _kBlue,
+                  ),
                 ),
               ),
             ],
@@ -432,25 +447,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
 
           // Slider labels
-          const Row(
+          Row(
             children: [
               Text(
-                'Deliberate',
-                style: TextStyle(fontSize: 11, color: Colors.grey),
+                l.profile_voice_deliberate,
+                style: const TextStyle(fontSize: 11, color: Colors.grey),
               ),
-              Spacer(),
+              const Spacer(),
               Text(
-                'Efficient',
-                style: TextStyle(fontSize: 11, color: Colors.grey),
+                l.profile_voice_efficient,
+                style: const TextStyle(fontSize: 11, color: Colors.grey),
               ),
             ],
           ),
           const SizedBox(height: 16),
 
           // Select Avatar label
-          const Text(
-            'SELECT AVATAR',
-            style: TextStyle(
+          Text(
+            l.profile_selectAvatar,
+            style: const TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.bold,
               color: Colors.grey,
@@ -462,11 +477,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
           // Avatar selector cards
           Row(
             children: [
-              _avatarOption('Professional', Icons.person_outline_rounded),
+              _avatarOption(
+                  'Professional',
+                  l.profile_avatar_professional,
+                  Icons.person_outline_rounded),
               const SizedBox(width: 10),
-              _avatarOption('Friendly', Icons.sentiment_satisfied_alt_outlined),
+              _avatarOption(
+                  'Friendly',
+                  l.profile_avatar_friendly,
+                  Icons.sentiment_satisfied_alt_outlined),
               const SizedBox(width: 10),
-              _avatarOption('Smart', Icons.psychology_outlined),
+              _avatarOption(
+                  'Smart', l.profile_avatar_smart, Icons.psychology_outlined),
             ],
           ),
         ],
@@ -474,11 +496,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _avatarOption(String label, IconData icon) {
-    final selected = _selectedAvatar == label;
+  Widget _avatarOption(String key, String label, IconData icon) {
+    final selected = _selectedAvatar == key;
     return Expanded(
       child: GestureDetector(
-        onTap: () => setState(() => _selectedAvatar = label),
+        onTap: () => setState(() => _selectedAvatar = key),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
@@ -507,30 +529,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // 4. PROFILE MANAGEMENT CARD
   // ═══════════════════════════════════════════════════════════════════════════
   Widget _buildProfileManagementCard() {
+    final l = AppLocalizations.of(context);
     return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Profile Management',
-            style: TextStyle(
+          Text(
+            l.profile_management,
+            style: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
               color: _kDark,
             ),
           ),
           const SizedBox(height: 16),
-          _inputField('Full Name', Icons.person_outline, _nameController, TextInputType.name, required: true),
+          _inputField(l.profile_fullName, Icons.person_outline, _nameController,
+              TextInputType.name,
+              required: true),
           const SizedBox(height: 12),
           _inputField(
-            'Email Address',
+            l.profile_emailAddress,
             Icons.mail_outline,
             _emailController,
             TextInputType.emailAddress,
           ),
           const SizedBox(height: 12),
           _inputField(
-            'Phone Number',
+            l.profile_phoneNumber,
             Icons.phone_outlined,
             _phoneController,
             TextInputType.phone,
@@ -591,12 +616,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _countryDropdown() {
+    final l = AppLocalizations.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Country',
-          style: TextStyle(fontSize: 11, color: Colors.grey),
+        Text(
+          l.profile_country,
+          style: const TextStyle(fontSize: 11, color: Colors.grey),
         ),
         InkWell(
           onTap: () {
@@ -607,7 +633,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               countryListTheme: CountryListThemeData(
                 bottomSheetHeight: MediaQuery.of(context).size.height * 0.7,
                 inputDecoration: InputDecoration(
-                  hintText: 'Search country',
+                  hintText: l.profile_searchCountry,
                   prefixIcon: const Icon(Icons.search, size: 20),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -635,7 +661,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    _selectedCountry ?? 'Select country',
+                    _selectedCountry ?? l.profile_selectCountry,
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
@@ -681,9 +707,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     color: Colors.white,
                   ),
                 )
-              : const Text(
-                  'Save Profile',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              : Text(
+                  AppLocalizations.of(context).profile_saveButton,
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold),
                 ),
         ),
       ),
@@ -691,10 +718,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _saveProfile() async {
+    final l = AppLocalizations.of(context);
     final fullName = _nameController.text.trim();
     if (fullName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Full name is required')),
+        SnackBar(content: Text(l.profile_fullNameRequired)),
       );
       return;
     }
@@ -709,16 +737,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (mounted) {
         context.read<AuthCubit>().fetchUserProfile();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Profile updated successfully')),
+          SnackBar(content: Text(l.profile_updateSuccess)),
         );
       }
     } catch (e, stackTrace) {
       debugPrint('Profile update error: $e');
       debugPrint('Stack trace: $stackTrace');
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to update profile: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l.profile_updateFailed(e.toString()))),
+        );
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -729,13 +757,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // 5. APP SETTINGS CARD
   // ═══════════════════════════════════════════════════════════════════════════
   Widget _buildAppSettingsCard() {
+    final l = AppLocalizations.of(context);
     return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'App Settings',
-            style: TextStyle(
+          Text(
+            l.profile_appSettings,
+            style: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
               color: _kDark,
@@ -744,33 +773,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
           const SizedBox(height: 12),
 
           // Language
-          _settingRow(
-            icon: Icons.language_outlined,
-            title: 'Language',
-            subtitle: 'Default App Experience',
-            trailing: GestureDetector(
-              onTap: _showLanguageDialog,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    _selectedLanguage,
-                    style: const TextStyle(fontSize: 13, color: Colors.grey),
+          BlocBuilder<LocaleCubit, Locale>(
+            builder: (context, locale) {
+              final langName =
+                  AppLocales.displayNames[locale.languageCode] ?? 'English';
+              final countryName =
+                  AppLocales.countryNames[locale.countryCode] ?? '';
+              final display =
+                  countryName.isEmpty ? langName : '$langName · $countryName';
+              return _settingRow(
+                icon: Icons.language_outlined,
+                title: l.profile_language,
+                subtitle: l.profile_languageSubtitle,
+                trailing: GestureDetector(
+                  onTap: _showLanguageDialog,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        display,
+                        style: const TextStyle(fontSize: 13, color: Colors.grey),
+                      ),
+                      const Icon(Icons.chevron_right,
+                          color: Colors.grey, size: 20),
+                    ],
                   ),
-                  const Icon(Icons.chevron_right, color: Colors.grey, size: 20),
-                ],
-              ),
-            ),
+                ),
+              );
+            },
           ),
           const SizedBox(height: 10),
 
           // Biometric
           _settingRow(
             icon: Icons.fingerprint,
-            title: 'Biometric Authentication',
+            title: l.profile_biometricAuth,
             subtitle: _biometricAvailable
-                ? 'FaceID or Fingerprint'
-                : 'Not available on this device',
+                ? l.profile_biometricFaceFingerprint
+                : l.profile_biometricNotAvailable,
             trailing: Switch(
               value: _biometricEnabled,
               onChanged: _biometricAvailable ? _onBiometricToggle : null,
@@ -832,35 +872,105 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  void _showLanguageDialog() {
-    const languages = ['English', 'German', 'Italian'];
-    showDialog(
+  Future<void> _showLanguageDialog() async {
+    final l = AppLocalizations.of(context);
+    final currentLang = context.read<LocaleCubit>().state.languageCode;
+    final chosenLang = await showDialog<String>(
       context: context,
       builder: (ctx) => SimpleDialog(
-        title: const Text(
-          'Select Language',
-          style: TextStyle(fontWeight: FontWeight.bold, color: _kDark),
+        title: Text(
+          l.profile_language_picker_title,
+          style: const TextStyle(fontWeight: FontWeight.bold, color: _kDark),
         ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        children: languages.map((lang) {
+        children: AppLocales.supportedLanguages.map((code) {
+          final label = AppLocales.displayNames[code] ?? code;
+          final isSelected = code == currentLang;
           return SimpleDialogOption(
-            onPressed: () {
-              setState(() => _selectedLanguage = lang);
-              Navigator.of(ctx).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Language updated to $lang')),
-              );
-            },
+            onPressed: () => Navigator.of(ctx).pop(code),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Text(
-                lang,
-                style: const TextStyle(fontSize: 15, color: _kDark),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: const TextStyle(fontSize: 15, color: _kDark),
+                    ),
+                  ),
+                  if (isSelected)
+                    const Icon(Icons.check, color: _kBlue, size: 20),
+                ],
               ),
             ),
           );
         }).toList(),
       ),
+    );
+    if (chosenLang == null || !mounted) return;
+    await _showCountryDialog(chosenLang);
+  }
+
+  Future<void> _showCountryDialog(String langCode) async {
+    final cubit = context.read<LocaleCubit>();
+    final currentCountry = cubit.state.languageCode == langCode
+        ? cubit.state.countryCode
+        : AppLocales.defaultCountryFor(langCode);
+    final countries = AppLocales.countriesFor(langCode);
+
+    // Single-country languages don't need a second step.
+    if (countries.length <= 1) {
+      await cubit.setLocale(Locale(langCode, AppLocales.defaultCountryFor(langCode)));
+      if (!mounted) return;
+      _showLanguageUpdatedToast(langCode);
+      return;
+    }
+
+    final chosenCountry = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text(
+          AppLocales.displayNames[langCode] ?? langCode,
+          style: const TextStyle(fontWeight: FontWeight.bold, color: _kDark),
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        children: countries.map((countryCode) {
+          final name = AppLocales.countryNames[countryCode] ?? countryCode;
+          final isSelected = countryCode == currentCountry;
+          return SimpleDialogOption(
+            onPressed: () => Navigator.of(ctx).pop(countryCode),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      name,
+                      style: const TextStyle(fontSize: 15, color: _kDark),
+                    ),
+                  ),
+                  if (isSelected)
+                    const Icon(Icons.check, color: _kBlue, size: 20),
+                ],
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+    if (chosenCountry == null || !mounted) return;
+    await cubit.setLocale(Locale(langCode, chosenCountry));
+    if (!mounted) return;
+    _showLanguageUpdatedToast(langCode);
+  }
+
+  void _showLanguageUpdatedToast(String langCode) {
+    final label = AppLocales.displayNames[langCode] ?? langCode;
+    // Re-resolve AppLocalizations after the locale change so the toast appears
+    // in the newly-selected language.
+    final l = AppLocalizations.of(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(l.profile_languageUpdatedTo(label))),
     );
   }
 
@@ -881,14 +991,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             padding: const EdgeInsets.symmetric(vertical: 16),
           ),
-          child: const Row(
+          child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.logout_rounded, color: Colors.red, size: 20),
-              SizedBox(width: 8),
+              const Icon(Icons.logout_rounded, color: Colors.red, size: 20),
+              const SizedBox(width: 8),
               Text(
-                'Logout',
-                style: TextStyle(
+                AppLocalizations.of(context).profile_logout,
+                style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
                   color: Colors.red,
@@ -902,34 +1012,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _showLogoutDialog() {
+    final l = AppLocalizations.of(context);
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
-          'Logout',
-          style: TextStyle(fontWeight: FontWeight.bold, color: _kDark),
+        title: Text(
+          l.profile_logout,
+          style: const TextStyle(fontWeight: FontWeight.bold, color: _kDark),
         ),
-        content: const Text('Are you sure you want to logout?'),
+        content: Text(l.profile_logoutConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            child: Text(l.common_cancel,
+                style: const TextStyle(color: Colors.grey)),
           ),
           TextButton(
             onPressed: () async {
               Navigator.of(ctx).pop();
-              // Clear tokens + cached user before navigating; otherwise the next
-              // cold start finds a stored token and skips the login screen.
               await context.read<AuthCubit>().logout();
               if (!mounted) return;
               Navigator.of(
                 context,
               ).pushNamedAndRemoveUntil(AppRoutes.login, (_) => false);
             },
-            child: const Text(
-              'Logout',
-              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+            child: Text(
+              l.profile_logout,
+              style: const TextStyle(
+                  color: Colors.red, fontWeight: FontWeight.bold),
             ),
           ),
         ],
@@ -941,11 +1052,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // 7. APP VERSION
   // ═══════════════════════════════════════════════════════════════════════════
   Widget _buildAppVersion() {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 12),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: Text(
-        'APP VERSION 1.0.0',
-        style: TextStyle(fontSize: 11, color: Colors.grey, letterSpacing: 1.2),
+        AppLocalizations.of(context).profile_appVersion('1.0.0'),
+        style: const TextStyle(
+            fontSize: 11, color: Colors.grey, letterSpacing: 1.2),
         textAlign: TextAlign.center,
       ),
     );

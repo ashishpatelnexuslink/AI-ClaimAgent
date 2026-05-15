@@ -81,7 +81,7 @@ class ClaimCard extends StatelessWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            _tertiaryLine(),
+                            _tertiaryLine(context),
                             style: const TextStyle(
                               fontSize: 12,
                               color: AppColors.textHint,
@@ -180,17 +180,18 @@ class ClaimCard extends StatelessWidget {
     return claim.claimType;
   }
 
-  String _tertiaryLine() {
+  String _tertiaryLine(BuildContext context) {
+    final locale = Localizations.localeOf(context).languageCode;
     switch (claim.status) {
       case ClaimStatus.approved:
         final amount = claim.amount;
         final amountStr = amount != null
             ? 'Payout: \$${amount.toStringAsFixed(2)}'
             : 'Approved';
-        return '$amountStr  |  ${AppDateUtils.formatDate(claim.updatedAt)}';
+        return '$amountStr  |  ${AppDateUtils.formatDate(claim.updatedAt, locale)}';
       case ClaimStatus.rejected:
       case ClaimStatus.closed:
-        return 'Closed at ${AppDateUtils.formatDate(claim.updatedAt)}';
+        return 'Closed at ${AppDateUtils.formatDate(claim.updatedAt, locale)}';
       default:
         return 'Updated ${AppDateUtils.timeAgo(claim.updatedAt)}';
     }

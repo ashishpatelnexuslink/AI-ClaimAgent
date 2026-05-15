@@ -1,18 +1,26 @@
 import 'package:intl/intl.dart';
 
+/// Date/time helpers. Display formatters take an optional `locale` (BCP 47
+/// language code, e.g. 'en', 'de', 'it'). When null they use the system
+/// default. Pass `Localizations.localeOf(context).languageCode` from widgets
+/// to keep formatting in sync with the selected app locale.
 class AppDateUtils {
   AppDateUtils._();
 
-  static String formatDate(DateTime date) {
-    return DateFormat('MMM dd, yyyy').format(date);
+  /// Localized medium date, e.g. "Jan 14, 2026" / "14. Jan. 2026" / "14 gen 2026".
+  static String formatDate(DateTime date, [String? locale]) {
+    return DateFormat.yMMMd(locale).format(date);
   }
 
-  static String formatDateTime(DateTime date) {
-    return DateFormat('MMM dd, yyyy HH:mm').format(date);
+  /// Localized date + 24-hour time.
+  static String formatDateTime(DateTime date, [String? locale]) {
+    return '${DateFormat.yMMMd(locale).format(date)} '
+        '${DateFormat.Hm(locale).format(date)}';
   }
 
-  static String formatTime(DateTime date) {
-    return DateFormat('hh:mm a').format(date);
+  /// Localized time (12- or 24-hour depending on locale convention).
+  static String formatTime(DateTime date, [String? locale]) {
+    return DateFormat.jm(locale).format(date);
   }
 
   static String timeAgo(DateTime date) {
@@ -34,6 +42,7 @@ class AppDateUtils {
     }
   }
 
+  /// API serialization — locale-neutral by design (yyyy-MM-dd ISO).
   static String formatApiDate(DateTime date) {
     return DateFormat('yyyy-MM-dd').format(date);
   }

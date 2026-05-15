@@ -10,6 +10,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:claim_ai/core/constants/api_constants.dart';
 import 'package:claim_ai/core/constants/app_theme.dart';
+import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 import 'package:claim_ai/core/network/dio_client.dart';
 import 'package:claim_ai/core/platform/android_downloads.dart';
 import 'package:claim_ai/core/utils/date_utils.dart';
@@ -116,6 +117,7 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
     final busyKey = _busyKey(groupKey, angle);
     if (_busyKeys.contains(busyKey)) return;
 
+    final l = AppLocalizations.of(context);
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
       builder: (ctx) => SafeArea(
@@ -124,12 +126,12 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
           children: [
             ListTile(
               leading: const Icon(Icons.photo_camera_outlined),
-              title: const Text('Take photo'),
+              title: Text(l.claimDetail_takePhoto),
               onTap: () => Navigator.pop(ctx, ImageSource.camera),
             ),
             ListTile(
               leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('Choose from gallery'),
+              title: Text(l.claimDetail_chooseFromGallery),
               onTap: () => Navigator.pop(ctx, ImageSource.gallery),
             ),
           ],
@@ -165,9 +167,12 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
         );
       }
       await _loadDocuments();
-      _snack('Photo uploaded');
+      if (mounted) _snack(AppLocalizations.of(context).claimDetail_photoUploaded);
     } catch (e) {
-      _snack('Upload failed: $e');
+      if (mounted) {
+        _snack(AppLocalizations.of(context)
+            .claimDetail_uploadFailed(e.toString()));
+      }
     } finally {
       if (mounted) setState(() => _busyKeys.remove(busyKey));
     }
@@ -221,9 +226,15 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
         );
       }
       await _loadDocuments();
-      _snack('${uploadedIds.length} file(s) uploaded');
+      if (mounted) {
+        _snack(AppLocalizations.of(context)
+            .claimDetail_filesUploaded(uploadedIds.length));
+      }
     } catch (e) {
-      _snack('Upload failed: $e');
+      if (mounted) {
+        _snack(AppLocalizations.of(context)
+            .claimDetail_uploadFailed(e.toString()));
+      }
     } finally {
       if (mounted) setState(() => _busyKeys.remove(busyKey));
     }
@@ -267,6 +278,7 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
   Future<void> _downloadDoc(String url, String name) async {
     if (url.isEmpty) return;
     if (_downloadingDocs.contains(url)) return;
+    final l = AppLocalizations.of(context);
     setState(() => _downloadingDocs.add(url));
     try {
       final safeName = name.trim().isEmpty ? 'document.pdf' : name.trim();
@@ -299,18 +311,18 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
             fileName: safeName,
             mimeType: _mimeForName(safeName),
           );
-          _snack('Saved to Downloads');
+          _snack(l.claimDetail_savedToDownloads);
         } on PlatformException catch (e) {
           if (e.code == 'UNSUPPORTED') {
             // Android 9 and below — keep the legacy permission flow.
             if (!await _ensureStoragePermission()) {
-              _snack('Storage permission denied');
+              _snack(l.claimDetail_storagePermissionDenied);
               return;
             }
             final dir = await _resolveDownloadsDir();
             final dest = _uniqueFilePath(dir.path, safeName);
             await File(tempPath).copy(dest);
-            _snack('Saved to $dest');
+            _snack(l.claimDetail_savedTo(dest));
           } else {
             rethrow;
           }
@@ -321,16 +333,16 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
         }
       } else {
         if (!await _ensureStoragePermission()) {
-          _snack('Storage permission denied');
+          _snack(l.claimDetail_storagePermissionDenied);
           return;
         }
         final dir = await _resolveDownloadsDir();
         final filePath = _uniqueFilePath(dir.path, safeName);
         await di.sl<DioClient>().dio.download(url, filePath);
-        _snack('Saved to $filePath');
+        _snack(l.claimDetail_savedTo(filePath));
       }
     } catch (e) {
-      _snack('Download failed: $e');
+      _snack(l.claimDetail_downloadFailed(e.toString()));
     } finally {
       if (mounted) setState(() => _downloadingDocs.remove(url));
     }
@@ -359,19 +371,20 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
   Future<void> _deleteDoc(String id) async {
     if (!_isEditable()) return;
     if (id.isEmpty || _deletingIds.contains(id)) return;
+    final l = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Remove document?'),
-        content: const Text('This will permanently delete the file.'),
+        title: Text(l.claimDetail_removeDocumentTitle),
+        content: Text(l.claimDetail_removeDocumentBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(l.common_cancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
+            child: Text(l.common_delete),
           ),
         ],
       ),
@@ -383,7 +396,7 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
       await di.sl<ClaimsRemoteDataSource>().deleteClaimDocument(id);
       await _loadDocuments();
     } catch (e) {
-      _snack('Delete failed: $e');
+      _snack(l.claimDetail_deleteFailed(e.toString()));
     } finally {
       if (mounted) setState(() => _deletingIds.remove(id));
     }
@@ -394,7 +407,7 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Claim Summary'),
+        title: Text(AppLocalizations.of(context).claimDetail_appBarTitle),
         leading: Padding(
           padding: const EdgeInsets.all(8),
           child: GestureDetector(
@@ -441,7 +454,8 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
 
           final claim = state.selectedClaim;
           if (claim == null) {
-            return const AppErrorWidget(message: 'Claim not found');
+            return AppErrorWidget(
+                message: AppLocalizations.of(context).claimDetail_notFound);
           }
 
           return RefreshIndicator(
@@ -493,16 +507,17 @@ class _PolicyDetailsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return _DetailCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'Policy Details',
-                  style: TextStyle(
+                  l.claimDetail_policyDetails,
+                  style: const TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w700,
                     color: AppColors.textPrimary,
@@ -513,18 +528,19 @@ class _PolicyDetailsCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
-          _kv('Policy Holder', claim.fullName ?? '—'),
-          _kv('Policy Number',
+          _kv(l.claimDetail_policyHolder, claim.fullName ?? '—'),
+          _kv(l.claimDetail_policyNumber,
               claim.policyNumber != null ? '#${claim.policyNumber}' : '—'),
-          _kv('Vehicle', claim.vehicleModel ?? '—'),
-          _kv('Plat Number', claim.vehicleRegistrationNumber ?? '—'),
-          _kv('VIN Number', claim.vinNumber ?? '—'),
-          _kv('Coverage', claim.claimType),
+          _kv(l.claimDetail_vehicle, claim.vehicleModel ?? '—'),
+          _kv(l.claimDetail_platNumber,
+              claim.vehicleRegistrationNumber ?? '—'),
+          _kv(l.claimDetail_vinNumber, claim.vinNumber ?? '—'),
+          _kv(l.claimDetail_coverage, claim.claimType),
           _kv(
-            'Identity Verified',
+            l.claimDetail_identityVerified,
             claim.identityVerified == null
                 ? '—'
-                : (claim.identityVerified! ? 'Yes' : 'No'),
+                : (claim.identityVerified! ? l.common_yes : l.common_no),
             highlight: claim.identityVerified == true,
             isLast: true,
           ),
@@ -686,13 +702,18 @@ class _AccidentInfoCardState extends State<_AccidentInfoCard> {
       });
       widget.onUpdated();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Accident information updated')),
+        SnackBar(
+            content: Text(
+                AppLocalizations.of(context).claimDetail_updatedSuccess)),
       );
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Update failed: $e')),
+        SnackBar(
+          content: Text(AppLocalizations.of(context)
+              .claimDetail_updateFailed(e.toString())),
+        ),
       );
     }
   }
@@ -700,16 +721,17 @@ class _AccidentInfoCardState extends State<_AccidentInfoCard> {
   @override
   Widget build(BuildContext context) {
     final canEdit = widget.claim.status == ClaimStatus.pending;
+    final l = AppLocalizations.of(context);
     return _DetailCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'Accident Information',
-                  style: TextStyle(
+                  l.claimDetail_accidentInformation,
+                  style: const TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w700,
                     color: AppColors.textPrimary,
@@ -734,23 +756,25 @@ class _AccidentInfoCardState extends State<_AccidentInfoCard> {
   }
 
   Widget _buildViewMode() {
+    final l = AppLocalizations.of(context);
+    final locale = Localizations.localeOf(context).languageCode;
     final date = widget.claim.incidentDate;
     final dateText = date != null
-        ? '${AppDateUtils.formatDate(date)}, ${AppDateUtils.formatTime(date)}'
+        ? '${AppDateUtils.formatDate(date, locale)}, ${AppDateUtils.formatTime(date, locale)}'
         : '—';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _row('Date & Time', dateText),
-        _row('Location', widget.claim.incidentLocation ?? '—'),
+        _row(l.claimDetail_dateTime, dateText),
+        _row(l.claimDetail_location, widget.claim.incidentLocation ?? '—'),
         Container(
           padding: const EdgeInsets.symmetric(vertical: 9),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Description:',
-                style: TextStyle(
+              Text(
+                l.claimDetail_descriptionWithColon,
+                style: const TextStyle(
                   fontSize: 13,
                   color: AppColors.textSecondary,
                 ),
@@ -773,13 +797,15 @@ class _AccidentInfoCardState extends State<_AccidentInfoCard> {
   }
 
   Widget _buildEditMode() {
+    final l = AppLocalizations.of(context);
+    final locale = Localizations.localeOf(context).languageCode;
     final dateLabel = _incidentDate != null
-        ? '${AppDateUtils.formatDate(_incidentDate!)}, ${AppDateUtils.formatTime(_incidentDate!)}'
-        : 'Select date & time';
+        ? '${AppDateUtils.formatDate(_incidentDate!, locale)}, ${AppDateUtils.formatTime(_incidentDate!, locale)}'
+        : l.claimDetail_selectDateTime;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _FieldLabel('Date & Time'),
+        _FieldLabel(l.claimDetail_dateTime),
         InkWell(
           onTap: _saving ? null : _pickDateTime,
           borderRadius: BorderRadius.circular(8),
@@ -813,12 +839,12 @@ class _AccidentInfoCardState extends State<_AccidentInfoCard> {
           ),
         ),
         const SizedBox(height: AppSpacing.md),
-        const _FieldLabel('Location'),
+        _FieldLabel(l.claimDetail_location),
         TextField(
           controller: _locationController,
           enabled: !_saving,
           decoration: InputDecoration(
-            hintText: 'Where did the incident occur?',
+            hintText: l.claimDetail_locationHint,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
             ),
@@ -827,14 +853,14 @@ class _AccidentInfoCardState extends State<_AccidentInfoCard> {
           ),
         ),
         const SizedBox(height: AppSpacing.md),
-        const _FieldLabel('Description'),
+        _FieldLabel(l.claimDetail_descriptionLabel),
         TextField(
           controller: _descriptionController,
           enabled: !_saving,
           minLines: 3,
           maxLines: 6,
           decoration: InputDecoration(
-            hintText: 'Describe what happened',
+            hintText: l.claimDetail_descriptionHint,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
             ),
@@ -851,7 +877,7 @@ class _AccidentInfoCardState extends State<_AccidentInfoCard> {
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
-                child: const Text('Cancel'),
+                child: Text(l.common_cancel),
               ),
             ),
             const SizedBox(width: 12),
@@ -870,7 +896,7 @@ class _AccidentInfoCardState extends State<_AccidentInfoCard> {
                         child: CircularProgressIndicator(
                             strokeWidth: 2, color: Colors.white),
                       )
-                    : const Text('Save'),
+                    : Text(l.common_save),
               ),
             ),
           ],
@@ -1023,12 +1049,13 @@ class _DocumentsCard extends StatelessWidget {
       }
     }
 
+    final l = AppLocalizations.of(context);
     return _DetailCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Documents (${documents.length})',
+            l.claimDetail_documentsCount(documents.length),
             style: const TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.w700,
@@ -1042,11 +1069,11 @@ class _DocumentsCard extends StatelessWidget {
               child: Center(child: CircularProgressIndicator()),
             )
           else if (sections.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
               child: Text(
-                'No document groups configured for this template.',
-                style: TextStyle(color: AppColors.textSecondary),
+                l.claimDetail_noTemplate,
+                style: const TextStyle(color: AppColors.textSecondary),
               ),
             )
           else
@@ -1160,9 +1187,9 @@ class _PhotoSection extends StatelessWidget {
                     labels: const [],
                   );
                 },
-                child: const Text(
-                  '(See sample)',
-                  style: TextStyle(
+                child: Text(
+                  AppLocalizations.of(context).claimDetail_seeSample,
+                  style: const TextStyle(
                     fontSize: 12,
                     color: AppColors.primary,
                     decoration: TextDecoration.underline,
@@ -1174,7 +1201,7 @@ class _PhotoSection extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         if (photos.isEmpty)
-          _EmptyRow(label: 'No photos uploaded')
+          _EmptyRow(label: AppLocalizations.of(context).claimDetail_noPhotos)
         else
           SizedBox(
             height: 104,
@@ -1234,7 +1261,8 @@ class _PhotoSection extends StatelessWidget {
           ),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          '${photos.length}/$_quota uploaded',
+          AppLocalizations.of(context)
+              .claimDetail_quotaUploaded(photos.length, _quota),
           style: const TextStyle(
             fontSize: 12,
             color: AppColors.textSecondary,
@@ -1338,7 +1366,8 @@ class _FilesSection extends StatelessWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         if (docs.isEmpty)
-          _EmptyRow(label: 'No documents uploaded')
+          _EmptyRow(
+              label: AppLocalizations.of(context).claimDetail_noDocuments)
         else
           ...docs.map((d) {
             final id = (d['id'] ?? '').toString();
@@ -1357,7 +1386,8 @@ class _FilesSection extends StatelessWidget {
           }),
         const SizedBox(height: AppSpacing.sm),
         Text(
-          '${docs.length}/$quota uploaded',
+          AppLocalizations.of(context)
+              .claimDetail_quotaUploaded(docs.length, quota),
           style: const TextStyle(
             fontSize: 12,
             color: AppColors.textSecondary,
@@ -1566,7 +1596,10 @@ class _FileRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  sizeKb > 0 ? 'Document • $sizeKb KB' : 'Document',
+                  sizeKb > 0
+                      ? AppLocalizations.of(context)
+                          .claimDetail_documentWithSize(sizeKb)
+                      : AppLocalizations.of(context).claimDetail_document,
                   style: const TextStyle(
                     fontSize: 11,
                     color: AppColors.textSecondary,
@@ -1709,9 +1742,9 @@ class _UploadButton extends StatelessWidget {
                 const Icon(Icons.camera_alt_outlined,
                     size: 16, color: AppColors.textPrimary),
               const SizedBox(width: 6),
-              const Text(
-                'UPLOAD',
-                style: TextStyle(
+              Text(
+                AppLocalizations.of(context).claimDetail_uploadButton,
+                style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
                   color: AppColors.textPrimary,
@@ -1789,14 +1822,15 @@ class _StatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final (Color bg, Color fg, String label) = switch (status) {
-      ClaimStatus.draft => (const Color(0xFFE8EAED), const Color(0xFF5F6368), 'DRAFT'),
-      ClaimStatus.pending => (const Color(0xFFFFE7B8), const Color(0xFFB76E00), 'PENDING'),
-      ClaimStatus.submitted => (const Color(0xFFD7E7FD), const Color(0xFF1557B0), 'SUBMITTED'),
-      ClaimStatus.inReview => (const Color(0xFFEADFFD), const Color(0xFF6A3BD6), 'NEED INFO'),
-      ClaimStatus.approved => (const Color(0xFFD5F1DE), const Color(0xFF0E7C3A), 'APPROVED'),
-      ClaimStatus.rejected => (const Color(0xFFFBDAD7), const Color(0xFFB3261E), 'REJECTED'),
-      ClaimStatus.closed => (const Color(0xFFE8EAED), const Color(0xFF5F6368), 'CLOSED'),
+      ClaimStatus.draft => (const Color(0xFFE8EAED), const Color(0xFF5F6368), l.claim_status_draft),
+      ClaimStatus.pending => (const Color(0xFFFFE7B8), const Color(0xFFB76E00), l.claim_status_pending),
+      ClaimStatus.submitted => (const Color(0xFFD7E7FD), const Color(0xFF1557B0), l.claim_status_submitted),
+      ClaimStatus.inReview => (const Color(0xFFEADFFD), const Color(0xFF6A3BD6), l.claim_status_needInfo),
+      ClaimStatus.approved => (const Color(0xFFD5F1DE), const Color(0xFF0E7C3A), l.claim_status_approved),
+      ClaimStatus.rejected => (const Color(0xFFFBDAD7), const Color(0xFFB3261E), l.claim_status_rejected),
+      ClaimStatus.closed => (const Color(0xFFE8EAED), const Color(0xFF5F6368), l.claim_status_closed),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),

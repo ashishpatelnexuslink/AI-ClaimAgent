@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 import 'package:claim_ai/core/navigation/app_routes.dart';
 import 'package:claim_ai/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:claim_ai/features/auth/presentation/cubit/auth_state.dart';
@@ -47,6 +48,7 @@ class _OtpPageState extends State<OtpPage> {
   String get _otp => _controllers.map((c) => c.text).join();
 
   void _onVerify() {
+    final l = AppLocalizations.of(context);
     final otp = _otp;
     if (otp.length == 6) {
       context.read<AuthCubit>().verifyOtp(
@@ -55,21 +57,28 @@ class _OtpPageState extends State<OtpPage> {
           );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter the complete OTP')),
+        SnackBar(content: Text(l.auth_otp_incomplete)),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return BlocListener<AuthCubit, AuthState>(
       listener: (context, state) {
         if (state.status == AuthStatus.authenticated) {
-          Navigator.of(context).pushNamedAndRemoveUntil(
-            AppRoutes.home,
-            (_) => false,
-            arguments: state.isNewUser ? {'initialTab': 2} : null,
-          );
+          if (state.isNewUser) {
+            Navigator.of(context).pushNamedAndRemoveUntil(
+              AppRoutes.onboarding,
+              (_) => false,
+            );
+          } else {
+            Navigator.of(context).pushNamedAndRemoveUntil(
+              AppRoutes.home,
+              (_) => false,
+            );
+          }
         } else if (state.status == AuthStatus.error &&
             state.errorMessage != null) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -81,9 +90,9 @@ class _OtpPageState extends State<OtpPage> {
         content: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'OTP Verification',
-              style: TextStyle(
+            Text(
+              l.auth_otp_title,
+              style: const TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
                 color: Color(0xFF1A1A2E),
@@ -94,7 +103,7 @@ class _OtpPageState extends State<OtpPage> {
               children: [
                 Flexible(
                   child: Text(
-                    'OTP sent on ${widget.phoneOrEmail}',
+                    l.auth_otp_sentOn(widget.phoneOrEmail),
                     style: const TextStyle(
                       fontSize: 13,
                       color: Color(0xFF6B7280),
@@ -105,9 +114,9 @@ class _OtpPageState extends State<OtpPage> {
                 const SizedBox(width: 8),
                 GestureDetector(
                   onTap: () => Navigator.of(context).pop(),
-                  child: const Text(
-                    'Edit Number',
-                    style: TextStyle(
+                  child: Text(
+                    l.auth_otp_editNumber,
+                    style: const TextStyle(
                       fontSize: 13,
                       color: Color(0xFF044DAE),
                       fontWeight: FontWeight.w500,
@@ -117,9 +126,9 @@ class _OtpPageState extends State<OtpPage> {
               ],
             ),
             const SizedBox(height: 20),
-            const Text(
-              'Enter OTP',
-              style: TextStyle(
+            Text(
+              l.auth_otp_label,
+              style: const TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
                 color: Color(0xFF374151),
@@ -192,7 +201,7 @@ class _OtpPageState extends State<OtpPage> {
               builder: (context, state) {
                 final isLoading = state.status == AuthStatus.loading;
                 return AuthGradientButton(
-                  label: 'Verify & Proceed',
+                  label: l.auth_otp_verifyButton,
                   isLoading: isLoading,
                   onPressed: _onVerify,
                 );

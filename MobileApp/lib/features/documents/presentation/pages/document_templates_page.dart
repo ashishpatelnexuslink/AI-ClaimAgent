@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:claim_ai/core/constants/app_theme.dart';
+import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 
 class DocumentTemplatesPage extends StatelessWidget {
   const DocumentTemplatesPage({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Document Templates')),
+      appBar: AppBar(title: Text(l.documentTemplates_appBarTitle)),
       body: Padding(
         padding: const EdgeInsets.all(AppSpacing.md),
         child: Center(
@@ -21,16 +23,16 @@ class DocumentTemplatesPage extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.md),
               Text(
-                'Document Templates',
+                l.documentTemplates_header,
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
               ),
               const SizedBox(height: AppSpacing.sm),
-              const Text(
-                'Templates will be loaded from the backend once integration is complete.',
+              Text(
+                l.documentTemplates_placeholder,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: AppColors.textSecondary),
+                style: const TextStyle(color: AppColors.textSecondary),
               ),
             ],
           ),

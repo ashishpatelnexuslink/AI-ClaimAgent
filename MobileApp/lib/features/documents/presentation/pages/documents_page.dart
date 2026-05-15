@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:claim_ai/core/constants/app_theme.dart';
+import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 import 'package:claim_ai/core/utils/date_utils.dart';
 import 'package:claim_ai/core/widgets/loading_widget.dart';
 import 'package:claim_ai/core/widgets/error_widget.dart';
@@ -43,10 +44,13 @@ class _DocumentsPageState extends State<DocumentsPage> {
         }
       },
       child: Scaffold(
-        appBar: AppBar(title: const Text('Documents')),
+        appBar: AppBar(
+          title: Text(AppLocalizations.of(context).documents_appBarTitle),
+        ),
         floatingActionButton: BlocBuilder<DocumentsCubit, DocumentsState>(
           buildWhen: (prev, curr) => prev.isUploading != curr.isUploading,
           builder: (context, state) {
+            final l = AppLocalizations.of(context);
             return FloatingActionButton.extended(
               onPressed: state.isUploading
                   ? null
@@ -64,15 +68,16 @@ class _DocumentsPageState extends State<DocumentsPage> {
                     )
                   : const Icon(Icons.upload_file),
               label: Text(
-                state.isUploading ? 'Uploading...' : 'Upload',
+                state.isUploading ? l.documents_uploading : l.documents_uploadButton,
               ),
             );
           },
         ),
         body: BlocBuilder<DocumentsCubit, DocumentsState>(
           builder: (context, state) {
+            final l = AppLocalizations.of(context);
             if (state.isLoading) {
-              return const LoadingWidget(message: 'Loading documents...');
+              return LoadingWidget(message: l.documents_loading);
             }
 
             if (state.errorMessage != null && state.documents.isEmpty) {
@@ -85,8 +90,8 @@ class _DocumentsPageState extends State<DocumentsPage> {
             }
 
             if (state.documents.isEmpty) {
-              return const EmptyWidget(
-                message: 'No documents yet',
+              return EmptyWidget(
+                message: l.documents_empty,
                 icon: Icons.description_outlined,
               );
             }
@@ -121,13 +126,16 @@ class _DocumentsPageState extends State<DocumentsPage> {
           style: const TextStyle(fontWeight: FontWeight.w500),
         ),
         subtitle: Text(
-          '${_formatFileSize(doc.fileSize)} - ${AppDateUtils.formatDate(doc.createdAt)}',
+          '${_formatFileSize(doc.fileSize)} - ${AppDateUtils.formatDate(doc.createdAt, Localizations.localeOf(context).languageCode)}',
           style:
               const TextStyle(fontSize: 12, color: AppColors.textSecondary),
         ),
         trailing: PopupMenuButton(
           itemBuilder: (context) => [
-            const PopupMenuItem(value: 'delete', child: Text('Delete')),
+            PopupMenuItem(
+              value: 'delete',
+              child: Text(AppLocalizations.of(context).common_delete),
+            ),
           ],
           onSelected: (value) {
             if (value == 'delete') {

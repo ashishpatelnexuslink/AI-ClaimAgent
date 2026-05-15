@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:claim_ai/core/constants/app_theme.dart';
+import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 import 'package:claim_ai/core/navigation/app_routes.dart';
 import 'package:claim_ai/core/widgets/loading_widget.dart';
 import 'package:claim_ai/core/widgets/error_widget.dart';
@@ -12,23 +13,24 @@ import 'package:claim_ai/features/claims/presentation/widgets/claim_card.dart';
 class ClaimsListPage extends StatelessWidget {
   const ClaimsListPage({super.key});
 
-  static const List<_StatusFilter> _quickFilters = [
-    _StatusFilter(label: 'All', value: null),
-    _StatusFilter(label: 'Approved', value: 'approved'),
-    _StatusFilter(label: 'Pending', value: 'pending'),
-    _StatusFilter(label: 'In Review', value: 'inReview'),
-    _StatusFilter(label: 'Rejected', value: 'rejected'),
-  ];
+  List<_StatusFilter> _quickFilters(AppLocalizations l) => [
+        _StatusFilter(label: l.claims_filter_all, value: null),
+        _StatusFilter(label: l.status_approved, value: 'approved'),
+        _StatusFilter(label: l.status_pending, value: 'pending'),
+        _StatusFilter(label: l.status_inReview, value: 'inReview'),
+        _StatusFilter(label: l.status_rejected, value: 'rejected'),
+      ];
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(title: const Text('Claims')),
+      appBar: AppBar(title: Text(l.claims_appBarTitle)),
       body: BlocBuilder<ClaimsCubit, ClaimsState>(
         builder: (context, state) {
           if (state.isLoading && state.claims.isEmpty) {
-            return const LoadingWidget(message: 'Loading claims...');
+            return LoadingWidget(message: l.claims_loading);
           }
 
           if (state.errorMessage != null && state.claims.isEmpty) {
@@ -40,8 +42,8 @@ class ClaimsListPage extends StatelessWidget {
           }
 
           if (state.claims.isEmpty) {
-            return const EmptyWidget(
-              message: 'No claims found',
+            return EmptyWidget(
+              message: l.claims_empty,
               icon: Icons.description_outlined,
             );
           }
@@ -54,11 +56,11 @@ class ClaimsListPage extends StatelessWidget {
           final showLoader = state.hasMore && selected == null;
           return Column(
             children: [
-              _buildFilterChipsRow(),
+              _buildFilterChipsRow(context),
               Expanded(
                 child: visibleClaims.isEmpty
-                    ? const EmptyWidget(
-                        message: 'No claims found',
+                    ? EmptyWidget(
+                        message: l.claims_empty,
                         icon: Icons.description_outlined,
                       )
                     : RefreshIndicator(
@@ -104,7 +106,8 @@ class ClaimsListPage extends StatelessWidget {
     );
   }
 
-  Widget _buildFilterChipsRow() {
+  Widget _buildFilterChipsRow(BuildContext outerContext) {
+    final filters = _quickFilters(AppLocalizations.of(outerContext));
     return BlocBuilder<ClaimsCubit, ClaimsState>(
       buildWhen: (prev, curr) => prev.selectedStatus != curr.selectedStatus,
       builder: (context, state) {
@@ -115,10 +118,10 @@ class ClaimsListPage extends StatelessWidget {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-            itemCount: _quickFilters.length,
+            itemCount: filters.length,
             separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.sm),
             itemBuilder: (context, index) {
-              final filter = _quickFilters[index];
+              final filter = filters[index];
               return _FilterChipPill(
                 label: filter.label,
                 selected: state.selectedStatus == filter.value,

@@ -11,13 +11,25 @@ import 'package:claim_ai/features/assistant/data/datasources/chatbot_api_client.
 /// Uses the streaming `/chat/stream` endpoint for all messages.
 class ChatService {
   /// Stream structured messages from the chatbot via SSE.
+  ///
+  /// `language` is the BCP-47 language code (e.g. "en", "it") and
+  /// `countryCode` is the ISO-3166 country code (e.g. "IN", "IT") of the
+  /// currently-selected app locale. The backend uses both to localize AI
+  /// replies.
   static Stream<ChatStreamMessage> sendMessage(
     String message, {
     String? threadId,
+    String? language,
+    String? countryCode,
   }) async* {
     await for (final raw in ApiClient.getStream(
       '/chat/stream',
-      queryParams: {'message': message, 'thread_id': ?threadId},
+      queryParams: {
+        'message': message,
+        'thread_id': ?threadId,
+        'language': ?language,
+        'country_code': ?countryCode,
+      },
     )) {
       if (kDebugMode) {
         debugPrint('[chat/stream] ← ${jsonEncode(raw)}');
@@ -33,6 +45,8 @@ class ChatService {
     required String groupKey,
     required String threadId,
     required Map<String, String> images,
+    String? language,
+    String? countryCode,
   }) async {
     if (kDebugMode) {
       final imageSizes = images.map(
@@ -41,6 +55,7 @@ class ChatService {
       debugPrint(
         '[validate-images] POST ${AppConfig.chatbotBaseUrl}/validate-images '
         'body={group_key: $groupKey, thread_id: $threadId, '
+        'language: $language, country_code: $countryCode, '
         'images: $imageSizes}',
       );
     }
@@ -50,6 +65,8 @@ class ChatService {
         'group_key': groupKey,
         'thread_id': threadId,
         'images': images,
+        'language': ?language,
+        'country_code': ?countryCode,
       },
     );
     if (kDebugMode) {

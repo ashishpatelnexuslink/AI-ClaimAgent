@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 import 'package:claim_ai/features/assistant/presentation/pages/claim_chat_screen.dart';
 import 'package:claim_ai/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:claim_ai/features/auth/presentation/cubit/auth_state.dart';
@@ -150,9 +151,9 @@ class _AvatarAssistantScreenState extends State<AvatarAssistantScreen>
           ),
         ),
       ),
-      title: const Text(
-        'Avatar Assistant',
-        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _kDark),
+      title: Text(
+        AppLocalizations.of(context).assistant_appBarTitle,
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _kDark),
       ),
     );
   }
@@ -285,9 +286,12 @@ class _AvatarAssistantScreenState extends State<AvatarAssistantScreen>
     return BlocBuilder<AuthCubit, AuthState>(
       buildWhen: (prev, curr) => prev.user != curr.user,
       builder: (context, state) {
+        final l = AppLocalizations.of(context);
         final fullName = state.user?.fullName.trim() ?? '';
         final firstName = fullName.isEmpty ? '' : fullName.split(' ').first;
-        final greeting = firstName.isEmpty ? 'Hi,' : 'Hi $firstName,';
+        final greeting = firstName.isEmpty
+            ? l.assistant_greetingNoName
+            : l.assistant_greetingWithName(firstName);
         return Column(
           children: [
             Text(
@@ -295,15 +299,15 @@ class _AvatarAssistantScreenState extends State<AvatarAssistantScreen>
               style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: _kDark),
               textAlign: TextAlign.center,
             ),
-            const Text(
-              "I'm your Assistant.",
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: _kDark),
+            Text(
+              l.assistant_imYourAssistant,
+              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: _kDark),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 12),
-            const Text(
-              'I can help you file or track a claim.\nHow can I assist you today?',
-              style: TextStyle(fontSize: 14, color: Colors.grey, height: 1.5),
+            Text(
+              l.assistant_helpText,
+              style: const TextStyle(fontSize: 14, color: Colors.grey, height: 1.5),
               textAlign: TextAlign.center,
             ),
           ],
@@ -314,13 +318,14 @@ class _AvatarAssistantScreenState extends State<AvatarAssistantScreen>
 
   // ─── Mode Cards ──────────────────────────────────────────────────────────
   Widget _buildModeCards() {
+    final l = AppLocalizations.of(context);
     return Row(
       children: [
         Expanded(
           child: _ModeCard(
             icon: Icons.mic_rounded,
-            title: 'Voice Mode',
-            subtitle: 'Speak naturally to file your claim',
+            title: l.assistant_voiceModeTitle,
+            subtitle: l.assistant_voiceModeSubtitle,
             isSelected: _selectedMode == 'voice',
             onTap: _onVoiceMode,
           ),
@@ -329,8 +334,8 @@ class _AvatarAssistantScreenState extends State<AvatarAssistantScreen>
         Expanded(
           child: _ModeCard(
             icon: Icons.chat_bubble_outline_rounded,
-            title: 'Chat Mode',
-            subtitle: 'Type messages to file your claim',
+            title: l.assistant_chatModeTitle,
+            subtitle: l.assistant_chatModeSubtitle,
             isSelected: _selectedMode == 'chat',
             onTap: _onChatMode,
           ),
@@ -359,9 +364,9 @@ class _AvatarAssistantScreenState extends State<AvatarAssistantScreen>
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _navItem(Icons.home_rounded, 'Home', true, 0),
-              _navItem(Icons.description_outlined, 'Claims', false, 1),
-              _navItem(Icons.person_outline_rounded, 'Profile', false, 2),
+              _navItem(Icons.home_rounded, AppLocalizations.of(context).nav_home, true, 0),
+              _navItem(Icons.description_outlined, AppLocalizations.of(context).nav_claims, false, 1),
+              _navItem(Icons.person_outline_rounded, AppLocalizations.of(context).nav_profile, false, 2),
             ],
           ),
         ),
