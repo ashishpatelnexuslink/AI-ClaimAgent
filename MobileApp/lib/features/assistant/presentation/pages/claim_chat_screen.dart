@@ -12,6 +12,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
+import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 import 'package:claim_ai/core/navigation/app_routes.dart';
 import 'package:claim_ai/core/storage/chat_transcript_writer.dart';
 import 'package:claim_ai/features/assistant/data/datasources/chat_service.dart';
@@ -124,8 +125,12 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         );
       }
     } else {
-      // Fetch a real greeting from the API
-      _initGreeting();
+      // Fetch a real greeting from the API. Deferred to the next frame so
+      // `Localizations.localeOf(context)` (read inside `_streamBotReply`) can
+      // see the inherited widget tree — calling it during initState throws.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _initGreeting();
+      });
     }
   }
 
@@ -188,9 +193,12 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     // with remaining queued bot messages.
     bool autoFetchLocation = false;
     try {
+      final locale = Localizations.localeOf(context);
       await for (final msg in ChatService.sendMessage(
         userMessage,
         threadId: _threadId,
+        language: locale.languageCode,
+        countryCode: locale.countryCode,
       )) {
         if (!mounted) return;
         _pendingBotMessages.add(
@@ -219,8 +227,8 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     } catch (_) {
       if (!mounted) return;
       _pendingBotMessages.add(
-        const _ChatMsg(
-          text: 'Sorry, something went wrong. Please try again.',
+        _ChatMsg(
+          text: AppLocalizations.of(context).voice_genericError,
           isUser: false,
         ),
       );
@@ -380,7 +388,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       time.hour,
       time.minute,
     );
-    final formatted = DateFormat('dd MMM yyyy, hh:mm a').format(selected);
+    final locale = Localizations.localeOf(context).languageCode;
+    final formatted =
+        '${DateFormat.yMMMd(locale).format(selected)}, ${DateFormat.jm(locale).format(selected)}';
 
     _inputFocusNode.unfocus();
 
@@ -406,6 +416,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   Future<void> _onUseCurrentLocation({bool auto = false}) async {
     if (_fetchingLocation) return;
     if (!auto && _botTyping) return;
+    final l = AppLocalizations.of(context);
     setState(() => _fetchingLocation = true);
 
     try {
@@ -414,17 +425,8 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       if (!serviceEnabled) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Please enable location services (GPS) in device settings',
-            ),
-          ),
+          SnackBar(content: Text(l.voice_locationEnableGps)),
         );
-        // Send the user to settings, then wait (with a timeout) for the OS
-        // to broadcast that location services are now enabled. Without this,
-        // `openLocationSettings()` returns immediately and the fetch silently
-        // gives up, leaving the chat stuck on "Fetching your current
-        // location…".
         await Geolocator.openLocationSettings();
         try {
           await Geolocator.getServiceStatusStream()
@@ -433,11 +435,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         } on TimeoutException {
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Location services were not enabled. Please try again.',
-              ),
-            ),
+            SnackBar(content: Text(l.voice_locationNotEnabled)),
           );
           return;
         }
@@ -455,18 +453,14 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       if (permission == LocationPermission.denied) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Location permission is required')),
+          SnackBar(content: Text(l.voice_locationPermissionRequired)),
         );
         return;
       }
       if (permission == LocationPermission.deniedForever) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Location permission is permanently denied. Please enable it in app settings.',
-            ),
-          ),
+          SnackBar(content: Text(l.voice_locationPermissionDeniedForever)),
         );
         await Geolocator.openAppSettings();
         return;
@@ -513,18 +507,17 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     } on LocationServiceDisabledException {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Location services are disabled')),
+        SnackBar(content: Text(l.voice_locationServicesDisabled)),
       );
     } on PermissionDeniedException {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Location permission was denied')),
+        SnackBar(content: Text(l.voice_locationPermissionDenied)),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not get location: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l.voice_locationError(e.toString()))));
     } finally {
       if (mounted) setState(() => _fetchingLocation = false);
     }
@@ -602,9 +595,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
               backgroundColor: Colors.grey.shade200,
             ),
             const SizedBox(width: 10),
-            const Text(
-              'Claim Assistant',
-              style: TextStyle(
+            Text(
+              AppLocalizations.of(context).chat_appBarTitle,
+              style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
                 color: _kDark,
@@ -655,7 +648,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                       textInputAction: TextInputAction.send,
                       onSubmitted: (_) => _send(),
                       decoration: InputDecoration(
-                        hintText: 'Type your message...',
+                        hintText: AppLocalizations.of(context).chat_inputHint,
                         hintStyle: TextStyle(
                           color: Colors.grey.shade400,
                           fontSize: 14,
@@ -716,16 +709,17 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   }
 
   String _cardTitleFor(String? payloadType) {
+    final l = AppLocalizations.of(context);
     switch (payloadType) {
       case 'initial_summary':
-        return 'Initial Summary';
+        return l.voice_initialSummary;
       case 'final_summary':
-        return 'Claim Summary';
+        return l.voice_claimSummary;
       case 'save_summary':
-        return 'Saved Claim Summary';
+        return l.voice_savedClaimSummary;
       case 'verified_summary':
       default:
-        return 'Policy Verified';
+        return l.voice_policyVerified;
     }
   }
 
@@ -738,7 +732,8 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     if (iso != null) {
       final parsed = DateTime.tryParse(raw);
       if (parsed != null) {
-        return DateFormat('d MMM, yyyy').format(parsed);
+        return DateFormat.yMMMd(Localizations.localeOf(context).languageCode)
+            .format(parsed);
       }
     }
     return raw;
@@ -837,31 +832,32 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
 
   String _humanizeDocLabel(String key) {
     final k = key.toLowerCase().trim();
+    final l = AppLocalizations.of(context);
     switch (k) {
       case 'vehicle photos':
       case 'vehicle photos count':
-        return 'Vehicle Photos';
+        return l.voice_group_vehiclePhotos;
       case 'damage photos':
       case 'damage photos count':
-        return 'Damage Vehicle Photos';
+        return l.voice_group_damageVehiclePhotos;
       case 'driver license':
       case 'driving license':
       case 'license photos':
       case 'license photos count':
-        return 'Driving License';
+        return l.voice_group_drivingLicense;
       case 'supporting docs':
       case 'supporting documents':
-        return 'Uploaded Documents';
+        return l.voice_group_uploadedDocuments;
       case 'police report':
       case 'police report count':
-        return 'Police Report';
+        return l.voice_group_policeReport;
       case 'bill invoice':
       case 'invoice':
       case 'invoice count':
-        return 'Invoice';
+        return l.voice_group_invoice;
       case 'repair bill':
       case 'repair bill count':
-        return 'Repair Bill';
+        return l.voice_group_repairBill;
       default:
         return key.replaceAll(' Count', '');
     }
@@ -993,9 +989,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                         ),
                       ),
                       const SizedBox(width: 10),
-                      const Text(
-                        'Review Your Claim',
-                        style: TextStyle(
+                      Text(
+                        AppLocalizations.of(context).chat_review_title,
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -1007,13 +1003,15 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                   ..._reviewRows(basic),
                   if (incident.isNotEmpty) ...[
                     const SizedBox(height: 14),
-                    _reviewSectionHeader('INCIDENT DETAILS'),
+                    _reviewSectionHeader(
+                        AppLocalizations.of(context).chat_review_incidentDetails),
                     const SizedBox(height: 10),
                     ..._reviewRows(incident, multiline: true),
                   ],
                   if (documents.isNotEmpty) ...[
                     const SizedBox(height: 14),
-                    _reviewSectionHeader('DOCUMENTS'),
+                    _reviewSectionHeader(
+                        AppLocalizations.of(context).chat_review_documents),
                     const SizedBox(height: 10),
                     ..._reviewRows(documents),
                   ],
@@ -1048,9 +1046,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                                 valueColor: AlwaysStoppedAnimation(_kBlue),
                               ),
                             )
-                          : const Text(
-                              'Confirm & Submit Claim',
-                              style: TextStyle(
+                          : Text(
+                              AppLocalizations.of(context).chat_review_confirmSubmit,
+                              style: const TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -1149,8 +1147,8 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       _reviewSectionHeader('UPLOADS'),
       const SizedBox(height: 10),
       ..._reviewRows([
-        MapEntry('Photos', photos.toString()),
-        MapEntry('Documents', documents.toString()),
+        MapEntry(AppLocalizations.of(context).chat_review_photosKey, photos.toString()),
+        MapEntry(AppLocalizations.of(context).chat_review_documentsKey, documents.toString()),
       ]),
     ];
   }
@@ -1503,7 +1501,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       if (policyFields != null) {
         return _buildPolicyCard(
           msg: msg,
-          title: 'Policy Verified',
+          title: AppLocalizations.of(context).voice_policyVerified,
           fields: policyFields,
           introText: _policyIntroText(msg.text),
           trailingText: _policyTrailingText(msg.text),
@@ -1874,7 +1872,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Image upload failed: $e')));
+        ).showSnackBar(SnackBar(
+            content: Text(
+                AppLocalizations.of(context).voice_imageUploadFailed(e.toString()))));
       }
       debugPrint('[Upload] angle image upload failed: $e');
     }
@@ -1909,8 +1909,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     List<String> allowedAngles = const [],
     _ChatMsg? previousFailureMsg,
   }) async {
+    final l = AppLocalizations.of(context);
     final waitingMsg = _ChatMsg(
-      text: 'Please wait while we validate your images...',
+      text: l.voice_validatingImages,
       isUser: false,
     );
     setState(() => _messages.add(waitingMsg));
@@ -1918,10 +1919,13 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
 
     ImageValidationResult result;
     try {
+      final locale = Localizations.localeOf(context);
       result = await ChatService.validateImages(
         groupKey: questionLabel,
         threadId: _threadId,
         images: images,
+        language: locale.languageCode,
+        countryCode: locale.countryCode,
       );
     } on TimeoutException catch (e) {
       debugPrint('[Validate] image validation timed out: $e');
@@ -1935,7 +1939,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         }
         _messages.add(
           _ChatMsg(
-            text: 'Something happen Please try again',
+            text: l.voice_imageValidationRetry,
             isUser: false,
             validationTimeoutRetry: true,
             validationRetryImages: Map<String, String>.from(images),
@@ -1951,7 +1955,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       debugPrint('[Validate] image validation failed: $e');
       result = ImageValidationResult(
         valid: false,
-        failureReason: 'Could not validate images. Please try again.',
+        failureReason: l.voice_imageValidationCouldNot,
       );
     }
 
@@ -1998,7 +2002,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           _ChatMsg(
             text: result.failureReason?.trim().isNotEmpty == true
                 ? result.failureReason!
-                : 'Image validation failed. Please re-upload.',
+                : l.voice_imageValidationFailedReupload,
             isUser: false,
             validationFailedAngles:
                 useLegacy ? const [] : List<String>.from(effectiveFailedAngles),
@@ -2027,7 +2031,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
               ? null
               : () => _onValidationTimeoutRetry(msg),
           icon: const Icon(Icons.refresh, size: 16),
-          label: const Text('Try Again'),
+          label: Text(AppLocalizations.of(context).voice_tryAgain),
           style: ElevatedButton.styleFrom(
             backgroundColor: _kBlue,
             foregroundColor: Colors.white,
@@ -2100,9 +2104,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
-            'Upload Photos',
-            style: TextStyle(
+          Text(
+            AppLocalizations.of(context).chat_uploadPhotos,
+            style: const TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.bold,
               color: _kDark,
@@ -2129,9 +2133,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
-                  'Some images need to be re-uploaded',
-                  style: TextStyle(
+                Text(
+                  AppLocalizations.of(context).chat_someImagesReupload,
+                  style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFFB00020),
@@ -2342,7 +2346,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Image upload failed: $e')));
+        ).showSnackBar(SnackBar(
+            content: Text(
+                AppLocalizations.of(context).voice_imageUploadFailed(e.toString()))));
       }
       debugPrint('[Upload] image upload failed: $e');
     }
@@ -2445,7 +2451,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Document upload failed: $e')));
+        ).showSnackBar(SnackBar(
+            content: Text(AppLocalizations.of(context)
+                .voice_documentUploadFailed(e.toString()))));
       }
       debugPrint('[Upload] document upload failed: $e');
     }
@@ -2945,7 +2953,10 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           );
           _savedOnSummary = true;
         } catch (e) {
-          errorMessage = 'Failed to save claim: $e';
+          if (mounted) {
+            errorMessage = AppLocalizations.of(context)
+                .voice_failedToSaveClaim(e.toString());
+          }
           debugPrint('[Close] fallback save failed: $e');
         }
       }
@@ -2998,7 +3009,10 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       await _runSaveClaimAndConversation(saveSummaryPayload: msg.payload);
       _savedOnSummary = true;
     } catch (e) {
-      errorMessage = 'Failed to save claim: $e';
+      if (mounted) {
+        errorMessage = AppLocalizations.of(context)
+            .voice_failedToSaveClaim(e.toString());
+      }
       debugPrint('[ConfirmFinalSummary] save failed: $e');
     }
 
@@ -3016,9 +3030,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       return;
     }
     // Send "Yes Confirm" to the bot so the conversation continues.
-    const reply = 'Yes Confirm';
+    final reply = AppLocalizations.of(context).voice_yesConfirm;
     setState(() {
-      _messages.add(const _ChatMsg(text: reply, isUser: true));
+      _messages.add(_ChatMsg(text: reply, isUser: true));
       _botTyping = true;
     });
     _scrollToBottom();
@@ -3038,7 +3052,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
 
     return _buildPillButton(
       icon: Icons.check_circle_outline,
-      label: 'Submit Claim',
+      label: AppLocalizations.of(context).chat_submitClaim,
       onTap: () => _onSubmitClaim(claimMsg.claimData!),
       isLoading: _submittingClaim,
     );
@@ -3061,10 +3075,11 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       _submittedClaimId = (response['id'] ?? response['claimId'] ?? claimNumber)
           .toString();
 
+      final l = AppLocalizations.of(context);
       setState(() {
         _messages.add(
           _ChatMsg(
-            text: 'Claim **$claimNumber** has been submitted successfully!',
+            text: l.voice_claimSubmittedMd(claimNumber),
             isUser: false,
             animate: true,
           ),
@@ -3078,7 +3093,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       setState(() {
         _messages.add(
           _ChatMsg(
-            text: 'Failed to submit claim. Please try again.',
+            text: AppLocalizations.of(context).voice_failedToSubmitClaim,
             isUser: false,
           ),
         );
@@ -3187,7 +3202,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     final now = DateTime.now();
     final date = _dtDate ?? now;
     final time = _dtTime ?? TimeOfDay.fromDateTime(now);
-    final dateLabel = DateFormat('d MMM yyyy').format(date);
+    final dateLabel = DateFormat.yMMMd(
+            Localizations.localeOf(context).languageCode)
+        .format(date);
     final timeLabel = time.format(context);
 
     return SizedBox(
@@ -3196,7 +3213,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Select Incident Date & Time',
+            AppLocalizations.of(context).chat_selectIncidentDateTime,
             style: TextStyle(
               fontSize: 13,
               color: Colors.grey.shade600,
@@ -3240,10 +3257,10 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                   ),
                 ],
               ),
-              child: const Center(
+              child: Center(
                 child: Text(
-                  'Confirm Date & Time',
-                  style: TextStyle(
+                  AppLocalizations.of(context).chat_confirmDateTime,
+                  style: const TextStyle(
                     fontSize: 15,
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
@@ -3347,7 +3364,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           onSubmitted: (_) => _onSubmitLocation(),
           style: const TextStyle(fontSize: 13, color: _kDark),
           decoration: InputDecoration(
-            hintText: 'Enter street, city or zip code',
+            hintText: AppLocalizations.of(context).chat_locationHint,
             hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade400),
             prefixIcon: Icon(
               Icons.location_on_outlined,
@@ -3380,7 +3397,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         const SizedBox(height: 8),
         _buildPillButton(
           icon: Icons.my_location,
-          label: 'Use Current Location',
+          label: AppLocalizations.of(context).chat_useCurrentLocation,
           onTap: _onUseCurrentLocation,
           isLoading: _fetchingLocation,
         ),
@@ -3419,9 +3436,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Upload Photos',
-            style: TextStyle(
+          Text(
+            AppLocalizations.of(context).chat_uploadPhotos,
+            style: const TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.bold,
               color: _kDark,
@@ -3507,11 +3524,12 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     // the row keeps a neutral "Not uploaded" so the Upload button sits flush.
     final String statusText;
     final Color statusColor;
+    final l = AppLocalizations.of(context);
     if (stillRejected || picked == null) {
-      statusText = 'Not uploaded';
+      statusText = l.chat_notUploaded;
       statusColor = Colors.grey.shade600;
     } else {
-      statusText = 'Uploaded';
+      statusText = l.chat_uploaded;
       statusColor = _kBlue;
     }
     return Row(
@@ -3616,9 +3634,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Upload Photos',
-            style: TextStyle(
+          Text(
+            AppLocalizations.of(context).chat_uploadPhotos,
+            style: const TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.bold,
               color: _kDark,
@@ -3746,9 +3764,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Upload Documents',
-                style: TextStyle(
+              Text(
+                AppLocalizations.of(context).chat_uploadDocuments,
+                style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
                   color: _kDark,
@@ -3758,7 +3776,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
               Text(
                 minCount > 1
                     ? '$alreadyUploaded of $maxCount uploaded · min $minCount'
-                    : 'You can upload photos or PDF files.',
+                    : AppLocalizations.of(context).chat_photosOrPdfHint,
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
               ),
               if (_pickedDocuments.isNotEmpty) ...[

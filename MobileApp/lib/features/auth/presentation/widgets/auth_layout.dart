@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 
 class AuthLayout extends StatelessWidget {
   final Widget content;
@@ -11,6 +12,7 @@ class AuthLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Scaffold(
       backgroundColor: _bgColor,
       body: SafeArea(
@@ -25,10 +27,10 @@ class AuthLayout extends StatelessWidget {
                       fit: BoxFit.contain,
                     ),
                     const SizedBox(height: 20),
-                    const Text(
-                      'AI-Powered\nClaim Handling',
+                    Text(
+                      l.auth_layout_taglineTitle,
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
                         color: Color(0xFF1A1A2E),
@@ -36,10 +38,10 @@ class AuthLayout extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    const Text(
-                      'Claims handled with care and precision.',
+                    Text(
+                      l.auth_layout_taglineSubtitle,
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 13,
                         color: Color(0xFF6B7280),
                       ),
@@ -66,9 +68,9 @@ class AuthLayout extends StatelessWidget {
                           content,
                           const SizedBox(height: 24),
                           // Secure encrypted access
-                          const Text(
-                            'SECURE ENCRYPTED ACCESS',
-                            style: TextStyle(
+                          Text(
+                            l.auth_layout_secureAccess,
+                            style: const TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w600,
                               color: Color(0xFF9CA3AF),
@@ -91,26 +93,24 @@ class AuthLayout extends StatelessWidget {
                                 fontSize: 11,
                                 color: const Color(0xFF9CA3AF),
                               ),
-                              children: const [
+                              children: [
+                                TextSpan(text: l.auth_layout_termsPrefix),
                                 TextSpan(
-                                    text:
-                                        'By continuing, you agree to our '),
-                                TextSpan(
-                                  text: 'Terms of\nService',
-                                  style: TextStyle(
+                                  text: l.auth_layout_termsOfService,
+                                  style: const TextStyle(
                                     color: Color(0xFF6B7280),
                                     decoration: TextDecoration.underline,
                                   ),
                                 ),
-                                TextSpan(text: ' and '),
+                                TextSpan(text: l.auth_layout_termsConnector),
                                 TextSpan(
-                                  text: 'Privacy Policy',
-                                  style: TextStyle(
+                                  text: l.auth_layout_privacyPolicy,
+                                  style: const TextStyle(
                                     color: Color(0xFF6B7280),
                                     decoration: TextDecoration.underline,
                                   ),
                                 ),
-                                TextSpan(text: '.'),
+                                const TextSpan(text: '.'),
                               ],
                             ),
                           ),
@@ -150,23 +150,23 @@ class AuthLayout extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          'Verified Protection',
-                          style: TextStyle(
+                          l.auth_layout_verifiedProtectionTitle,
+                          style: const TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
                             color: Color(0xFF1A1A2E),
                           ),
                         ),
-                        SizedBox(height: 2),
+                        const SizedBox(height: 2),
                         Text(
-                          'Your data is secured by neural encryption.',
-                          style: TextStyle(
+                          l.auth_layout_verifiedProtectionSubtitle,
+                          style: const TextStyle(
                             fontSize: 11,
                             color: Color(0xFF9CA3AF),
                           ),

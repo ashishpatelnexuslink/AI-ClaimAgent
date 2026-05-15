@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 import '../voice_mode_colors.dart';
 
 /// GET_DATE_TIME trigger card. Shows the currently-selected incident date and
@@ -24,10 +25,12 @@ class DateTimeTrigger extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
+    final locale = Localizations.localeOf(context).languageCode;
     final now = DateTime.now();
     final date = selectedDate ?? now;
     final time = selectedTime ?? TimeOfDay.fromDateTime(now);
-    final dateLabel = DateFormat('d MMM yyyy').format(date);
+    final dateLabel = DateFormat.yMMMd(locale).format(date);
     final timeLabel = time.format(context);
 
     return SizedBox(
@@ -36,7 +39,7 @@ class DateTimeTrigger extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Select Incident Date & Time',
+            l.chat_selectIncidentDateTime,
             style: TextStyle(
               fontSize: 13,
               color: Colors.grey.shade600,
@@ -80,10 +83,10 @@ class DateTimeTrigger extends StatelessWidget {
                   ),
                 ],
               ),
-              child: const Center(
+              child: Center(
                 child: Text(
-                  'Confirm Date & Time',
-                  style: TextStyle(
+                  l.chat_confirmDateTime,
+                  style: const TextStyle(
                     fontSize: 15,
                     color: Colors.white,
                     fontWeight: FontWeight.bold,

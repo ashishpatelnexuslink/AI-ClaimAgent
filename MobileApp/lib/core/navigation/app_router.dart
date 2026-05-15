@@ -3,7 +3,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:claim_ai/core/navigation/app_routes.dart';
 import 'package:claim_ai/injection_container.dart';
 import 'package:claim_ai/features/auth/presentation/pages/login_page.dart';
+import 'package:claim_ai/features/auth/presentation/pages/biometric_login_page.dart';
 import 'package:claim_ai/features/auth/presentation/pages/otp_page.dart';
+import 'package:claim_ai/features/auth/presentation/pages/onboarding_page.dart';
 import 'package:claim_ai/features/auth/presentation/pages/splash_page.dart';
 import 'package:claim_ai/features/claims/presentation/pages/claims_list_page.dart';
 import 'package:claim_ai/features/claims/presentation/pages/claim_detail_page.dart';
@@ -23,6 +25,9 @@ class AppRouter {
       case AppRoutes.login:
         return _buildRoute(const LoginPage(), settings);
 
+      case AppRoutes.biometricLogin:
+        return _buildRoute(const BiometricLoginPage(), settings);
+
       case AppRoutes.otp:
         final args = settings.arguments as Map<String, dynamic>?;
         return _buildRoute(
@@ -32,6 +37,9 @@ class AppRouter {
           ),
           settings,
         );
+
+      case AppRoutes.onboarding:
+        return _buildRoute(const OnboardingPage(), settings);
 
       case AppRoutes.home:
         final homeArgs = settings.arguments as Map<String, dynamic>?;

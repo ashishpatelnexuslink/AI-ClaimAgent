@@ -32,6 +32,20 @@ class ApiInterceptor extends Interceptor {
     }
     options.headers['Accept'] = 'application/json';
 
+    // Tell the backend which language to localize its response in (validation
+    // messages, AI chat replies, notification text, etc.). Reads directly from
+    // LocalStorage rather than LocaleCubit to keep this interceptor free of a
+    // BLoC dependency. Emits a BCP-47 tag like "it-IT" when both pieces are
+    // available, falling back to just the language ("it") otherwise.
+    final localeCode = _localStorage.getLocaleCode();
+    if (localeCode != null && localeCode.isNotEmpty) {
+      final countryCode = _localStorage.getCountryCode();
+      final tag = (countryCode != null && countryCode.isNotEmpty)
+          ? '$localeCode-$countryCode'
+          : localeCode;
+      options.headers['Accept-Language'] = tag;
+    }
+
     handler.next(options);
   }
 

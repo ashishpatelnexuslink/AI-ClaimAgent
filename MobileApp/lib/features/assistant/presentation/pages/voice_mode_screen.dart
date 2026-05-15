@@ -14,6 +14,7 @@ import 'package:intl/intl.dart';
 import 'package:permission_handler/permission_handler.dart' hide ServiceStatus;
 import 'package:uuid/uuid.dart';
 
+import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 import 'package:claim_ai/core/navigation/app_routes.dart';
 import 'package:claim_ai/core/services/voice_service.dart';
 import 'package:claim_ai/core/storage/chat_transcript_writer.dart';
@@ -247,22 +248,20 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
   void _onVoiceError(String error) {
     if (!mounted) return;
+    final l = AppLocalizations.of(context);
     if (error == 'permission_denied') {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text(
-            'Microphone permission is required for voice input',
-          ),
+          content: Text(l.voice_micPermissionRequired),
           action: SnackBarAction(
-            label: 'Settings',
+            label: l.voice_settingsAction,
             onPressed: () => openAppSettings(),
           ),
         ),
       );
     } else {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Voice error: $error')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l.voice_error(error))));
     }
     _resetRecordingUi();
   }
@@ -702,9 +701,12 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     bool autoFetchLocation = false;
 
     try {
+      final locale = Localizations.localeOf(context);
       await for (final msg in ChatService.sendMessage(
         userMessage,
         threadId: _threadId,
+        language: locale.languageCode,
+        countryCode: locale.countryCode,
       )) {
         if (!mounted) return;
         setState(() {
@@ -741,8 +743,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         _messages.removeWhere((m) => m.isTyping);
       });
       _enqueueBotReply(
-        const ChatMessage(
-          text: 'Sorry, something went wrong. Please try again.',
+        ChatMessage(
+          text: AppLocalizations.of(context).voice_genericError,
           type: 'bot',
         ),
       );
@@ -804,13 +806,12 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       await _initVoice();
       if (!_voiceAvailable) {
         if (!mounted) return;
+        final l = AppLocalizations.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text(
-              'Microphone permission is required for voice input',
-            ),
+            content: Text(l.voice_micPermissionRequired),
             action: SnackBarAction(
-              label: 'Settings',
+              label: l.voice_settingsAction,
               onPressed: () => openAppSettings(),
             ),
           ),
@@ -868,16 +869,17 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   }
 
   String _cardTitleFor(String? payloadType) {
+    final l = AppLocalizations.of(context);
     switch (payloadType) {
       case 'initial_summary':
-        return 'Initial Summary';
+        return l.voice_initialSummary;
       case 'final_summary':
-        return 'Claim Summary';
+        return l.voice_claimSummary;
       case 'save_summary':
-        return 'Saved Claim Summary';
+        return l.voice_savedClaimSummary;
       case 'verified_summary':
       default:
-        return 'Policy Verified';
+        return l.voice_policyVerified;
     }
   }
 
@@ -887,7 +889,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     final iso = RegExp(r'^\d{4}-\d{2}-\d{2}').firstMatch(raw);
     if (iso != null) {
       final parsed = DateTime.tryParse(raw);
-      if (parsed != null) return DateFormat('d MMM, yyyy').format(parsed);
+      if (parsed != null) {
+        return DateFormat.yMMMd(
+                Localizations.localeOf(context).languageCode)
+            .format(parsed);
+      }
     }
     return raw;
   }
@@ -981,7 +987,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       time.hour,
       time.minute,
     );
-    final formatted = DateFormat('dd MMM yyyy, hh:mm a').format(selected);
+    final locale = Localizations.localeOf(context).languageCode;
+    final formatted =
+        '${DateFormat.yMMMd(locale).format(selected)}, ${DateFormat.jm(locale).format(selected)}';
     setState(() {
       _dtDate = null;
       _dtTime = null;
@@ -1000,6 +1008,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
   Future<void> _onUseCurrentLocation() async {
     if (_botTyping || _fetchingLocation) return;
+    final l = AppLocalizations.of(context);
     setState(() => _fetchingLocation = true);
 
     try {
@@ -1007,11 +1016,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       if (!serviceEnabled) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Please enable location services (GPS) in device settings',
-            ),
-          ),
+          SnackBar(content: Text(l.voice_locationEnableGps)),
         );
         // Send the user to settings, then wait (with a timeout) for the OS
         // to broadcast that location services are now enabled. Without this,
@@ -1025,11 +1030,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         } on TimeoutException {
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Location services were not enabled. Please try again.',
-              ),
-            ),
+            SnackBar(content: Text(l.voice_locationNotEnabled)),
           );
           return;
         }
@@ -1045,18 +1046,14 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       if (permission == LocationPermission.denied) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Location permission is required')),
+          SnackBar(content: Text(l.voice_locationPermissionRequired)),
         );
         return;
       }
       if (permission == LocationPermission.deniedForever) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Location permission is permanently denied. Please enable it in app settings.',
-            ),
-          ),
+          SnackBar(content: Text(l.voice_locationPermissionDeniedForever)),
         );
         await Geolocator.openAppSettings();
         return;
@@ -1100,18 +1097,17 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     } on LocationServiceDisabledException {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Location services are disabled')),
+        SnackBar(content: Text(l.voice_locationServicesDisabled)),
       );
     } on PermissionDeniedException {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Location permission was denied')),
+        SnackBar(content: Text(l.voice_locationPermissionDenied)),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not get location: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l.voice_locationError(e.toString()))));
     } finally {
       if (mounted) setState(() => _fetchingLocation = false);
     }
@@ -1276,7 +1272,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Image upload failed: $e')));
+        ).showSnackBar(SnackBar(
+            content: Text(
+                AppLocalizations.of(context).voice_imageUploadFailed(e.toString()))));
       }
       debugPrint('[Upload] angle image upload failed: $e');
     }
@@ -1311,8 +1309,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     List<String> allowedAngles = const [],
     ChatMessage? previousFailureMsg,
   }) async {
+    final l = AppLocalizations.of(context);
     final waitingMsg = ChatMessage(
-      text: 'Please wait while we validate your images...',
+      text: l.voice_validatingImages,
       type: 'bot',
     );
     setState(() => _messages.add(waitingMsg));
@@ -1320,10 +1319,13 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
     ImageValidationResult result;
     try {
+      final locale = Localizations.localeOf(context);
       result = await ChatService.validateImages(
         groupKey: questionLabel,
         threadId: _threadId,
         images: images,
+        language: locale.languageCode,
+        countryCode: locale.countryCode,
       );
     } on TimeoutException catch (e) {
       debugPrint('[Validate] image validation timed out: $e');
@@ -1337,7 +1339,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         }
         _messages.add(
           ChatMessage(
-            text: 'Something happen Please try again',
+            text: l.voice_imageValidationRetry,
             type: 'bot',
             validationTimeoutRetry: true,
             validationRetryImages: Map<String, String>.from(images),
@@ -1353,7 +1355,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       debugPrint('[Validate] image validation failed: $e');
       result = ImageValidationResult(
         valid: false,
-        failureReason: 'Could not validate images. Please try again.',
+        failureReason: l.voice_imageValidationCouldNot,
       );
     }
 
@@ -1391,7 +1393,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           ChatMessage(
             text: result.failureReason?.trim().isNotEmpty == true
                 ? result.failureReason!
-                : 'Image validation failed. Please re-upload.',
+                : l.voice_imageValidationFailedReupload,
             type: 'bot',
             validationFailedAngles: useLegacy
                 ? const []
@@ -1493,7 +1495,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Image upload failed: $e')));
+        ).showSnackBar(SnackBar(
+            content: Text(
+                AppLocalizations.of(context).voice_imageUploadFailed(e.toString()))));
       }
       debugPrint('[Upload] image upload failed: $e');
     }
@@ -1589,7 +1593,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Document upload failed: $e')));
+        ).showSnackBar(SnackBar(
+            content: Text(AppLocalizations.of(context)
+                .voice_documentUploadFailed(e.toString()))));
       }
       debugPrint('[Upload] document upload failed: $e');
     }
@@ -1661,7 +1667,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       await _runSaveClaimAndConversation(saveSummaryPayload: msg.payload);
       _savedOnSummary = true;
     } catch (e) {
-      errorMessage = 'Failed to save claim: $e';
+      if (mounted) {
+        errorMessage =
+            AppLocalizations.of(context).voice_failedToSaveClaim(e.toString());
+      }
       debugPrint('[ConfirmFinalSummary] save failed: $e');
     }
 
@@ -1679,7 +1688,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       return;
     }
 
-    const reply = 'Yes Confirm';
+    final reply = AppLocalizations.of(context).voice_yesConfirm;
     _addUserMessage(reply);
     _streamBotReply(reply);
   }
@@ -1699,10 +1708,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       _submittedClaimId = (response['id'] ?? response['claimId'] ?? claimNumber)
           .toString();
 
+      final l = AppLocalizations.of(context);
       setState(() {
         _messages.add(
           ChatMessage(
-            text: 'Claim **$claimNumber** has been submitted successfully!',
+            text: l.voice_claimSubmittedMd(claimNumber),
             type: 'bot',
           ),
         );
@@ -1711,15 +1721,15 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       });
       _scrollToBottom();
       unawaited(
-        _speakBotReply('Claim $claimNumber has been submitted successfully.'),
+        _speakBotReply(l.voice_claimSubmittedSpoken(claimNumber)),
       );
       _refreshClaimsList();
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _messages.add(
-          const ChatMessage(
-            text: 'Failed to submit claim. Please try again.',
+          ChatMessage(
+            text: AppLocalizations.of(context).voice_failedToSubmitClaim,
             type: 'bot',
           ),
         );
@@ -2038,7 +2048,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           );
           _savedOnSummary = true;
         } catch (e) {
-          errorMessage = 'Failed to save claim: $e';
+          if (mounted) {
+            errorMessage = AppLocalizations.of(context)
+                .voice_failedToSaveClaim(e.toString());
+          }
         }
       }
     } finally {
@@ -2065,30 +2078,34 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   void _showEndSessionDialog() {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
-          'End Session?',
-          style: TextStyle(fontWeight: FontWeight.bold, color: kVmDark),
-        ),
-        content: const Text('Are you sure you want to end this voice session?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+      builder: (ctx) {
+        final l = AppLocalizations.of(ctx);
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text(
+            l.voice_endSessionTitle,
+            style: const TextStyle(fontWeight: FontWeight.bold, color: kVmDark),
           ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              Navigator.of(context).pop();
-            },
-            child: const Text(
-              'End Session',
-              style: TextStyle(color: kVmRed, fontWeight: FontWeight.bold),
+          content: Text(l.voice_endSessionBody),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text(l.common_cancel,
+                  style: const TextStyle(color: Colors.grey)),
             ),
-          ),
-        ],
-      ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                Navigator.of(context).pop();
+              },
+              child: Text(
+                l.voice_endSessionAction,
+                style: const TextStyle(color: kVmRed, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -2222,7 +2239,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     if (policyFields != null) {
       return _buildPolicyCard(
         msg: msg,
-        title: 'Policy Verified',
+        title: AppLocalizations.of(context).voice_policyVerified,
         fields: policyFields,
         introText: _policyIntroText(visibleText),
         isLastBot: isLastBot,
@@ -2319,7 +2336,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                                   ? null
                                   : () => _onValidationTimeoutRetry(msg),
                               icon: const Icon(Icons.refresh, size: 16),
-                              label: const Text('Try Again'),
+                              label: Text(AppLocalizations.of(context).voice_tryAgain),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: kVmBlue,
                                 foregroundColor: Colors.white,
@@ -2616,31 +2633,32 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
   String _humanizeDocLabel(String key) {
     final k = key.toLowerCase().trim();
+    final l = AppLocalizations.of(context);
     switch (k) {
       case 'vehicle photos':
       case 'vehicle photos count':
-        return 'Vehicle Photos';
+        return l.voice_group_vehiclePhotos;
       case 'damage photos':
       case 'damage photos count':
-        return 'Damage Vehicle Photos';
+        return l.voice_group_damageVehiclePhotos;
       case 'driver license':
       case 'driving license':
       case 'license photos':
       case 'license photos count':
-        return 'Driving License';
+        return l.voice_group_drivingLicense;
       case 'supporting docs':
       case 'supporting documents':
-        return 'Uploaded Documents';
+        return l.voice_group_uploadedDocuments;
       case 'police report':
       case 'police report count':
-        return 'Police Report';
+        return l.voice_group_policeReport;
       case 'bill invoice':
       case 'invoice':
       case 'invoice count':
-        return 'Invoice';
+        return l.voice_group_invoice;
       case 'repair bill':
       case 'repair bill count':
-        return 'Repair Bill';
+        return l.voice_group_repairBill;
       default:
         return key.replaceAll(' Count', '');
     }

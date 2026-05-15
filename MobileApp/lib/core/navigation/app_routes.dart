@@ -4,7 +4,9 @@ class AppRoutes {
   // Auth
   static const String splash = '/';
   static const String login = '/login';
+  static const String biometricLogin = '/biometric-login';
   static const String otp = '/otp';
+  static const String onboarding = '/onboarding';
 
   // Main
   static const String home = '/home';

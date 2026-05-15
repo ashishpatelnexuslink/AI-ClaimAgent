@@ -198,11 +198,16 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
       debugPrint('[splash] _checkAuth: fadeOut done, navigating');
       if (!mounted) return;
 
-      // When biometric login is enabled, always route through the login page so
-      // the user must tap the biometric button to unlock — even if tokens are
-      // still valid. Without this gate, a valid token bypasses biometric and
-      // the unlock prompt is never shown.
-      if (isLoggedIn && !biometricEnabled) {
+      // When biometric login is enabled, route through the dedicated biometric
+      // unlock screen so the user must authenticate before reaching home — even
+      // if tokens are still valid. Without this gate, a valid token would
+      // bypass biometric entirely.
+      if (isLoggedIn && biometricEnabled) {
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          AppRoutes.biometricLogin,
+          (_) => false,
+        );
+      } else if (isLoggedIn) {
         Navigator.of(context).pushNamedAndRemoveUntil(
           AppRoutes.home,
           (_) => false,
