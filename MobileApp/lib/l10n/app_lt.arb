@@ -270,5 +270,27 @@
   "auth_layout_termsConnector": " ir ",
   "auth_layout_privacyPolicy": "Privatumo politika",
   "auth_layout_verifiedProtectionTitle": "Patvirtinta apsauga",
-  "auth_layout_verifiedProtectionSubtitle": "Jūsų duomenys apsaugoti neuroniniu šifravimu."
+  "auth_layout_verifiedProtectionSubtitle": "Jūsų duomenys apsaugoti neuroniniu šifravimu.",
+
+  "claimCard_policyType": "POLISO TIPAS",
+  "claimCard_viewDetails": "Žiūrėti išsamiau",
+  "claimCard_updatedTimeAgo": "Atnaujinta {time}",
+  "claimCard_payout": "Išmoka: ${amount}",
+  "claimCard_approved": "Patvirtinta",
+  "claimCard_closedAt": "Uždaryta {date}",
+
+  "timeAgo_yearsAgo": "prieš {count} m.",
+  "timeAgo_monthsAgo": "prieš {count} mėn.",
+  "timeAgo_daysAgo": "prieš {count} d.",
+  "timeAgo_hoursAgo": "prieš {count} val.",
+  "timeAgo_minutesAgo": "prieš {count} min.",
+  "timeAgo_justNow": "Ką tik",
+
+  "policyType_vehicle": "Transporto priemonė",
+  "policyType_home": "Namai",
+  "policyType_health": "Sveikata",
+  "policyType_life": "Gyvybė",
+  "policyType_travel": "Kelionė",
+
+  "samplePhotos_title": "Pavyzdinės nuotraukos"
 }

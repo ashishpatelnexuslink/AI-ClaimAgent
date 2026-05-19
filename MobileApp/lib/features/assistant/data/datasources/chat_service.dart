@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 
 import 'package:claim_ai/config/app_config.dart';
+import 'package:claim_ai/core/utils/date_utils.dart';
 import 'package:claim_ai/features/assistant/data/models/chat_stream_message.dart';
 import 'package:claim_ai/features/assistant/data/datasources/chatbot_api_client.dart';
 
@@ -12,23 +13,24 @@ import 'package:claim_ai/features/assistant/data/datasources/chatbot_api_client.
 class ChatService {
   /// Stream structured messages from the chatbot via SSE.
   ///
-  /// `language` is the BCP-47 language code (e.g. "en", "it") and
-  /// `countryCode` is the ISO-3166 country code (e.g. "IN", "IT") of the
-  /// currently-selected app locale. The backend uses both to localize AI
-  /// replies.
+  /// `language` is the BCP-47 language code (e.g. "en", "it") of the currently
+  /// selected app locale; the backend uses it to localize AI replies.
+  /// `utc_offset` (device timezone offset in minutes, e.g. 330 for IST,
+  /// -480 for PST) is always attached so the chatbot can anchor relative
+  /// dates ("yesterday", "last Tuesday") to the user's local time.
   static Stream<ChatStreamMessage> sendMessage(
     String message, {
     String? threadId,
     String? language,
-    String? countryCode,
   }) async* {
+    final utcOffset = AppDateUtils.currentTimezoneOffsetMinutes();
     await for (final raw in ApiClient.getStream(
       '/chat/stream',
       queryParams: {
         'message': message,
         'thread_id': ?threadId,
         'language': ?language,
-        'country_code': ?countryCode,
+        'utc_offset': '$utcOffset',
       },
     )) {
       if (kDebugMode) {
@@ -46,7 +48,6 @@ class ChatService {
     required String threadId,
     required Map<String, String> images,
     String? language,
-    String? countryCode,
   }) async {
     if (kDebugMode) {
       final imageSizes = images.map(
@@ -55,8 +56,7 @@ class ChatService {
       debugPrint(
         '[validate-images] POST ${AppConfig.chatbotBaseUrl}/validate-images '
         'body={group_key: $groupKey, thread_id: $threadId, '
-        'language: $language, country_code: $countryCode, '
-        'images: $imageSizes}',
+        'language: $language, images: $imageSizes}',
       );
     }
     final response = await ApiClient.post(
@@ -66,7 +66,6 @@ class ChatService {
         'thread_id': threadId,
         'images': images,
         'language': ?language,
-        'country_code': ?countryCode,
       },
     );
     if (kDebugMode) {

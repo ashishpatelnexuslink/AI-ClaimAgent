@@ -778,4 +778,74 @@ class AppLocalizationsLt extends AppLocalizations {
   @override
   String get auth_layout_verifiedProtectionSubtitle =>
       'Jūsų duomenys apsaugoti neuroniniu šifravimu.';
+
+  @override
+  String get claimCard_policyType => 'POLISO TIPAS';
+
+  @override
+  String get claimCard_viewDetails => 'Žiūrėti išsamiau';
+
+  @override
+  String claimCard_updatedTimeAgo(String time) {
+    return 'Atnaujinta $time';
+  }
+
+  @override
+  String claimCard_payout(String amount) {
+    return 'Išmoka: \$$amount';
+  }
+
+  @override
+  String get claimCard_approved => 'Patvirtinta';
+
+  @override
+  String claimCard_closedAt(String date) {
+    return 'Uždaryta $date';
+  }
+
+  @override
+  String timeAgo_yearsAgo(int count) {
+    return 'prieš $count m.';
+  }
+
+  @override
+  String timeAgo_monthsAgo(int count) {
+    return 'prieš $count mėn.';
+  }
+
+  @override
+  String timeAgo_daysAgo(int count) {
+    return 'prieš $count d.';
+  }
+
+  @override
+  String timeAgo_hoursAgo(int count) {
+    return 'prieš $count val.';
+  }
+
+  @override
+  String timeAgo_minutesAgo(int count) {
+    return 'prieš $count min.';
+  }
+
+  @override
+  String get timeAgo_justNow => 'Ką tik';
+
+  @override
+  String get policyType_vehicle => 'Transporto priemonė';
+
+  @override
+  String get policyType_home => 'Namai';
+
+  @override
+  String get policyType_health => 'Sveikata';
+
+  @override
+  String get policyType_life => 'Gyvybė';
+
+  @override
+  String get policyType_travel => 'Kelionė';
+
+  @override
+  String get samplePhotos_title => 'Pavyzdinės nuotraukos';
 }

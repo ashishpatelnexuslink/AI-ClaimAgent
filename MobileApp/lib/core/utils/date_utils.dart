@@ -1,3 +1,4 @@
+import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 import 'package:intl/intl.dart';
 
 /// Date/time helpers. Display formatters take an optional `locale` (BCP 47
@@ -23,22 +24,22 @@ class AppDateUtils {
     return DateFormat.jm(locale).format(date);
   }
 
-  static String timeAgo(DateTime date) {
+  static String timeAgo(DateTime date, AppLocalizations l) {
     final now = DateTime.now();
     final diff = now.difference(date);
 
     if (diff.inDays > 365) {
-      return '${(diff.inDays / 365).floor()}y ago';
+      return l.timeAgo_yearsAgo((diff.inDays / 365).floor());
     } else if (diff.inDays > 30) {
-      return '${(diff.inDays / 30).floor()}mo ago';
+      return l.timeAgo_monthsAgo((diff.inDays / 30).floor());
     } else if (diff.inDays > 0) {
-      return '${diff.inDays}d ago';
+      return l.timeAgo_daysAgo(diff.inDays);
     } else if (diff.inHours > 0) {
-      return '${diff.inHours}h ago';
+      return l.timeAgo_hoursAgo(diff.inHours);
     } else if (diff.inMinutes > 0) {
-      return '${diff.inMinutes}m ago';
+      return l.timeAgo_minutesAgo(diff.inMinutes);
     } else {
-      return 'Just now';
+      return l.timeAgo_justNow;
     }
   }
 
@@ -46,6 +47,11 @@ class AppDateUtils {
   static String formatApiDate(DateTime date) {
     return DateFormat('yyyy-MM-dd').format(date);
   }
+
+  /// Device UTC offset in minutes. Positive east of UTC.
+  /// India = 330, Los Angeles (PST) = -480, UTC = 0.
+  static int currentTimezoneOffsetMinutes() =>
+      DateTime.now().timeZoneOffset.inMinutes;
 
   static DateTime? parseApiDate(String? dateStr) {
     if (dateStr == null || dateStr.isEmpty) return null;

@@ -1501,6 +1501,114 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Your data is secured by neural encryption.'**
   String get auth_layout_verifiedProtectionSubtitle;
+
+  /// No description provided for @claimCard_policyType.
+  ///
+  /// In en, this message translates to:
+  /// **'POLICY TYPE'**
+  String get claimCard_policyType;
+
+  /// No description provided for @claimCard_viewDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'View Details'**
+  String get claimCard_viewDetails;
+
+  /// No description provided for @claimCard_updatedTimeAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'Updated {time}'**
+  String claimCard_updatedTimeAgo(String time);
+
+  /// No description provided for @claimCard_payout.
+  ///
+  /// In en, this message translates to:
+  /// **'Payout: \${amount}'**
+  String claimCard_payout(String amount);
+
+  /// No description provided for @claimCard_approved.
+  ///
+  /// In en, this message translates to:
+  /// **'Approved'**
+  String get claimCard_approved;
+
+  /// No description provided for @claimCard_closedAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Closed at {date}'**
+  String claimCard_closedAt(String date);
+
+  /// No description provided for @timeAgo_yearsAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}y ago'**
+  String timeAgo_yearsAgo(int count);
+
+  /// No description provided for @timeAgo_monthsAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}mo ago'**
+  String timeAgo_monthsAgo(int count);
+
+  /// No description provided for @timeAgo_daysAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}d ago'**
+  String timeAgo_daysAgo(int count);
+
+  /// No description provided for @timeAgo_hoursAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}h ago'**
+  String timeAgo_hoursAgo(int count);
+
+  /// No description provided for @timeAgo_minutesAgo.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}m ago'**
+  String timeAgo_minutesAgo(int count);
+
+  /// No description provided for @timeAgo_justNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Just now'**
+  String get timeAgo_justNow;
+
+  /// No description provided for @policyType_vehicle.
+  ///
+  /// In en, this message translates to:
+  /// **'Vehicle'**
+  String get policyType_vehicle;
+
+  /// No description provided for @policyType_home.
+  ///
+  /// In en, this message translates to:
+  /// **'Home'**
+  String get policyType_home;
+
+  /// No description provided for @policyType_health.
+  ///
+  /// In en, this message translates to:
+  /// **'Health'**
+  String get policyType_health;
+
+  /// No description provided for @policyType_life.
+  ///
+  /// In en, this message translates to:
+  /// **'Life'**
+  String get policyType_life;
+
+  /// No description provided for @policyType_travel.
+  ///
+  /// In en, this message translates to:
+  /// **'Travel'**
+  String get policyType_travel;
+
+  /// No description provided for @samplePhotos_title.
+  ///
+  /// In en, this message translates to:
+  /// **'Sample Photos'**
+  String get samplePhotos_title;
 }
 
 class _AppLocalizationsDelegate

@@ -198,7 +198,6 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         userMessage,
         threadId: _threadId,
         language: locale.languageCode,
-        countryCode: locale.countryCode,
       )) {
         if (!mounted) return;
         _pendingBotMessages.add(
@@ -1925,7 +1924,6 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         threadId: _threadId,
         images: images,
         language: locale.languageCode,
-        countryCode: locale.countryCode,
       );
     } on TimeoutException catch (e) {
       debugPrint('[Validate] image validation timed out: $e');

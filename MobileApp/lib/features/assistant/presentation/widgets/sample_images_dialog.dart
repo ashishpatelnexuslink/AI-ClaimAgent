@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
 
 const _kDark = Color(0xFF1A1D3B);
@@ -54,6 +55,7 @@ Future<void> showSampleImagesDialog({
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.55),
     builder: (ctx) {
+      final l = AppLocalizations.of(ctx);
       return Dialog(
         insetPadding:
             const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
@@ -71,10 +73,10 @@ Future<void> showSampleImagesDialog({
               children: [
                 Row(
                   children: [
-                    const Expanded(
+                    Expanded(
                       child: Text(
-                        'Sample Photos',
-                        style: TextStyle(
+                        l.samplePhotos_title,
+                        style: const TextStyle(
                           color: _kDark,
                           fontSize: 15,
                           fontWeight: FontWeight.w700,

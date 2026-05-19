@@ -782,4 +782,74 @@ class AppLocalizationsLv extends AppLocalizations {
   @override
   String get auth_layout_verifiedProtectionSubtitle =>
       'Jūsu dati ir aizsargāti ar neironu šifrēšanu.';
+
+  @override
+  String get claimCard_policyType => 'POLISES VEIDS';
+
+  @override
+  String get claimCard_viewDetails => 'Skatīt detaļas';
+
+  @override
+  String claimCard_updatedTimeAgo(String time) {
+    return 'Atjaunināts $time';
+  }
+
+  @override
+  String claimCard_payout(String amount) {
+    return 'Izmaksa: \$$amount';
+  }
+
+  @override
+  String get claimCard_approved => 'Apstiprināts';
+
+  @override
+  String claimCard_closedAt(String date) {
+    return 'Slēgts $date';
+  }
+
+  @override
+  String timeAgo_yearsAgo(int count) {
+    return 'pirms $count g.';
+  }
+
+  @override
+  String timeAgo_monthsAgo(int count) {
+    return 'pirms $count mēn.';
+  }
+
+  @override
+  String timeAgo_daysAgo(int count) {
+    return 'pirms $count d.';
+  }
+
+  @override
+  String timeAgo_hoursAgo(int count) {
+    return 'pirms $count st.';
+  }
+
+  @override
+  String timeAgo_minutesAgo(int count) {
+    return 'pirms $count min.';
+  }
+
+  @override
+  String get timeAgo_justNow => 'Tagad';
+
+  @override
+  String get policyType_vehicle => 'Transportlīdzeklis';
+
+  @override
+  String get policyType_home => 'Mājoklis';
+
+  @override
+  String get policyType_health => 'Veselība';
+
+  @override
+  String get policyType_life => 'Dzīvība';
+
+  @override
+  String get policyType_travel => 'Ceļojums';
+
+  @override
+  String get samplePhotos_title => 'Paraugfotogrāfijas';
 }

@@ -270,5 +270,27 @@
   "auth_layout_termsConnector": " un ",
   "auth_layout_privacyPolicy": "Privātuma politikai",
   "auth_layout_verifiedProtectionTitle": "Pārbaudīta aizsardzība",
-  "auth_layout_verifiedProtectionSubtitle": "Jūsu dati ir aizsargāti ar neironu šifrēšanu."
+  "auth_layout_verifiedProtectionSubtitle": "Jūsu dati ir aizsargāti ar neironu šifrēšanu.",
+
+  "claimCard_policyType": "POLISES VEIDS",
+  "claimCard_viewDetails": "Skatīt detaļas",
+  "claimCard_updatedTimeAgo": "Atjaunināts {time}",
+  "claimCard_payout": "Izmaksa: ${amount}",
+  "claimCard_approved": "Apstiprināts",
+  "claimCard_closedAt": "Slēgts {date}",
+
+  "timeAgo_yearsAgo": "pirms {count} g.",
+  "timeAgo_monthsAgo": "pirms {count} mēn.",
+  "timeAgo_daysAgo": "pirms {count} d.",
+  "timeAgo_hoursAgo": "pirms {count} st.",
+  "timeAgo_minutesAgo": "pirms {count} min.",
+  "timeAgo_justNow": "Tagad",
+
+  "policyType_vehicle": "Transportlīdzeklis",
+  "policyType_home": "Mājoklis",
+  "policyType_health": "Veselība",
+  "policyType_life": "Dzīvība",
+  "policyType_travel": "Ceļojums",
+
+  "samplePhotos_title": "Paraugfotogrāfijas"
 }

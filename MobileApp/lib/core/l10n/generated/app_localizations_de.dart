@@ -783,4 +783,74 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String get auth_layout_verifiedProtectionSubtitle =>
       'Ihre Daten sind durch neuronale Verschlüsselung geschützt.';
+
+  @override
+  String get claimCard_policyType => 'POLICENTYP';
+
+  @override
+  String get claimCard_viewDetails => 'Details anzeigen';
+
+  @override
+  String claimCard_updatedTimeAgo(String time) {
+    return 'Aktualisiert $time';
+  }
+
+  @override
+  String claimCard_payout(String amount) {
+    return 'Auszahlung: \$$amount';
+  }
+
+  @override
+  String get claimCard_approved => 'Genehmigt';
+
+  @override
+  String claimCard_closedAt(String date) {
+    return 'Geschlossen am $date';
+  }
+
+  @override
+  String timeAgo_yearsAgo(int count) {
+    return 'vor $count J.';
+  }
+
+  @override
+  String timeAgo_monthsAgo(int count) {
+    return 'vor $count Mon.';
+  }
+
+  @override
+  String timeAgo_daysAgo(int count) {
+    return 'vor $count T.';
+  }
+
+  @override
+  String timeAgo_hoursAgo(int count) {
+    return 'vor $count Std.';
+  }
+
+  @override
+  String timeAgo_minutesAgo(int count) {
+    return 'vor $count Min.';
+  }
+
+  @override
+  String get timeAgo_justNow => 'Gerade eben';
+
+  @override
+  String get policyType_vehicle => 'Fahrzeug';
+
+  @override
+  String get policyType_home => 'Wohnung';
+
+  @override
+  String get policyType_health => 'Gesundheit';
+
+  @override
+  String get policyType_life => 'Leben';
+
+  @override
+  String get policyType_travel => 'Reise';
+
+  @override
+  String get samplePhotos_title => 'Beispielfotos';
 }

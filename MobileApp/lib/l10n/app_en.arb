@@ -318,5 +318,35 @@
   "auth_layout_termsConnector": " and ",
   "auth_layout_privacyPolicy": "Privacy Policy",
   "auth_layout_verifiedProtectionTitle": "Verified Protection",
-  "auth_layout_verifiedProtectionSubtitle": "Your data is secured by neural encryption."
+  "auth_layout_verifiedProtectionSubtitle": "Your data is secured by neural encryption.",
+
+  "claimCard_policyType": "POLICY TYPE",
+  "claimCard_viewDetails": "View Details",
+  "claimCard_updatedTimeAgo": "Updated {time}",
+  "@claimCard_updatedTimeAgo": { "placeholders": { "time": { "type": "String" } } },
+  "claimCard_payout": "Payout: ${amount}",
+  "@claimCard_payout": { "placeholders": { "amount": { "type": "String" } } },
+  "claimCard_approved": "Approved",
+  "claimCard_closedAt": "Closed at {date}",
+  "@claimCard_closedAt": { "placeholders": { "date": { "type": "String" } } },
+
+  "timeAgo_yearsAgo": "{count}y ago",
+  "@timeAgo_yearsAgo": { "placeholders": { "count": { "type": "int" } } },
+  "timeAgo_monthsAgo": "{count}mo ago",
+  "@timeAgo_monthsAgo": { "placeholders": { "count": { "type": "int" } } },
+  "timeAgo_daysAgo": "{count}d ago",
+  "@timeAgo_daysAgo": { "placeholders": { "count": { "type": "int" } } },
+  "timeAgo_hoursAgo": "{count}h ago",
+  "@timeAgo_hoursAgo": { "placeholders": { "count": { "type": "int" } } },
+  "timeAgo_minutesAgo": "{count}m ago",
+  "@timeAgo_minutesAgo": { "placeholders": { "count": { "type": "int" } } },
+  "timeAgo_justNow": "Just now",
+
+  "policyType_vehicle": "Vehicle",
+  "policyType_home": "Home",
+  "policyType_health": "Health",
+  "policyType_life": "Life",
+  "policyType_travel": "Travel",
+
+  "samplePhotos_title": "Sample Photos"
 }

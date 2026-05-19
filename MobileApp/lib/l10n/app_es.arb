@@ -270,5 +270,27 @@
   "auth_layout_termsConnector": " y la ",
   "auth_layout_privacyPolicy": "Política de privacidad",
   "auth_layout_verifiedProtectionTitle": "Protección verificada",
-  "auth_layout_verifiedProtectionSubtitle": "Tus datos están protegidos con cifrado neuronal."
+  "auth_layout_verifiedProtectionSubtitle": "Tus datos están protegidos con cifrado neuronal.",
+
+  "claimCard_policyType": "TIPO DE PÓLIZA",
+  "claimCard_viewDetails": "Ver detalles",
+  "claimCard_updatedTimeAgo": "Actualizado {time}",
+  "claimCard_payout": "Pago: ${amount}",
+  "claimCard_approved": "Aprobado",
+  "claimCard_closedAt": "Cerrado el {date}",
+
+  "timeAgo_yearsAgo": "hace {count} a",
+  "timeAgo_monthsAgo": "hace {count} m",
+  "timeAgo_daysAgo": "hace {count} d",
+  "timeAgo_hoursAgo": "hace {count} h",
+  "timeAgo_minutesAgo": "hace {count} min",
+  "timeAgo_justNow": "Justo ahora",
+
+  "policyType_vehicle": "Vehículo",
+  "policyType_home": "Hogar",
+  "policyType_health": "Salud",
+  "policyType_life": "Vida",
+  "policyType_travel": "Viaje",
+
+  "samplePhotos_title": "Fotos de muestra"
 }

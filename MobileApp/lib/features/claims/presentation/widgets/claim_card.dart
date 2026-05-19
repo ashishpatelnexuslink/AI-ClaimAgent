@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:claim_ai/core/constants/app_theme.dart';
+import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 import 'package:claim_ai/core/utils/date_utils.dart';
 import 'package:claim_ai/features/claims/domain/entities/claim_entity.dart';
 
@@ -15,6 +16,7 @@ class ClaimCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.md),
       decoration: BoxDecoration(
@@ -65,7 +67,7 @@ class ClaimCard extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(width: AppSpacing.sm),
-                              _buildStatusPill(claim.status),
+                              _buildStatusPill(claim.status, l),
                             ],
                           ),
                           const SizedBox(height: 2),
@@ -81,7 +83,7 @@ class ClaimCard extends StatelessWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            _tertiaryLine(context),
+                            _tertiaryLine(context, l),
                             style: const TextStyle(
                               fontSize: 12,
                               color: AppColors.textHint,
@@ -104,9 +106,9 @@ class ClaimCard extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'POLICY TYPE',
-                            style: TextStyle(
+                          Text(
+                            l.claimCard_policyType,
+                            style: const TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w600,
                               color: AppColors.textHint,
@@ -115,7 +117,9 @@ class ClaimCard extends StatelessWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            claim.claimType.isEmpty ? '—' : claim.claimType,
+                            claim.claimType.isEmpty
+                                ? '—'
+                                : _localizedPolicyType(claim.claimType, l),
                             style: const TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
@@ -131,17 +135,17 @@ class ClaimCard extends StatelessWidget {
                       onTap: onTap,
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
-                        children: const [
+                        children: [
                           Text(
-                            'View Details',
-                            style: TextStyle(
+                            l.claimCard_viewDetails,
+                            style: const TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
                               color: AppColors.primary,
                             ),
                           ),
-                          SizedBox(width: 4),
-                          Icon(
+                          const SizedBox(width: 4),
+                          const Icon(
                             Icons.arrow_forward,
                             size: 14,
                             color: AppColors.primary,
@@ -180,59 +184,78 @@ class ClaimCard extends StatelessWidget {
     return claim.claimType;
   }
 
-  String _tertiaryLine(BuildContext context) {
+  String _tertiaryLine(BuildContext context, AppLocalizations l) {
     final locale = Localizations.localeOf(context).languageCode;
     switch (claim.status) {
       case ClaimStatus.approved:
         final amount = claim.amount;
         final amountStr = amount != null
-            ? 'Payout: \$${amount.toStringAsFixed(2)}'
-            : 'Approved';
+            ? l.claimCard_payout(amount.toStringAsFixed(2))
+            : l.claimCard_approved;
         return '$amountStr  |  ${AppDateUtils.formatDate(claim.updatedAt, locale)}';
       case ClaimStatus.rejected:
       case ClaimStatus.closed:
-        return 'Closed at ${AppDateUtils.formatDate(claim.updatedAt, locale)}';
+        return l.claimCard_closedAt(
+            AppDateUtils.formatDate(claim.updatedAt, locale));
       default:
-        return 'Updated ${AppDateUtils.timeAgo(claim.updatedAt)}';
+        return l.claimCard_updatedTimeAgo(
+            AppDateUtils.timeAgo(claim.updatedAt, l));
     }
   }
 
-  Widget _buildStatusPill(ClaimStatus status) {
+  String _localizedPolicyType(String raw, AppLocalizations l) {
+    switch (raw.trim().toLowerCase()) {
+      case 'vehicle':
+        return l.policyType_vehicle;
+      case 'home':
+        return l.policyType_home;
+      case 'health':
+        return l.policyType_health;
+      case 'life':
+        return l.policyType_life;
+      case 'travel':
+        return l.policyType_travel;
+      default:
+        return raw;
+    }
+  }
+
+  Widget _buildStatusPill(ClaimStatus status, AppLocalizations l) {
     final (Color bg, Color fg, String label) = switch (status) {
       ClaimStatus.draft => (
           const Color(0xFFE8EAED),
           const Color(0xFF5F6368),
-          'DRAFT',
+          l.claim_status_draft,
         ),
       ClaimStatus.pending => (
           const Color(0xFFFFE7B8),
           const Color(0xFFB76E00),
-          'PENDING',
+          l.claim_status_pending,
         ),
       ClaimStatus.submitted => (
           const Color(0xFFD7E7FD),
           const Color(0xFF1557B0),
-          'SUBMITTED',
+          l.claim_status_submitted,
         ),
       ClaimStatus.inReview => (
           const Color(0xFFEADFFD),
           const Color(0xFF6A3BD6),
-          'NEED INFO',
+          l.claim_status_needInfo,
         ),
       ClaimStatus.approved => (
           const Color(0xFFD5F1DE),
           const Color(0xFF0E7C3A),
-          'APPROVED',
+          l.claim_status_approved,
         ),
       ClaimStatus.rejected => (
           const Color(0xFFFBDAD7),
           const Color(0xFFB3261E),
-          'REJECTED',
+          l.claim_status_rejected,
         ),
       ClaimStatus.closed => (
           const Color(0xFFE8EAED),
           const Color(0xFF5F6368),
-          'CLOSED',
+          l.claim_status_closed,
         ),
     };
 
