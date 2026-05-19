@@ -2,12 +2,15 @@ import 'package:country_picker/country_picker.dart' as cp;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl_phone_number_input/intl_phone_number_input.dart';
-import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
+import 'package:local_auth/local_auth.dart';
 import 'package:claim_ai/core/navigation/app_routes.dart';
+import 'package:claim_ai/core/services/biometric_service.dart';
+import 'package:claim_ai/core/storage/local_storage.dart';
 import 'package:claim_ai/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:claim_ai/features/auth/presentation/cubit/auth_state.dart';
 import 'package:claim_ai/features/auth/presentation/widgets/auth_layout.dart';
 import 'package:claim_ai/features/auth/presentation/widgets/auth_gradient_button.dart';
+import 'package:claim_ai/injection_container.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -23,6 +26,10 @@ class _LoginPageState extends State<LoginPage> {
   bool _isPhoneValid = false;
   bool _isFocused = false;
 
+  bool _showBiometricButton = false;
+  IconData _biometricIcon = Icons.fingerprint;
+  String _biometricLabel = 'Login with biometric';
+
   @override
   void initState() {
     super.initState();
@@ -30,6 +37,55 @@ class _LoginPageState extends State<LoginPage> {
       if (!mounted) return;
       setState(() => _isFocused = _phoneFocusNode.hasFocus);
     });
+    _evaluateBiometricVisibility();
+  }
+
+  Future<void> _evaluateBiometricVisibility() async {
+    final biometricService = sl<BiometricService>();
+    final localStorage = sl<LocalStorage>();
+    final accessToken = await localStorage.getAccessToken();
+    final refreshToken = await localStorage.getRefreshToken();
+    final hasSession = await localStorage.hasStoredSession();
+    final enabled = await localStorage.isBiometricEnabled();
+    final available = await biometricService.isAvailable();
+    final types = await biometricService.getAvailableBiometrics();
+    debugPrint('[login/biometric] hasSession=$hasSession '
+        '(access=${accessToken != null && accessToken.isNotEmpty}, '
+        'refresh=${refreshToken != null && refreshToken.isNotEmpty}) '
+        'biometricEnabledFlag=$enabled '
+        'deviceAvailable=$available '
+        'enrolledTypes=$types');
+    if (!hasSession || !enabled || !available) {
+      debugPrint('[login/biometric] hiding link — '
+          'missing: ${[
+        if (!hasSession) 'session',
+        if (!enabled) 'flag',
+        if (!available) 'device',
+      ].join(", ")}');
+      if (mounted) setState(() => _showBiometricButton = false);
+      return;
+    }
+    final hasFace = types.contains(BiometricType.face);
+    final hasFingerprint =
+        types.contains(BiometricType.fingerprint) || types.contains(BiometricType.strong);
+    if (!mounted) return;
+    setState(() {
+      _showBiometricButton = true;
+      if (hasFace && !hasFingerprint) {
+        _biometricIcon = Icons.face;
+        _biometricLabel = 'Login with Face ID';
+      } else if (hasFingerprint && !hasFace) {
+        _biometricIcon = Icons.fingerprint;
+        _biometricLabel = 'Login with Fingerprint';
+      } else {
+        _biometricIcon = Icons.fingerprint;
+        _biometricLabel = 'Login with biometric';
+      }
+    });
+  }
+
+  void _onBiometricLogin() {
+    context.read<AuthCubit>().biometricLogin();
   }
 
   @override
@@ -40,14 +96,13 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   void _onContinue() {
-    final l = AppLocalizations.of(context);
     final complete = _phoneNumber.phoneNumber ?? '';
     if (_phoneController.text.trim().isEmpty) {
-      _showError(l.auth_login_phoneRequired);
+      _showError('Please enter your mobile number');
       return;
     }
     if (!_isPhoneValid || complete.isEmpty) {
-      _showError(l.auth_login_phoneInvalid);
+      _showError('Enter a valid mobile number');
       return;
     }
     String? countryName;
@@ -73,7 +128,6 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    final l = AppLocalizations.of(context);
     return BlocListener<AuthCubit, AuthState>(
       listener: (context, state) {
         if (state.status == AuthStatus.authenticated) {
@@ -100,23 +154,23 @@ class _LoginPageState extends State<LoginPage> {
         content: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              l.auth_login_title,
-              style: const TextStyle(
+            const Text(
+              'Login',
+              style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
                 color: Color(0xFF1A1A2E),
               ),
             ),
             const SizedBox(height: 4),
-            Text(
-              l.auth_login_subtitle,
-              style: const TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+            const Text(
+              'Enter your mobile number to get started.',
+              style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
             ),
             const SizedBox(height: 20),
-            Text(
-              l.auth_login_phoneLabel,
-              style: const TextStyle(
+            const Text(
+              'Enter your number',
+              style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
                 color: Color(0xFF374151),
@@ -186,7 +240,7 @@ class _LoginPageState extends State<LoginPage> {
                   focusedBorder: InputBorder.none,
                   filled: true,
                   fillColor: Colors.transparent,
-                  hintText: l.auth_login_phoneHint,
+                  hintText: 'Mobile number',
                   hintStyle: const TextStyle(
                     color: Color(0xFFBDBDBD),
                     fontSize: 15,
@@ -211,7 +265,7 @@ class _LoginPageState extends State<LoginPage> {
                   letterSpacing: 0.2,
                 ),
                 searchBoxDecoration: InputDecoration(
-                  hintText: l.auth_login_searchCountryHint,
+                  hintText: 'Search country or code',
                   hintStyle: const TextStyle(
                     color: Color(0xFFBDBDBD),
                     fontSize: 14,
@@ -248,12 +302,45 @@ class _LoginPageState extends State<LoginPage> {
               builder: (context, state) {
                 final isLoading = state.status == AuthStatus.loading;
                 return AuthGradientButton(
-                  label: l.common_continue,
+                  label: 'Continue',
                   isLoading: isLoading,
                   onPressed: _onContinue,
                 );
               },
             ),
+            if (_showBiometricButton) ...[
+              const SizedBox(height: 12),
+              Center(
+                child: InkWell(
+                  onTap: _onBiometricLogin,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(_biometricIcon,
+                            size: 18, color: const Color(0xFF2A6FDB)),
+                        const SizedBox(width: 6),
+                        Text(
+                          _biometricLabel,
+                          style: const TextStyle(
+                            color: Color(0xFF2A6FDB),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            decoration: TextDecoration.underline,
+                            decorationColor: Color(0xFF2A6FDB),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),

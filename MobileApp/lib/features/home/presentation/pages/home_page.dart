@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:claim_ai/core/constants/app_theme.dart';
-import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 import 'package:claim_ai/core/navigation/app_routes.dart';
 import 'package:claim_ai/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:claim_ai/features/auth/presentation/cubit/auth_state.dart';
@@ -181,9 +180,9 @@ class _HeaderSection extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    AppLocalizations.of(context).home_welcomeBack,
-                    style: const TextStyle(
+                  const Text(
+                    'Welcome Back!',
+                    style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                       color: Color(0xFF1A1D3B),
@@ -297,17 +296,17 @@ class _ActionRequiredSection extends StatelessWidget {
                           action.id,
                         );
                       },
-                      child: Row(
+                      child: const Row(
                         children: [
                           Text(
-                            AppLocalizations.of(context).home_uploadNow,
-                            style: const TextStyle(
+                            'Upload Now',
+                            style: TextStyle(
                               fontSize: 12,
                               color: Color(0xFF6C5CE7),
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          const Text(
+                          Text(
                             ' \u2192',
                             style: TextStyle(
                               fontSize: 12,
@@ -497,7 +496,7 @@ class _HeroCardState extends State<_HeroCard> with TickerProviderStateMixin {
 
           // Title
           Text(
-            AppLocalizations.of(context).home_needHelpTitle,
+            'Need Help With A Claim?',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
               color: Colors.white,
@@ -508,7 +507,7 @@ class _HeroCardState extends State<_HeroCard> with TickerProviderStateMixin {
 
           // Description
           Text(
-            AppLocalizations.of(context).home_needHelpDescription,
+            'Connect with our smart avatar assistant to easily file, manage, and track your claim with personalized guidance at every step.',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Colors.white.withValues(alpha: 0.7),
@@ -531,7 +530,7 @@ class _HeroCardState extends State<_HeroCard> with TickerProviderStateMixin {
                 fontWeight: FontWeight.w600,
               ),
             ),
-            child: Text(AppLocalizations.of(context).home_claimNow),
+            child: const Text('Claim Now'),
           ),
         ],
       ),
@@ -559,7 +558,7 @@ class _ClaimSummarySection extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              AppLocalizations.of(context).home_claimSummary,
+              'Claim Summary',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.bold,
                 color: AppColors.textPrimary,
@@ -572,7 +571,7 @@ class _ClaimSummarySection extends StatelessWidget {
               children: [
                 Expanded(
                   child: _LargeSummaryCard(
-                    label: AppLocalizations.of(context).home_totalClaims,
+                    label: 'Total Claims',
                     count: summary?.totalClaims ?? 0,
                     isLoading: state.isLoading && summary == null,
                   ),
@@ -580,7 +579,7 @@ class _ClaimSummarySection extends StatelessWidget {
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: _LargeSummaryCard(
-                    label: AppLocalizations.of(context).home_pendingClaims,
+                    label: 'Pending Claims',
                     count: summary?.pendingClaims ?? 0,
                     isLoading: state.isLoading && summary == null,
                   ),
@@ -594,7 +593,7 @@ class _ClaimSummarySection extends StatelessWidget {
               children: [
                 Expanded(
                   child: _SmallSummaryCard(
-                    label: AppLocalizations.of(context).status_approved,
+                    label: 'Approved',
                     count: summary?.approvedClaims ?? 0,
                     icon: Icons.check_circle,
                     iconColor: AppColors.success,
@@ -604,7 +603,7 @@ class _ClaimSummarySection extends StatelessWidget {
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: _SmallSummaryCard(
-                    label: AppLocalizations.of(context).status_rejected,
+                    label: 'Rejected',
                     count: summary?.rejectedClaims ?? 0,
                     icon: Icons.cancel,
                     iconColor: AppColors.error,
@@ -718,17 +717,13 @@ class _SmallSummaryCard extends StatelessWidget {
         children: [
           Icon(icon, color: iconColor, size: 20),
           const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Text(
-              label,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
-            ),
+          Text(
+            label,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
           ),
-          const SizedBox(width: AppSpacing.sm),
+          const Spacer(),
           isLoading
               ? const SizedBox(
                   height: 16,
@@ -783,19 +778,19 @@ class _BottomNavBar extends StatelessWidget {
             children: [
               _NavItem(
                 icon: Icons.home_rounded,
-                label: AppLocalizations.of(context).nav_home,
+                label: 'Home',
                 isSelected: currentIndex == 0,
                 onTap: () => onTap(0),
               ),
               _NavItem(
                 icon: Icons.description_outlined,
-                label: AppLocalizations.of(context).nav_claims,
+                label: 'Claims',
                 isSelected: currentIndex == 1,
                 onTap: () => onTap(1),
               ),
               _NavItem(
                 icon: Icons.person_outline_rounded,
-                label: AppLocalizations.of(context).nav_profile,
+                label: 'Profile',
                 isSelected: currentIndex == 2,
                 onTap: () => onTap(2),
               ),
