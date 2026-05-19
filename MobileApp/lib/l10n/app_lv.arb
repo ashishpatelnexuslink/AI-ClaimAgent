@@ -292,5 +292,28 @@
   "policyType_life": "Dzīvība",
   "policyType_travel": "Ceļojums",
 
-  "samplePhotos_title": "Paraugfotogrāfijas"
+  "samplePhotos_title": "Paraugfotogrāfijas",
+
+  "chat_seeSample": "(Skatīt paraugu)",
+  "chat_quotaUploaded": "{filled} no {total} augšupielādētas · min {min}",
+  "chat_upload": "Augšupielādēt",
+  "chat_uploadCaps": "AUGŠUPIELĀDĒT",
+  "chat_done": "GATAVS",
+  "chat_addCaps": "PIEVIENOT",
+  "chat_angleImageNotProper": "Attēls „{angle}” nav pareizs. Lūdzu, augšupielādējiet vēlreiz.",
+  "chat_addMore": "+ Pievienot vēl",
+  "chat_legacyUploadedCount": "{count}/{total} AUGŠUPIELĀDĒTAS",
+  "chat_remove": "Noņemt",
+  "chat_replace": "Aizstāt",
+
+  "imageAngle_frontLeft": "Priekša pa kreisi",
+  "imageAngle_frontRight": "Priekša pa labi",
+  "imageAngle_rearLeft": "Aizmugure pa kreisi",
+  "imageAngle_rearRight": "Aizmugure pa labi",
+  "imageAngle_front": "Priekša",
+  "imageAngle_rear": "Aizmugure",
+  "imageAngle_left": "Kreisā",
+  "imageAngle_right": "Labā",
+  "imageAngle_interior": "Salons",
+  "imageAngle_dashboard": "Panelis"
 }

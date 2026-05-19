@@ -853,4 +853,73 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get samplePhotos_title => 'Foto di esempio';
+
+  @override
+  String get chat_seeSample => '(Vedi esempio)';
+
+  @override
+  String chat_quotaUploaded(int filled, int total, int min) {
+    return '$filled di $total caricate · min $min';
+  }
+
+  @override
+  String get chat_upload => 'Carica';
+
+  @override
+  String get chat_uploadCaps => 'CARICA';
+
+  @override
+  String get chat_done => 'FATTO';
+
+  @override
+  String get chat_addCaps => 'AGGIUNGI';
+
+  @override
+  String chat_angleImageNotProper(String angle) {
+    return 'L\'\'immagine «$angle» non è corretta. Caricala di nuovo.';
+  }
+
+  @override
+  String get chat_addMore => '+ Aggiungi altre';
+
+  @override
+  String chat_legacyUploadedCount(int count, int total) {
+    return '$count/$total CARICATE';
+  }
+
+  @override
+  String get chat_remove => 'Rimuovi';
+
+  @override
+  String get chat_replace => 'Sostituisci';
+
+  @override
+  String get imageAngle_frontLeft => 'Anteriore sinistra';
+
+  @override
+  String get imageAngle_frontRight => 'Anteriore destra';
+
+  @override
+  String get imageAngle_rearLeft => 'Posteriore sinistra';
+
+  @override
+  String get imageAngle_rearRight => 'Posteriore destra';
+
+  @override
+  String get imageAngle_front => 'Anteriore';
+
+  @override
+  String get imageAngle_rear => 'Posteriore';
+
+  @override
+  String get imageAngle_left => 'Sinistra';
+
+  @override
+  String get imageAngle_right => 'Destra';
+
+  @override
+  String get imageAngle_interior => 'Interno';
+
+  @override
+  String get imageAngle_dashboard => 'Cruscotto';
 }

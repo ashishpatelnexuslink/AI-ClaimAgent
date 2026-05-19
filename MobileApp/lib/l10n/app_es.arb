@@ -292,5 +292,28 @@
   "policyType_life": "Vida",
   "policyType_travel": "Viaje",
 
-  "samplePhotos_title": "Fotos de muestra"
+  "samplePhotos_title": "Fotos de muestra",
+
+  "chat_seeSample": "(Ver muestra)",
+  "chat_quotaUploaded": "{filled} de {total} subidas · mín {min}",
+  "chat_upload": "Subir",
+  "chat_uploadCaps": "SUBIR",
+  "chat_done": "LISTO",
+  "chat_addCaps": "AÑADIR",
+  "chat_angleImageNotProper": "La imagen «{angle}» no es correcta. Vuelve a subirla.",
+  "chat_addMore": "+ Añadir más",
+  "chat_legacyUploadedCount": "{count}/{total} SUBIDAS",
+  "chat_remove": "Eliminar",
+  "chat_replace": "Reemplazar",
+
+  "imageAngle_frontLeft": "Delantera izquierda",
+  "imageAngle_frontRight": "Delantera derecha",
+  "imageAngle_rearLeft": "Trasera izquierda",
+  "imageAngle_rearRight": "Trasera derecha",
+  "imageAngle_front": "Delantera",
+  "imageAngle_rear": "Trasera",
+  "imageAngle_left": "Izquierda",
+  "imageAngle_right": "Derecha",
+  "imageAngle_interior": "Interior",
+  "imageAngle_dashboard": "Salpicadero"
 }

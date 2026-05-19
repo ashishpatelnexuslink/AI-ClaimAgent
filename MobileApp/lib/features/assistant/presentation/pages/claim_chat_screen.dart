@@ -17,6 +17,7 @@ import 'package:claim_ai/core/navigation/app_routes.dart';
 import 'package:claim_ai/core/storage/chat_transcript_writer.dart';
 import 'package:claim_ai/features/assistant/data/datasources/chat_service.dart';
 import 'package:claim_ai/features/assistant/presentation/widgets/sample_images_dialog.dart';
+import 'package:claim_ai/features/assistant/presentation/widgets/voice_mode/triggers/image_trigger.dart' show humanizeAngle;
 import 'package:claim_ai/features/claims/data/datasources/claims_remote_datasource.dart';
 import 'package:claim_ai/injection_container.dart' as di;
 
@@ -416,6 +417,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     if (_fetchingLocation) return;
     if (!auto && _botTyping) return;
     final l = AppLocalizations.of(context);
+    final geocodeLocale = Localizations.localeOf(context);
     setState(() => _fetchingLocation = true);
 
     try {
@@ -473,9 +475,21 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         ),
       );
 
-      // 4. Reverse geocode to readable address
+      // 4. Reverse geocode to readable address — request placemarks in the
+      // app's currently selected locale so place names match the UI language
+      // (e.g. "München" / "Munich" / "Monaco" depending on app language).
       String address;
       try {
+        final localeId = geocodeLocale.countryCode != null &&
+                geocodeLocale.countryCode!.isNotEmpty
+            ? '${geocodeLocale.languageCode}_${geocodeLocale.countryCode}'
+            : geocodeLocale.languageCode;
+        try {
+          await setLocaleIdentifier(localeId);
+        } catch (_) {
+          // Some platforms (or unsupported locale tags) reject the call;
+          // fall through to default device locale.
+        }
         final placemarks = await placemarkFromCoordinates(
           position.latitude,
           position.longitude,
@@ -1817,7 +1831,8 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     final _ChatMsg? failureCardToReplace =
         (originatingMsg != null &&
                 (originatingMsg.validationFailedAngles.isNotEmpty ||
-                    originatingMsg.validationFailedLegacy))
+                    originatingMsg.validationFailedLegacy ||
+                    originatingMsg.validationTimeoutRetry))
             ? originatingMsg
             : null;
     // TEMP: `/validate-images` is currently scoped to `vehicle_photos` only.
@@ -1927,34 +1942,51 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       );
     } on TimeoutException catch (e) {
       debugPrint('[Validate] image validation timed out: $e');
-      if (!mounted) {
-        return ImageValidationResult(valid: false, failureReason: '');
-      }
-      setState(() {
-        _messages.remove(waitingMsg);
-        if (previousFailureMsg != null) {
-          _messages.remove(previousFailureMsg);
-        }
-        _messages.add(
-          _ChatMsg(
-            text: l.voice_imageValidationRetry,
-            isUser: false,
-            validationTimeoutRetry: true,
-            validationRetryImages: Map<String, String>.from(images),
-            validationRetryQuestion: questionLabel,
-            validationRetryIsLegacy: isLegacy,
-            validationAllowedAngles: allowedAngles,
-          ),
-        );
-      });
-      _scrollToBottom();
+      _showValidationRetryBubble(
+        waitingMsg: waitingMsg,
+        previousFailureMsg: previousFailureMsg,
+        images: images,
+        questionLabel: questionLabel,
+        isLegacy: isLegacy,
+        allowedAngles: allowedAngles,
+      );
+      return ImageValidationResult(valid: false, failureReason: '');
+    } on SocketException catch (e) {
+      debugPrint('[Validate] image validation network error: $e');
+      _showValidationRetryBubble(
+        waitingMsg: waitingMsg,
+        previousFailureMsg: previousFailureMsg,
+        images: images,
+        questionLabel: questionLabel,
+        isLegacy: isLegacy,
+        allowedAngles: allowedAngles,
+      );
+      return ImageValidationResult(valid: false, failureReason: '');
+    } on HttpException catch (e) {
+      debugPrint('[Validate] image validation HTTP error: $e');
+      _showValidationRetryBubble(
+        waitingMsg: waitingMsg,
+        previousFailureMsg: previousFailureMsg,
+        images: images,
+        questionLabel: questionLabel,
+        isLegacy: isLegacy,
+        allowedAngles: allowedAngles,
+      );
       return ImageValidationResult(valid: false, failureReason: '');
     } catch (e) {
       debugPrint('[Validate] image validation failed: $e');
-      result = ImageValidationResult(
-        valid: false,
-        failureReason: l.voice_imageValidationCouldNot,
+      // Treat any non-business-logic failure (parsing, connection reset,
+      // handshake, …) the same as a timeout — show a Try Again button so the
+      // user is never stuck without a retry affordance.
+      _showValidationRetryBubble(
+        waitingMsg: waitingMsg,
+        previousFailureMsg: previousFailureMsg,
+        images: images,
+        questionLabel: questionLabel,
+        isLegacy: isLegacy,
+        allowedAngles: allowedAngles,
       );
+      return ImageValidationResult(valid: false, failureReason: '');
     }
 
     if (!mounted) return result;
@@ -2015,6 +2047,40 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     });
     _scrollToBottom();
     return result;
+  }
+
+  /// Replaces the "validating…" bubble (and any prior failure/timeout card)
+  /// with a Try Again bubble that re-fires the same `/validate-images`
+  /// request when tapped. Used for timeouts and any other non-business-logic
+  /// network failure so the user is never stuck without a retry affordance.
+  void _showValidationRetryBubble({
+    required _ChatMsg waitingMsg,
+    required _ChatMsg? previousFailureMsg,
+    required Map<String, String> images,
+    required String questionLabel,
+    required bool isLegacy,
+    required List<String> allowedAngles,
+  }) {
+    if (!mounted) return;
+    final l = AppLocalizations.of(context);
+    setState(() {
+      _messages.remove(waitingMsg);
+      if (previousFailureMsg != null) {
+        _messages.remove(previousFailureMsg);
+      }
+      _messages.add(
+        _ChatMsg(
+          text: l.voice_imageValidationRetry,
+          isUser: false,
+          validationTimeoutRetry: true,
+          validationRetryImages: Map<String, String>.from(images),
+          validationRetryQuestion: questionLabel,
+          validationRetryIsLegacy: isLegacy,
+          validationAllowedAngles: allowedAngles,
+        ),
+      );
+    });
+    _scrollToBottom();
   }
 
   /// Renders only a "Try Again" button for a `/validate-images` TimeoutException.
@@ -2112,7 +2178,11 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            '$filledCount of ${angles.length} uploaded · min ${angles.length}',
+            AppLocalizations.of(context).chat_quotaUploaded(
+              filledCount,
+              angles.length,
+              angles.length,
+            ),
             style: TextStyle(
               fontSize: 12,
               color: Colors.grey.shade600,
@@ -2156,7 +2226,8 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                           ),
                           Expanded(
                             child: Text(
-                              '${_humanizeAngle(a)} image is not proper. Please re-upload.',
+                              AppLocalizations.of(context)
+                                  .chat_angleImageNotProper(_humanizeAngle(a)),
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: Color(0xFFB00020),
@@ -2211,9 +2282,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                         color: Colors.white,
                       ),
                     const SizedBox(width: 8),
-                    const Text(
-                      'DONE',
-                      style: TextStyle(
+                    Text(
+                      AppLocalizations.of(context).chat_done,
+                      style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                         color: Colors.white,
@@ -2568,13 +2639,14 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   }
 
   Widget _buildSeeSampleLink(_ChatMsg msg) {
+    final l = AppLocalizations.of(context);
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: GestureDetector(
         onTap: () => _openSampleImagesViewer(msg),
-        child: const Text(
-          '(See sample)',
-          style: TextStyle(
+        child: Text(
+          l.chat_seeSample,
+          style: const TextStyle(
             fontSize: 13,
             color: _kBlue,
             decoration: TextDecoration.underline,
@@ -2602,13 +2674,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     return null;
   }
 
-  /// "front_left" → "Front Left" for display.
+  /// Localized display label for a backend angle key (e.g. "front_left").
   String _humanizeAngle(String angle) {
-    return angle
-        .split(RegExp(r'[_\s]+'))
-        .where((p) => p.isNotEmpty)
-        .map((p) => p[0].toUpperCase() + p.substring(1).toLowerCase())
-        .join(' ');
+    return humanizeAngle(angle, AppLocalizations.of(context));
   }
 
   // ── SUBMIT_CLAIM trigger ─────────────────────────────────────────────────
@@ -2656,6 +2724,274 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   /// camelCase property names expected by `CreateClaimFromChatDto` on the
   /// backend. Unknown keys are kept verbatim — `[JsonExtensionData]` on the
   /// DTO captures them into the `AdditionalData` JSON blob.
+  /// Maps a possibly-localized save_summary key (e.g. "Policennummer",
+  /// "Numéro de police") to its canonical English alias so the existing
+  /// switch in [_mapSaveSummaryToDto] can stay single-language. Returns the
+  /// input verbatim (lowercased + trimmed) when no translation matches.
+  String _canonicalSummaryKey(String raw) {
+    final k = raw.toLowerCase().trim();
+    return _summaryKeyAliases[k] ?? k;
+  }
+
+  // Lowercase, trimmed translations of the save_summary labels the bot emits
+  // when it converses in a non-English language. Each entry maps the foreign
+  // label to the English label the switch in [_mapSaveSummaryToDto] expects.
+  // Add new aliases as the bot's output evolves.
+  static const Map<String, String> _summaryKeyAliases = {
+    // ── Policy Number ───────────────────────────────────────────────────
+    'policennummer': 'policy number',
+    'versicherungsnummer': 'policy number',
+    'numero di polizza': 'policy number',
+    'numero polizza': 'policy number',
+    'numéro de police': 'policy number',
+    'numero de police': 'policy number',
+    'número de póliza': 'policy number',
+    'numero de poliza': 'policy number',
+    'numer polisy': 'policy number',
+    'poliso numeris': 'policy number',
+    'polises numurs': 'policy number',
+
+    // ── Full Name / Policy Holder ──────────────────────────────────────
+    'vollständiger name': 'full name',
+    'name': 'full name',
+    'versicherungsnehmer': 'policy holder',
+    'policeninhaber': 'policy holder',
+    'nome completo': 'full name',
+    'nome': 'full name',
+    'intestatario della polizza': 'policy holder',
+    'nom complet': 'full name',
+    'nom': 'full name',
+    'titulaire de la police': 'policy holder',
+    'nombre completo': 'full name',
+    'nombre': 'full name',
+    'titular de la póliza': 'policy holder',
+    'imię i nazwisko': 'full name',
+    'ubezpieczający': 'policy holder',
+    'vardas ir pavardė': 'full name',
+    'draudėjas': 'policy holder',
+    'vārds un uzvārds': 'full name',
+    'apdrošinājuma ņēmējs': 'policy holder',
+
+    // ── Claimant Type ──────────────────────────────────────────────────
+    'anspruchsteller': 'claimant',
+    'anspruchstellertyp': 'claimant type',
+    'antragstellertyp': 'claimant type',
+    'tipo di richiedente': 'claimant type',
+    'richiedente': 'claimant',
+    'type de demandeur': 'claimant type',
+    'demandeur': 'claimant',
+    'tipo de reclamante': 'claimant type',
+    'reclamante': 'claimant',
+    'typ wnioskodawcy': 'claimant type',
+    'wnioskodawca': 'claimant',
+    'pareiškėjo tipas': 'claimant type',
+    'pareiškėjas': 'claimant',
+    'pieprasītāja veids': 'claimant type',
+    'pieprasītājs': 'claimant',
+
+    // ── Vehicle Registration / Plate Number ────────────────────────────
+    'kennzeichen': 'plate number',
+    'fahrzeugkennzeichen': 'plate number',
+    'amtliches kennzeichen': 'plate number',
+    'targa': 'plate number',
+    'numero di targa': 'plate number',
+    'numéro d\'immatriculation': 'plate number',
+    'immatriculation': 'plate number',
+    'plaque': 'plate number',
+    'matrícula': 'plate number',
+    'número de matrícula': 'plate number',
+    'placa': 'plate number',
+    'numer rejestracyjny': 'plate number',
+    'rejestracja': 'plate number',
+    'valstybinis numeris': 'plate number',
+    'registracijos numeris': 'plate number',
+    'reģistrācijas numurs': 'plate number',
+    'valsts numura zīme': 'plate number',
+
+    // ── VIN ────────────────────────────────────────────────────────────
+    'fahrgestellnummer': 'vin number',
+    'vin-nummer': 'vin number',
+    'numero di telaio': 'vin number',
+    'telaio': 'vin number',
+    'numéro de châssis': 'vin number',
+    'numéro vin': 'vin number',
+    'número de vin': 'vin number',
+    'número de bastidor': 'vin number',
+    'numer vin': 'vin number',
+    'numer nadwozia': 'vin number',
+    'vin numeris': 'vin number',
+    'kėbulo numeris': 'vin number',
+    'vin numurs': 'vin number',
+    'virsbūves numurs': 'vin number',
+
+    // ── Vehicle Model ──────────────────────────────────────────────────
+    'fahrzeug': 'vehicle',
+    'fahrzeugmodell': 'vehicle model',
+    'modell': 'vehicle model',
+    'veicolo': 'vehicle',
+    'modello del veicolo': 'vehicle model',
+    'modello': 'vehicle model',
+    'véhicule': 'vehicle',
+    'modèle du véhicule': 'vehicle model',
+    'modèle': 'vehicle model',
+    'vehículo': 'vehicle',
+    'modelo del vehículo': 'vehicle model',
+    'modelo': 'vehicle model',
+    'pojazd': 'vehicle',
+    'model pojazdu': 'vehicle model',
+    'model': 'vehicle model',
+    'transporto priemonė': 'vehicle',
+    'transporto priemonės modelis': 'vehicle model',
+    'modelis': 'vehicle model',
+    'transportlīdzeklis': 'vehicle',
+    'transportlīdzekļa modelis': 'vehicle model',
+
+    // ── Policy Status ──────────────────────────────────────────────────
+    'status': 'status',
+    'policenstatus': 'policy status',
+    'stato': 'status',
+    'stato della polizza': 'policy status',
+    'statut': 'status',
+    'statut de la police': 'policy status',
+    'estado': 'status',
+    'estado de la póliza': 'policy status',
+    'status polisy': 'policy status',
+    'būsena': 'status',
+    'poliso būsena': 'policy status',
+    'statuss': 'status',
+    'polises statuss': 'policy status',
+
+    // ── Policy Valid Until ─────────────────────────────────────────────
+    'gültig bis': 'valid until',
+    'police gültig bis': 'policy valid until',
+    'valido fino al': 'valid until',
+    'polizza valida fino al': 'policy valid until',
+    'valable jusqu\'au': 'valid until',
+    'police valable jusqu\'au': 'policy valid until',
+    'válido hasta': 'valid until',
+    'póliza válida hasta': 'policy valid until',
+    'ważna do': 'valid until',
+    'polisa ważna do': 'policy valid until',
+    'galioja iki': 'valid until',
+    'polisas galioja iki': 'policy valid until',
+    'derīga līdz': 'valid until',
+    'polise derīga līdz': 'policy valid until',
+
+    // ── Claim Type ─────────────────────────────────────────────────────
+    'schadenart': 'claim type',
+    'schadensart': 'claim type',
+    'schadentyp': 'claim type',
+    'tipo di sinistro': 'claim type',
+    'tipo sinistro': 'claim type',
+    'type de sinistre': 'claim type',
+    'type de réclamation': 'claim type',
+    'tipo de reclamación': 'claim type',
+    'tipo de siniestro': 'claim type',
+    'typ szkody': 'claim type',
+    'rodzaj szkody': 'claim type',
+    'žalos tipas': 'claim type',
+    'pretenzijos tipas': 'claim type',
+    'atlīdzības veids': 'claim type',
+    'zaudējuma veids': 'claim type',
+
+    // ── Incident Date ──────────────────────────────────────────────────
+    'schadensdatum': 'incident date',
+    'datum': 'date',
+    'vorfallsdatum': 'incident date',
+    'data del sinistro': 'incident date',
+    'data': 'date',
+    'date du sinistre': 'incident date',
+    'date': 'date',
+    'fecha del incidente': 'incident date',
+    'fecha': 'date',
+    'data zdarzenia': 'incident date',
+    'įvykio data': 'incident date',
+    'notikuma datums': 'incident date',
+    'datums': 'date',
+
+    // ── Incident Time ──────────────────────────────────────────────────
+    'uhrzeit': 'time',
+    'schadenszeit': 'incident time',
+    'vorfallszeit': 'incident time',
+    'zeit': 'time',
+    'ora del sinistro': 'incident time',
+    'ora': 'time',
+    'heure du sinistre': 'incident time',
+    'heure': 'time',
+    'hora del incidente': 'incident time',
+    'hora': 'time',
+    'godzina zdarzenia': 'incident time',
+    'godzina': 'time',
+    'įvykio laikas': 'incident time',
+    'laikas': 'time',
+    'notikuma laiks': 'incident time',
+    'laiks': 'time',
+
+    // ── Incident Location ──────────────────────────────────────────────
+    'schadensort': 'incident location',
+    'ort des vorfalls': 'incident location',
+    'ort': 'location',
+    'ereignisort': 'incident location',
+    'luogo del sinistro': 'incident location',
+    'luogo': 'location',
+    'località': 'location',
+    'lieu du sinistre': 'incident location',
+    'lieu': 'location',
+    'emplacement': 'location',
+    'lugar del incidente': 'incident location',
+    'lugar': 'location',
+    'ubicación': 'location',
+    'miejsce zdarzenia': 'incident location',
+    'miejsce': 'location',
+    'lokalizacja': 'location',
+    'įvykio vieta': 'incident location',
+    'vieta': 'location',
+    'lokacija': 'location',
+    'notikuma vieta': 'incident location',
+
+    // ── Incident Description ───────────────────────────────────────────
+    'schadensbeschreibung': 'incident description',
+    'schadenbeschreibung': 'incident description',
+    'beschreibung': 'description',
+    'schadensdetails': 'damage details',
+    'descrizione del sinistro': 'incident description',
+    'descrizione': 'description',
+    'dettagli del danno': 'damage details',
+    'description du sinistre': 'incident description',
+    'description': 'description',
+    'détails des dommages': 'damage details',
+    'descripción del incidente': 'incident description',
+    'descripción': 'description',
+    'detalles del daño': 'damage details',
+    'opis zdarzenia': 'incident description',
+    'opis': 'description',
+    'szczegóły szkody': 'damage details',
+    'įvykio aprašymas': 'incident description',
+    'aprašymas': 'description',
+    'žalos aprašymas': 'damage details',
+    'notikuma apraksts': 'incident description',
+    'apraksts': 'description',
+    'bojājumu apraksts': 'damage details',
+
+    // ── Claim Amount ───────────────────────────────────────────────────
+    'schadenshöhe': 'claim amount',
+    'schadenssumme': 'claim amount',
+    'betrag': 'amount',
+    'anspruchsbetrag': 'claim amount',
+    'importo del sinistro': 'claim amount',
+    'importo': 'amount',
+    'montant du sinistre': 'claim amount',
+    'montant': 'amount',
+    'monto del reclamo': 'claim amount',
+    'monto': 'amount',
+    'importe': 'amount',
+    'kwota szkody': 'claim amount',
+    'kwota': 'amount',
+    'žalos suma': 'claim amount',
+    'suma': 'amount',
+    'atlīdzības summa': 'claim amount',
+  };
+
   Map<String, dynamic> _mapSaveSummaryToDto(Map<String, dynamic> summary) {
     final mapped = <String, dynamic>{};
     String? incidentDateRaw;
@@ -2663,9 +2999,12 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
 
     summary.forEach((key, value) {
       if (value == null) return;
-      // Match keys case-insensitively so the bot can vary casing without
-      // silently dropping fields onto AdditionalData.
-      switch (key.toLowerCase().trim()) {
+      // The bot localizes its `save_summary` keys to the conversation language
+      // (e.g. "Policennummer", "Numéro de police"). Normalize to the canonical
+      // English label first so the case-insensitive switch below stays
+      // single-language. Falls back to the original key for unknown labels.
+      final normalizedKey = _canonicalSummaryKey(key);
+      switch (normalizedKey) {
         case 'policy number':
           mapped['policyNumber'] = value;
           break;
@@ -3444,7 +3783,8 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            '$filledCount of $maxCount uploaded · min $minCount',
+            AppLocalizations.of(context)
+                .chat_quotaUploaded(filledCount, maxCount, minCount),
             style: TextStyle(
               fontSize: 12,
               color: Colors.grey.shade600,
@@ -3492,9 +3832,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                           color: Colors.white,
                         ),
                       const SizedBox(width: 8),
-                      const Text(
-                        'DONE',
-                        style: TextStyle(
+                      Text(
+                        AppLocalizations.of(context).chat_done,
+                        style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                           color: Colors.white,
@@ -3578,7 +3918,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         ),
         if (picked != null && !stillRejected)
           IconButton(
-            tooltip: 'Remove',
+            tooltip: AppLocalizations.of(context).chat_remove,
             onPressed: () => _onRemoveAngleImage(angle),
             icon: const Icon(Icons.close, size: 18, color: Colors.red),
             visualDensity: VisualDensity.compact,
@@ -3592,7 +3932,10 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                 ? null
                 : () => _onPickAngleImage(angle),
             icon: const Icon(Icons.camera_alt_outlined, size: 16),
-            label: const Text('Upload', style: TextStyle(fontSize: 12)),
+            label: Text(
+              AppLocalizations.of(context).chat_upload,
+              style: const TextStyle(fontSize: 12),
+            ),
             style: TextButton.styleFrom(
               foregroundColor: _kBlue,
               padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -3601,7 +3944,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           )
         else
           IconButton(
-            tooltip: 'Replace',
+            tooltip: AppLocalizations.of(context).chat_replace,
             onPressed: (atCap || _uploadingFiles)
                 ? null
                 : () => _onPickAngleImage(angle),
@@ -3720,7 +4063,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    _pickedImages.length >= _maxImages ? 'DONE' : 'UPLOAD',
+                    _pickedImages.length >= _maxImages
+                        ? AppLocalizations.of(context).chat_done
+                        : AppLocalizations.of(context).chat_uploadCaps,
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
@@ -3773,7 +4118,8 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
               const SizedBox(height: 4),
               Text(
                 minCount > 1
-                    ? '$alreadyUploaded of $maxCount uploaded · min $minCount'
+                    ? AppLocalizations.of(context)
+                        .chat_quotaUploaded(alreadyUploaded, maxCount, minCount)
                     : AppLocalizations.of(context).chat_photosOrPdfHint,
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
               ),
@@ -3868,7 +4214,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                     children: [
                       Expanded(
                         child: _docActionButton(
-                          label: 'ADD',
+                          label: AppLocalizations.of(context).chat_addCaps,
                           icon: Icons.add,
                           enabled: !_uploadingFiles && canAddMore,
                           onTap: _onPickDocuments,
@@ -3877,7 +4223,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: _docActionButton(
-                          label: 'DONE',
+                          label: AppLocalizations.of(context).chat_done,
                           icon: Icons.check_circle_outline,
                           enabled: !_uploadingFiles && minReached,
                           onTap: () => _onSubmitDocuments(msg),

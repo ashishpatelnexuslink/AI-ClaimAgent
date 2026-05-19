@@ -348,5 +348,42 @@
   "policyType_life": "Life",
   "policyType_travel": "Travel",
 
-  "samplePhotos_title": "Sample Photos"
+  "samplePhotos_title": "Sample Photos",
+
+  "chat_seeSample": "(See sample)",
+  "chat_quotaUploaded": "{filled} of {total} uploaded · min {min}",
+  "@chat_quotaUploaded": {
+    "placeholders": {
+      "filled": { "type": "int" },
+      "total": { "type": "int" },
+      "min": { "type": "int" }
+    }
+  },
+  "chat_upload": "Upload",
+  "chat_uploadCaps": "UPLOAD",
+  "chat_done": "DONE",
+  "chat_addCaps": "ADD",
+  "chat_angleImageNotProper": "{angle} image is not proper. Please re-upload.",
+  "@chat_angleImageNotProper": { "placeholders": { "angle": { "type": "String" } } },
+  "chat_addMore": "+ Add more",
+  "chat_legacyUploadedCount": "{count}/{total} UPLOADED",
+  "@chat_legacyUploadedCount": {
+    "placeholders": {
+      "count": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "chat_remove": "Remove",
+  "chat_replace": "Replace",
+
+  "imageAngle_frontLeft": "Front Left",
+  "imageAngle_frontRight": "Front Right",
+  "imageAngle_rearLeft": "Rear Left",
+  "imageAngle_rearRight": "Rear Right",
+  "imageAngle_front": "Front",
+  "imageAngle_rear": "Rear",
+  "imageAngle_left": "Left",
+  "imageAngle_right": "Right",
+  "imageAngle_interior": "Interior",
+  "imageAngle_dashboard": "Dashboard"
 }

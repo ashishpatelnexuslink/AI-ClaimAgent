@@ -848,4 +848,73 @@ class AppLocalizationsLt extends AppLocalizations {
 
   @override
   String get samplePhotos_title => 'Pavyzdinės nuotraukos';
+
+  @override
+  String get chat_seeSample => '(Žiūrėti pavyzdį)';
+
+  @override
+  String chat_quotaUploaded(int filled, int total, int min) {
+    return '$filled iš $total įkelta · min $min';
+  }
+
+  @override
+  String get chat_upload => 'Įkelti';
+
+  @override
+  String get chat_uploadCaps => 'ĮKELTI';
+
+  @override
+  String get chat_done => 'ATLIKTA';
+
+  @override
+  String get chat_addCaps => 'PRIDĖTI';
+
+  @override
+  String chat_angleImageNotProper(String angle) {
+    return 'Nuotrauka „$angle“ netinkama. Prašome įkelti dar kartą.';
+  }
+
+  @override
+  String get chat_addMore => '+ Pridėti daugiau';
+
+  @override
+  String chat_legacyUploadedCount(int count, int total) {
+    return '$count/$total ĮKELTA';
+  }
+
+  @override
+  String get chat_remove => 'Pašalinti';
+
+  @override
+  String get chat_replace => 'Pakeisti';
+
+  @override
+  String get imageAngle_frontLeft => 'Priekis kairė';
+
+  @override
+  String get imageAngle_frontRight => 'Priekis dešinė';
+
+  @override
+  String get imageAngle_rearLeft => 'Galas kairė';
+
+  @override
+  String get imageAngle_rearRight => 'Galas dešinė';
+
+  @override
+  String get imageAngle_front => 'Priekis';
+
+  @override
+  String get imageAngle_rear => 'Galas';
+
+  @override
+  String get imageAngle_left => 'Kairė';
+
+  @override
+  String get imageAngle_right => 'Dešinė';
+
+  @override
+  String get imageAngle_interior => 'Salonas';
+
+  @override
+  String get imageAngle_dashboard => 'Prietaisų skydelis';
 }

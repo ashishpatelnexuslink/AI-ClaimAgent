@@ -1609,6 +1609,132 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Sample Photos'**
   String get samplePhotos_title;
+
+  /// No description provided for @chat_seeSample.
+  ///
+  /// In en, this message translates to:
+  /// **'(See sample)'**
+  String get chat_seeSample;
+
+  /// No description provided for @chat_quotaUploaded.
+  ///
+  /// In en, this message translates to:
+  /// **'{filled} of {total} uploaded · min {min}'**
+  String chat_quotaUploaded(int filled, int total, int min);
+
+  /// No description provided for @chat_upload.
+  ///
+  /// In en, this message translates to:
+  /// **'Upload'**
+  String get chat_upload;
+
+  /// No description provided for @chat_uploadCaps.
+  ///
+  /// In en, this message translates to:
+  /// **'UPLOAD'**
+  String get chat_uploadCaps;
+
+  /// No description provided for @chat_done.
+  ///
+  /// In en, this message translates to:
+  /// **'DONE'**
+  String get chat_done;
+
+  /// No description provided for @chat_addCaps.
+  ///
+  /// In en, this message translates to:
+  /// **'ADD'**
+  String get chat_addCaps;
+
+  /// No description provided for @chat_angleImageNotProper.
+  ///
+  /// In en, this message translates to:
+  /// **'{angle} image is not proper. Please re-upload.'**
+  String chat_angleImageNotProper(String angle);
+
+  /// No description provided for @chat_addMore.
+  ///
+  /// In en, this message translates to:
+  /// **'+ Add more'**
+  String get chat_addMore;
+
+  /// No description provided for @chat_legacyUploadedCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count}/{total} UPLOADED'**
+  String chat_legacyUploadedCount(int count, int total);
+
+  /// No description provided for @chat_remove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get chat_remove;
+
+  /// No description provided for @chat_replace.
+  ///
+  /// In en, this message translates to:
+  /// **'Replace'**
+  String get chat_replace;
+
+  /// No description provided for @imageAngle_frontLeft.
+  ///
+  /// In en, this message translates to:
+  /// **'Front Left'**
+  String get imageAngle_frontLeft;
+
+  /// No description provided for @imageAngle_frontRight.
+  ///
+  /// In en, this message translates to:
+  /// **'Front Right'**
+  String get imageAngle_frontRight;
+
+  /// No description provided for @imageAngle_rearLeft.
+  ///
+  /// In en, this message translates to:
+  /// **'Rear Left'**
+  String get imageAngle_rearLeft;
+
+  /// No description provided for @imageAngle_rearRight.
+  ///
+  /// In en, this message translates to:
+  /// **'Rear Right'**
+  String get imageAngle_rearRight;
+
+  /// No description provided for @imageAngle_front.
+  ///
+  /// In en, this message translates to:
+  /// **'Front'**
+  String get imageAngle_front;
+
+  /// No description provided for @imageAngle_rear.
+  ///
+  /// In en, this message translates to:
+  /// **'Rear'**
+  String get imageAngle_rear;
+
+  /// No description provided for @imageAngle_left.
+  ///
+  /// In en, this message translates to:
+  /// **'Left'**
+  String get imageAngle_left;
+
+  /// No description provided for @imageAngle_right.
+  ///
+  /// In en, this message translates to:
+  /// **'Right'**
+  String get imageAngle_right;
+
+  /// No description provided for @imageAngle_interior.
+  ///
+  /// In en, this message translates to:
+  /// **'Interior'**
+  String get imageAngle_interior;
+
+  /// No description provided for @imageAngle_dashboard.
+  ///
+  /// In en, this message translates to:
+  /// **'Dashboard'**
+  String get imageAngle_dashboard;
 }
 
 class _AppLocalizationsDelegate

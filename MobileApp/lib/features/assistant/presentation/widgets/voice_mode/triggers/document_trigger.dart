@@ -1,3 +1,4 @@
+import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
@@ -33,6 +34,7 @@ class DocumentTrigger extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -53,9 +55,9 @@ class DocumentTrigger extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Upload Documents',
-                style: TextStyle(
+              Text(
+                l.chat_uploadDocuments,
+                style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
                   color: kVmDark,
@@ -64,8 +66,8 @@ class DocumentTrigger extends StatelessWidget {
               const SizedBox(height: 4),
               Text(
                 minCount > 1
-                    ? '$alreadyUploaded of $maxCount uploaded · min $minCount'
-                    : 'You can upload photos or PDF files.',
+                    ? l.chat_quotaUploaded(alreadyUploaded, maxCount, minCount)
+                    : l.chat_photosOrPdfHint,
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
               ),
               if (pickedDocuments.isNotEmpty) ...[
@@ -172,7 +174,9 @@ class DocumentTrigger extends StatelessWidget {
                         ),
                       const SizedBox(width: 8),
                       Text(
-                        pickedDocuments.isEmpty ? 'UPLOAD' : 'DONE',
+                        pickedDocuments.isEmpty
+                            ? l.chat_uploadCaps
+                            : l.chat_done,
                         style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,

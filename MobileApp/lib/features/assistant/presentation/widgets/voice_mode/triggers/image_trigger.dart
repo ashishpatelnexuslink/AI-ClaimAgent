@@ -1,16 +1,44 @@
 import 'dart:io';
 
+import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
 
 import '../voice_mode_colors.dart';
 
-/// "front_left" → "Front Left".
-String humanizeAngle(String angle) {
-  return angle
-      .split(RegExp(r'[_\s]+'))
-      .where((p) => p.isNotEmpty)
-      .map((p) => p[0].toUpperCase() + p.substring(1).toLowerCase())
-      .join(' ');
+/// Maps a backend angle key (e.g. "front_left") to a localized label,
+/// falling back to a title-cased humanization for unknown angles.
+String humanizeAngle(String angle, AppLocalizations l) {
+  switch (angle.trim().toLowerCase()) {
+    case 'front_left':
+      return l.imageAngle_frontLeft;
+    case 'front_right':
+      return l.imageAngle_frontRight;
+    case 'rear_left':
+    case 'back_left':
+      return l.imageAngle_rearLeft;
+    case 'rear_right':
+    case 'back_right':
+      return l.imageAngle_rearRight;
+    case 'front':
+      return l.imageAngle_front;
+    case 'rear':
+    case 'back':
+      return l.imageAngle_rear;
+    case 'left':
+      return l.imageAngle_left;
+    case 'right':
+      return l.imageAngle_right;
+    case 'interior':
+      return l.imageAngle_interior;
+    case 'dashboard':
+      return l.imageAngle_dashboard;
+    default:
+      return angle
+          .split(RegExp(r'[_\s]+'))
+          .where((p) => p.isNotEmpty)
+          .map((p) => p[0].toUpperCase() + p.substring(1).toLowerCase())
+          .join(' ');
+  }
 }
 
 /// GET_IMAGE trigger card. Renders a per-angle uploader when the bot's
@@ -58,11 +86,12 @@ class ImageTrigger extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (angles.isEmpty) return _buildLegacy();
-    return _buildAngleMode();
+    final l = AppLocalizations.of(context);
+    if (angles.isEmpty) return _buildLegacy(l);
+    return _buildAngleMode(l);
   }
 
-  Widget _buildAngleMode() {
+  Widget _buildAngleMode(AppLocalizations l) {
     final filledCount = angles.where(angleImages.containsKey).length;
     final canSubmit = filledCount >= minCount && !uploadingFiles && !botTyping;
 
@@ -83,9 +112,9 @@ class ImageTrigger extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Upload Photos',
-            style: TextStyle(
+          Text(
+            l.chat_uploadPhotos,
+            style: const TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.bold,
               color: kVmDark,
@@ -93,7 +122,7 @@ class ImageTrigger extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            '$filledCount of $maxCount uploaded · min $minCount',
+            l.chat_quotaUploaded(filledCount, maxCount, minCount),
             style: TextStyle(
               fontSize: 12,
               color: Colors.grey.shade600,
@@ -149,9 +178,9 @@ class ImageTrigger extends StatelessWidget {
                           color: Colors.white,
                         ),
                       const SizedBox(width: 8),
-                      const Text(
-                        'DONE',
-                        style: TextStyle(
+                      Text(
+                        l.chat_done,
+                        style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                           color: Colors.white,
@@ -167,7 +196,7 @@ class ImageTrigger extends StatelessWidget {
     );
   }
 
-  Widget _buildLegacy() {
+  Widget _buildLegacy(AppLocalizations l) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -185,9 +214,9 @@ class ImageTrigger extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Upload Photos',
-            style: TextStyle(
+          Text(
+            l.chat_uploadPhotos,
+            style: const TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.bold,
               color: kVmDark,
@@ -241,7 +270,7 @@ class ImageTrigger extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              '${legacyImages.length}/$legacyMaxImages UPLOADED',
+              l.chat_legacyUploadedCount(legacyImages.length, legacyMaxImages),
               style: TextStyle(
                 fontSize: 12,
                 color: Colors.grey.shade600,
@@ -283,7 +312,7 @@ class ImageTrigger extends StatelessWidget {
                     ),
                   const SizedBox(width: 8),
                   Text(
-                    legacyImages.isEmpty ? 'UPLOAD' : 'DONE',
+                    legacyImages.isEmpty ? l.chat_uploadCaps : l.chat_done,
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
@@ -300,7 +329,7 @@ class ImageTrigger extends StatelessWidget {
             GestureDetector(
               onTap: uploadingFiles ? null : onPickImages,
               child: Text(
-                '+ Add more',
+                l.chat_addMore,
                 style: TextStyle(
                   fontSize: 12,
                   color: Colors.grey.shade600,
@@ -342,15 +371,16 @@ class AngleRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     // Per-angle error text now lives only in the failure card's banner —
     // the row keeps a neutral "Not uploaded" so the Upload button sits flush.
     final String statusText;
     final Color statusColor;
     if (stillRejected || picked == null) {
-      statusText = 'Not uploaded';
+      statusText = l.chat_notUploaded;
       statusColor = Colors.grey.shade600;
     } else {
-      statusText = 'Uploaded';
+      statusText = l.chat_uploaded;
       statusColor = kVmBlue;
     }
     return Row(
@@ -384,7 +414,7 @@ class AngleRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                humanizeAngle(angle),
+                humanizeAngle(angle, l),
                 style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -401,7 +431,7 @@ class AngleRow extends StatelessWidget {
         ),
         if (picked != null && !stillRejected)
           IconButton(
-            tooltip: 'Remove',
+            tooltip: l.chat_remove,
             onPressed: onRemove,
             icon: const Icon(Icons.close, size: 18, color: Colors.red),
             visualDensity: VisualDensity.compact,
@@ -413,7 +443,7 @@ class AngleRow extends StatelessWidget {
           TextButton.icon(
             onPressed: (atCap || uploadingFiles) ? null : onPick,
             icon: const Icon(Icons.camera_alt_outlined, size: 16),
-            label: const Text('Upload', style: TextStyle(fontSize: 12)),
+            label: Text(l.chat_upload, style: const TextStyle(fontSize: 12)),
             style: TextButton.styleFrom(
               foregroundColor: kVmBlue,
               padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -422,7 +452,7 @@ class AngleRow extends StatelessWidget {
           )
         else
           IconButton(
-            tooltip: 'Replace',
+            tooltip: l.chat_replace,
             onPressed: (atCap || uploadingFiles) ? null : onPick,
             icon: const Icon(Icons.refresh, size: 18, color: kVmBlue),
             visualDensity: VisualDensity.compact,

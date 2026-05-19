@@ -854,4 +854,73 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get samplePhotos_title => 'Photos d\'\'exemple';
+
+  @override
+  String get chat_seeSample => '(Voir l\'\'exemple)';
+
+  @override
+  String chat_quotaUploaded(int filled, int total, int min) {
+    return '$filled sur $total téléchargées · min $min';
+  }
+
+  @override
+  String get chat_upload => 'Téléverser';
+
+  @override
+  String get chat_uploadCaps => 'TÉLÉVERSER';
+
+  @override
+  String get chat_done => 'TERMINÉ';
+
+  @override
+  String get chat_addCaps => 'AJOUTER';
+
+  @override
+  String chat_angleImageNotProper(String angle) {
+    return 'L\'\'image « $angle » n\'\'est pas correcte. Veuillez la téléverser à nouveau.';
+  }
+
+  @override
+  String get chat_addMore => '+ Ajouter d\'\'autres';
+
+  @override
+  String chat_legacyUploadedCount(int count, int total) {
+    return '$count/$total TÉLÉCHARGÉES';
+  }
+
+  @override
+  String get chat_remove => 'Supprimer';
+
+  @override
+  String get chat_replace => 'Remplacer';
+
+  @override
+  String get imageAngle_frontLeft => 'Avant gauche';
+
+  @override
+  String get imageAngle_frontRight => 'Avant droit';
+
+  @override
+  String get imageAngle_rearLeft => 'Arrière gauche';
+
+  @override
+  String get imageAngle_rearRight => 'Arrière droit';
+
+  @override
+  String get imageAngle_front => 'Avant';
+
+  @override
+  String get imageAngle_rear => 'Arrière';
+
+  @override
+  String get imageAngle_left => 'Gauche';
+
+  @override
+  String get imageAngle_right => 'Droit';
+
+  @override
+  String get imageAngle_interior => 'Intérieur';
+
+  @override
+  String get imageAngle_dashboard => 'Tableau de bord';
 }

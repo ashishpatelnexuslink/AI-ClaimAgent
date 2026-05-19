@@ -292,5 +292,28 @@
   "policyType_life": "Gyvybė",
   "policyType_travel": "Kelionė",
 
-  "samplePhotos_title": "Pavyzdinės nuotraukos"
+  "samplePhotos_title": "Pavyzdinės nuotraukos",
+
+  "chat_seeSample": "(Žiūrėti pavyzdį)",
+  "chat_quotaUploaded": "{filled} iš {total} įkelta · min {min}",
+  "chat_upload": "Įkelti",
+  "chat_uploadCaps": "ĮKELTI",
+  "chat_done": "ATLIKTA",
+  "chat_addCaps": "PRIDĖTI",
+  "chat_angleImageNotProper": "Nuotrauka „{angle}“ netinkama. Prašome įkelti dar kartą.",
+  "chat_addMore": "+ Pridėti daugiau",
+  "chat_legacyUploadedCount": "{count}/{total} ĮKELTA",
+  "chat_remove": "Pašalinti",
+  "chat_replace": "Pakeisti",
+
+  "imageAngle_frontLeft": "Priekis kairė",
+  "imageAngle_frontRight": "Priekis dešinė",
+  "imageAngle_rearLeft": "Galas kairė",
+  "imageAngle_rearRight": "Galas dešinė",
+  "imageAngle_front": "Priekis",
+  "imageAngle_rear": "Galas",
+  "imageAngle_left": "Kairė",
+  "imageAngle_right": "Dešinė",
+  "imageAngle_interior": "Salonas",
+  "imageAngle_dashboard": "Prietaisų skydelis"
 }

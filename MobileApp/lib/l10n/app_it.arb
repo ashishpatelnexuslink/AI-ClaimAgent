@@ -292,5 +292,28 @@
   "policyType_life": "Vita",
   "policyType_travel": "Viaggio",
 
-  "samplePhotos_title": "Foto di esempio"
+  "samplePhotos_title": "Foto di esempio",
+
+  "chat_seeSample": "(Vedi esempio)",
+  "chat_quotaUploaded": "{filled} di {total} caricate · min {min}",
+  "chat_upload": "Carica",
+  "chat_uploadCaps": "CARICA",
+  "chat_done": "FATTO",
+  "chat_addCaps": "AGGIUNGI",
+  "chat_angleImageNotProper": "L''immagine «{angle}» non è corretta. Caricala di nuovo.",
+  "chat_addMore": "+ Aggiungi altre",
+  "chat_legacyUploadedCount": "{count}/{total} CARICATE",
+  "chat_remove": "Rimuovi",
+  "chat_replace": "Sostituisci",
+
+  "imageAngle_frontLeft": "Anteriore sinistra",
+  "imageAngle_frontRight": "Anteriore destra",
+  "imageAngle_rearLeft": "Posteriore sinistra",
+  "imageAngle_rearRight": "Posteriore destra",
+  "imageAngle_front": "Anteriore",
+  "imageAngle_rear": "Posteriore",
+  "imageAngle_left": "Sinistra",
+  "imageAngle_right": "Destra",
+  "imageAngle_interior": "Interno",
+  "imageAngle_dashboard": "Cruscotto"
 }

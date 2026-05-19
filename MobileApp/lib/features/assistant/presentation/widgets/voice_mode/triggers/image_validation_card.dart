@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
 
 import '../voice_mode_colors.dart';
@@ -44,6 +45,7 @@ class ImageValidationFailureList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     final allReplaced = angles.every((a) => !_isStillRejected(a));
     final canSubmit =
         allReplaced && !uploadingFiles && !botTyping && !groupAlreadyUploaded;
@@ -68,7 +70,7 @@ class ImageValidationFailureList extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            '$filledCount of ${angles.length} uploaded · min ${angles.length}',
+            l.chat_quotaUploaded(filledCount, angles.length, angles.length),
             style: TextStyle(
               fontSize: 12,
               color: Colors.grey.shade600,
@@ -112,7 +114,7 @@ class ImageValidationFailureList extends StatelessWidget {
                           ),
                           Expanded(
                             child: Text(
-                              '${humanizeAngle(a)} image is not proper. Please re-upload.',
+                              l.chat_angleImageNotProper(humanizeAngle(a, l)),
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: Color(0xFFB00020),
@@ -173,9 +175,9 @@ class ImageValidationFailureList extends StatelessWidget {
                         color: Colors.white,
                       ),
                     const SizedBox(width: 8),
-                    const Text(
-                      'DONE',
-                      style: TextStyle(
+                    Text(
+                      l.chat_done,
+                      style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                         color: Colors.white,

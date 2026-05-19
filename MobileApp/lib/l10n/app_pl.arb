@@ -292,5 +292,28 @@
   "policyType_life": "Życie",
   "policyType_travel": "Podróż",
 
-  "samplePhotos_title": "Przykładowe zdjęcia"
+  "samplePhotos_title": "Przykładowe zdjęcia",
+
+  "chat_seeSample": "(Zobacz przykład)",
+  "chat_quotaUploaded": "{filled} z {total} przesłano · min {min}",
+  "chat_upload": "Prześlij",
+  "chat_uploadCaps": "PRZEŚLIJ",
+  "chat_done": "GOTOWE",
+  "chat_addCaps": "DODAJ",
+  "chat_angleImageNotProper": "Zdjęcie „{angle}” jest nieprawidłowe. Prześlij je ponownie.",
+  "chat_addMore": "+ Dodaj więcej",
+  "chat_legacyUploadedCount": "{count}/{total} PRZESŁANE",
+  "chat_remove": "Usuń",
+  "chat_replace": "Zastąp",
+
+  "imageAngle_frontLeft": "Przód lewy",
+  "imageAngle_frontRight": "Przód prawy",
+  "imageAngle_rearLeft": "Tył lewy",
+  "imageAngle_rearRight": "Tył prawy",
+  "imageAngle_front": "Przód",
+  "imageAngle_rear": "Tył",
+  "imageAngle_left": "Lewa",
+  "imageAngle_right": "Prawa",
+  "imageAngle_interior": "Wnętrze",
+  "imageAngle_dashboard": "Deska rozdzielcza"
 }

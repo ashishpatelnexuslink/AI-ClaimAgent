@@ -852,4 +852,73 @@ class AppLocalizationsLv extends AppLocalizations {
 
   @override
   String get samplePhotos_title => 'Paraugfotogrāfijas';
+
+  @override
+  String get chat_seeSample => '(Skatīt paraugu)';
+
+  @override
+  String chat_quotaUploaded(int filled, int total, int min) {
+    return '$filled no $total augšupielādētas · min $min';
+  }
+
+  @override
+  String get chat_upload => 'Augšupielādēt';
+
+  @override
+  String get chat_uploadCaps => 'AUGŠUPIELĀDĒT';
+
+  @override
+  String get chat_done => 'GATAVS';
+
+  @override
+  String get chat_addCaps => 'PIEVIENOT';
+
+  @override
+  String chat_angleImageNotProper(String angle) {
+    return 'Attēls „$angle” nav pareizs. Lūdzu, augšupielādējiet vēlreiz.';
+  }
+
+  @override
+  String get chat_addMore => '+ Pievienot vēl';
+
+  @override
+  String chat_legacyUploadedCount(int count, int total) {
+    return '$count/$total AUGŠUPIELĀDĒTAS';
+  }
+
+  @override
+  String get chat_remove => 'Noņemt';
+
+  @override
+  String get chat_replace => 'Aizstāt';
+
+  @override
+  String get imageAngle_frontLeft => 'Priekša pa kreisi';
+
+  @override
+  String get imageAngle_frontRight => 'Priekša pa labi';
+
+  @override
+  String get imageAngle_rearLeft => 'Aizmugure pa kreisi';
+
+  @override
+  String get imageAngle_rearRight => 'Aizmugure pa labi';
+
+  @override
+  String get imageAngle_front => 'Priekša';
+
+  @override
+  String get imageAngle_rear => 'Aizmugure';
+
+  @override
+  String get imageAngle_left => 'Kreisā';
+
+  @override
+  String get imageAngle_right => 'Labā';
+
+  @override
+  String get imageAngle_interior => 'Salons';
+
+  @override
+  String get imageAngle_dashboard => 'Panelis';
 }

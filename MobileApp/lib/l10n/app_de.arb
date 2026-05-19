@@ -292,5 +292,28 @@
   "policyType_life": "Leben",
   "policyType_travel": "Reise",
 
-  "samplePhotos_title": "Beispielfotos"
+  "samplePhotos_title": "Beispielfotos",
+
+  "chat_seeSample": "(Beispiel ansehen)",
+  "chat_quotaUploaded": "{filled} von {total} hochgeladen · min. {min}",
+  "chat_upload": "Hochladen",
+  "chat_uploadCaps": "HOCHLADEN",
+  "chat_done": "FERTIG",
+  "chat_addCaps": "HINZUFÜGEN",
+  "chat_angleImageNotProper": "Das Bild „{angle}“ ist nicht korrekt. Bitte erneut hochladen.",
+  "chat_addMore": "+ Weitere hinzufügen",
+  "chat_legacyUploadedCount": "{count}/{total} HOCHGELADEN",
+  "chat_remove": "Entfernen",
+  "chat_replace": "Ersetzen",
+
+  "imageAngle_frontLeft": "Vorne links",
+  "imageAngle_frontRight": "Vorne rechts",
+  "imageAngle_rearLeft": "Hinten links",
+  "imageAngle_rearRight": "Hinten rechts",
+  "imageAngle_front": "Vorne",
+  "imageAngle_rear": "Hinten",
+  "imageAngle_left": "Links",
+  "imageAngle_right": "Rechts",
+  "imageAngle_interior": "Innenraum",
+  "imageAngle_dashboard": "Armaturenbrett"
 }
