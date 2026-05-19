@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:claim_ai/core/constants/app_theme.dart';
-import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 
 class ClaimSummaryPage extends StatelessWidget {
   final String claimId;
@@ -9,9 +8,8 @@ class ClaimSummaryPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text(l.claimSummary_appBarTitle)),
+      appBar: AppBar(title: const Text('AI Claim Summary')),
       body: Padding(
         padding: const EdgeInsets.all(AppSpacing.md),
         child: Center(
@@ -25,21 +23,21 @@ class ClaimSummaryPage extends StatelessWidget {
               ),
               const SizedBox(height: AppSpacing.md),
               Text(
-                l.claimSummary_header,
+                'AI Summary for Claim',
                 style: Theme.of(
                   context,
                 ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                l.claimSummary_claimId(claimId),
+                'Claim ID: $claimId',
                 style: const TextStyle(color: AppColors.textSecondary),
               ),
               const SizedBox(height: AppSpacing.lg),
-              Text(
-                l.claimSummary_placeholder,
+              const Text(
+                'AI-generated summary will appear here once the backend integration is complete.',
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.textSecondary),
+                style: TextStyle(color: AppColors.textSecondary),
               ),
             ],
           ),
