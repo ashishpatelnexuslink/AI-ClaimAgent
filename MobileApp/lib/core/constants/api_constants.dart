@@ -2,8 +2,8 @@ class ApiConstants {
   ApiConstants._();
 
   // Base URLs per environment
-  // static const String devBaseUrl = 'http://192.168.11.5:5030/api';
-  static const String devBaseUrl = 'http://172.21.228.121:5030/api';
+  static const String devBaseUrl = 'http://192.168.11.5:5030/api';
+  //static const String devBaseUrl = 'http://172.21.228.121:5030/api';
   //static const String devBaseUrl = 'https://claimai-api.nexuslink.in/api';
   static const String stagingBaseUrl = 'https://claimai-api.nexuslink.in/api';
   static const String prodBaseUrl = 'https://claimai-api.nexuslink.in/api';
@@ -55,7 +55,8 @@ class ApiConstants {
   static const String pendingActions = '/mobile/notifications/pending-actions';
   static const String notificationRead = '/mobile/notifications/{id}/read';
   static const String registerDevice = '/mobile/notifications/devices/register';
-  static const String unregisterDevice = '/mobile/notifications/devices/{token}';
+  static const String unregisterDevice =
+      '/mobile/notifications/devices/{token}';
 
   // Templates
   static const String activeTemplate = '/mobile/templates/active';

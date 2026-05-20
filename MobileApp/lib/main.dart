@@ -13,7 +13,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Initialize environment
-  EnvConfig.init(Environment.prod);
+  EnvConfig.init(Environment.dev);
 
   // Initialize Firebase + register the background message handler before any
   // Firebase API is touched.
