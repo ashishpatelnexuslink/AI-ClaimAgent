@@ -54,6 +54,8 @@ class ApiConstants {
   // Notifications
   static const String pendingActions = '/mobile/notifications/pending-actions';
   static const String notificationRead = '/mobile/notifications/{id}/read';
+  static const String registerDevice = '/mobile/notifications/devices/register';
+  static const String unregisterDevice = '/mobile/notifications/devices/{token}';
 
   // Templates
   static const String activeTemplate = '/mobile/templates/active';

@@ -193,7 +193,7 @@ class DocumentTrigger extends StatelessWidget {
                 GestureDetector(
                   onTap: uploadingFiles ? null : onPickDocuments,
                   child: Text(
-                    '+ Add more',
+                    l.chat_addMore,
                     style: TextStyle(
                       fontSize: 12,
                       color: Colors.grey.shade600,

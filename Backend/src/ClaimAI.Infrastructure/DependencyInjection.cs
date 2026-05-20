@@ -6,6 +6,8 @@ using ClaimAI.Infrastructure.Identity;
 using ClaimAI.Infrastructure.Interceptors;
 using ClaimAI.Infrastructure.Repositories;
 using ClaimAI.Infrastructure.Services;
+using FirebaseAdmin;
+using Google.Apis.Auth.OAuth2;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -62,6 +64,10 @@ public static class DependencyInjection
         services.AddScoped<IMobileUserService, MobileUserService>();
         services.AddScoped<ITemplateService, TemplateService>();
 
+        services.Configure<FirebaseOptions>(configuration.GetSection(FirebaseOptions.SectionName));
+        InitializeFirebaseApp(configuration);
+        services.AddSingleton<IFcmSender, FcmSenderService>();
+
         services.Configure<AiMlOptions>(configuration.GetSection(AiMlOptions.SectionName));
         services.AddHttpClient<IAiMlClient, AiMlClient>((sp, client) =>
         {
@@ -74,5 +80,22 @@ public static class DependencyInjection
         });
 
         return services;
+    }
+
+    private static void InitializeFirebaseApp(IConfiguration configuration)
+    {
+        if (FirebaseApp.DefaultInstance is not null) return;
+
+        var keyPath = configuration[$"{FirebaseOptions.SectionName}:ServiceAccountKeyPath"];
+        if (string.IsNullOrWhiteSpace(keyPath) || !File.Exists(keyPath))
+        {
+            // Skip init when the key file is missing — push sends will no-op until configured.
+            return;
+        }
+
+        FirebaseApp.Create(new AppOptions
+        {
+            Credential = GoogleCredential.FromFile(keyPath),
+        });
     }
 }

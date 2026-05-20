@@ -1,6 +1,8 @@
 using ClaimAI.Application.DTOs.Common;
 using ClaimAI.Application.DTOs.Mobile.ClaimDocuments;
+using ClaimAI.Application.DTOs.Mobile.Claims;
 using ClaimAI.Application.DTOs.Web.Claims;
+using ClaimAI.Application.Interfaces;
 using ClaimAI.Domain.Enums;
 using ClaimAI.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
@@ -15,10 +17,14 @@ namespace ClaimAI.API.Areas.Web.Controllers;
 public class ClaimsController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
+    private readonly IClaimsService _claimsService;
 
-    public ClaimsController(ApplicationDbContext context)
+    public ClaimsController(
+        ApplicationDbContext context,
+        IClaimsService claimsService)
     {
         _context = context;
+        _claimsService = claimsService;
     }
 
     [HttpGet]
@@ -207,13 +213,14 @@ public class ClaimsController : ControllerBase
         if (!Enum.TryParse<ClaimStatus>(request.Status, ignoreCase: true, out var newStatus))
             return BadRequest(ApiResponse<object>.FailResponse($"Unknown status '{request.Status}'."));
 
-        var claim = await _context.Claims
-            .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
-        if (claim is null)
-            return NotFound(ApiResponse<object>.FailResponse("Claim not found."));
+        var result = await _claimsService.UpdateClaimStatusAsync(id, new UpdateClaimStatusDto
+        {
+            Status = newStatus,
+            Note = request.Note,
+        });
 
-        claim.Status = newStatus;
-        await _context.SaveChangesAsync(cancellationToken);
+        if (!result.Succeeded)
+            return NotFound(ApiResponse<object>.FailResponse(result.Errors, 404));
 
         return Ok(ApiResponse<object>.SuccessResponse(new { id, status = newStatus.ToString() }));
     }

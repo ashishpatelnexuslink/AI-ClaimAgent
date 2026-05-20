@@ -11,10 +11,14 @@ namespace ClaimAI.Infrastructure.Services;
 public class ClaimsService : IClaimsService
 {
     private readonly ApplicationDbContext _context;
+    private readonly INotificationService _notificationService;
 
-    public ClaimsService(ApplicationDbContext context)
+    public ClaimsService(
+        ApplicationDbContext context,
+        INotificationService notificationService)
     {
         _context = context;
+        _notificationService = notificationService;
     }
 
     public async Task<Result<DashboardSummaryDto>> GetDashboardSummaryAsync(string userId)
@@ -175,6 +179,54 @@ public class ClaimsService : IClaimsService
         await _context.SaveChangesAsync();
 
         return Result<ClaimResponseDto>.Success(MapToDto(claim));
+    }
+
+    public async Task<Result<ClaimResponseDto>> UpdateClaimStatusAsync(
+        Guid claimId,
+        UpdateClaimStatusDto dto)
+    {
+        var claim = await _context.Claims.FirstOrDefaultAsync(c => c.Id == claimId);
+        if (claim is null)
+            return Result<ClaimResponseDto>.Failure("Claim not found.");
+
+        if (claim.Status == dto.Status)
+            return Result<ClaimResponseDto>.Success(MapToDto(claim));
+
+        claim.Status = dto.Status;
+        await _context.SaveChangesAsync();
+
+        var (title, message) = BuildStatusNotification(claim, dto);
+        await _notificationService.CreateAndPushAsync(
+            userId: claim.UserId,
+            title: title,
+            message: message,
+            actionType: "claim_status_changed",
+            claimId: claim.Id);
+
+        return Result<ClaimResponseDto>.Success(MapToDto(claim));
+    }
+
+    private static (string Title, string Message) BuildStatusNotification(
+        Claim claim, UpdateClaimStatusDto dto)
+    {
+        var statusText = dto.Status switch
+        {
+            ClaimStatus.InReview => "is now under review",
+            ClaimStatus.Approved => "has been approved",
+            ClaimStatus.Rejected => "has been rejected",
+            ClaimStatus.Closed => "has been closed",
+            ClaimStatus.Submitted => "has been submitted",
+            ClaimStatus.Pending => "is pending",
+            ClaimStatus.Draft => "was reverted to draft",
+            _ => $"status changed to {dto.Status}",
+        };
+
+        var title = $"Claim {claim.ClaimNumber} updated";
+        var message = string.IsNullOrWhiteSpace(dto.Note)
+            ? $"Your claim {statusText}."
+            : $"Your claim {statusText}. {dto.Note}";
+
+        return (title, message);
     }
 
     private async Task<string> GenerateClaimNumberAsync()

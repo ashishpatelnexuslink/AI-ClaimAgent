@@ -4203,7 +4203,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
 
                   if (pickedCount == 0) {
                     return _docActionButton(
-                      label: 'UPLOAD',
+                      label: AppLocalizations.of(context).chat_uploadCaps,
                       icon: Icons.camera_alt_outlined,
                       enabled: !_uploadingFiles,
                       onTap: _onPickDocuments,
