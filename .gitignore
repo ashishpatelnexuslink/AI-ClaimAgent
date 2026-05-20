@@ -3,6 +3,11 @@
 # ===========================================
 .DS_Store
 Thumbs.db
+
+# Firebase service account credentials (do not commit)
+**/firebase-service-account.json
+**/google-services.json
+**/GoogleService-Info.plist
 desktop.ini
 *.swp
 *.swo
