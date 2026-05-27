@@ -27,4 +27,7 @@ public class TemplatePhotoSetting : BaseEntity
     public List<string> AllowedMimeTypes { get; set; } = new() { "image/jpeg", "image/png" };
 
     public int DisplayOrder { get; set; }
+
+    public ICollection<TemplatePhotoSettingTranslation> Translations { get; set; }
+        = new List<TemplatePhotoSettingTranslation>();
 }

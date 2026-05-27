@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 import 'voice_mode_colors.dart';
 
 /// Top bar of the voice-mode screen: back button, "AI Claim Assistant"
@@ -16,6 +17,7 @@ class VoiceModeHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Container(
       color: kVmBg,
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
@@ -40,11 +42,11 @@ class VoiceModeHeader extends StatelessWidget {
               child: const Icon(Icons.arrow_back, size: 18, color: kVmDark),
             ),
           ),
-          const Expanded(
+          Expanded(
             child: Center(
               child: Text(
-                'AI Claim Assistant',
-                style: TextStyle(
+                l.voice_headerTitle,
+                style: const TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.bold,
                   color: kVmDark,
@@ -61,14 +63,14 @@ class VoiceModeHeader extends StatelessWidget {
                 borderRadius: BorderRadius.circular(100),
                 border: Border.all(color: kVmRed.withValues(alpha: 0.4)),
               ),
-              child: const Row(
+              child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.close, size: 14, color: kVmRed),
-                  SizedBox(width: 4),
+                  const Icon(Icons.close, size: 14, color: kVmRed),
+                  const SizedBox(width: 4),
                   Text(
-                    'Close',
-                    style: TextStyle(
+                    l.common_close,
+                    style: const TextStyle(
                       fontSize: 13,
                       color: kVmRed,
                       fontWeight: FontWeight.w600,

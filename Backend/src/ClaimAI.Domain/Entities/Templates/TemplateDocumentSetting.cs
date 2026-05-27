@@ -17,4 +17,7 @@ public class TemplateDocumentSetting : BaseEntity
     public List<string> AllowedMimeTypes { get; set; } = new() { "application/pdf", "image/jpeg", "image/png" };
 
     public int DisplayOrder { get; set; }
+
+    public ICollection<TemplateDocumentSettingTranslation> Translations { get; set; }
+        = new List<TemplateDocumentSettingTranslation>();
 }

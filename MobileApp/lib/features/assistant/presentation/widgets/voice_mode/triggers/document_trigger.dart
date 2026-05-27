@@ -205,26 +205,9 @@ class DocumentTrigger extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 8),
-        GestureDetector(
-          onTap: onSkipDocuments,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: kVmBlue),
-            ),
-            child: const Text(
-              'Skip',
-              style: TextStyle(
-                fontSize: 13,
-                color: kVmBlue,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ),
+        // Skip is offered as a suggestion chip on the bot bubble above; we
+        // intentionally don't render a second Skip pill here to avoid the
+        // duplicate-affordance look.
       ],
     );
   }

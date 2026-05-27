@@ -573,6 +573,31 @@ class AppLocalizationsLv extends AppLocalizations {
       'Atvainojiet, kaut kas nogāja greizi. Mēģiniet vēlreiz.';
 
   @override
+  String get voice_stateListening => 'Klausos...';
+
+  @override
+  String get voice_stateSpeaking => 'Runā...';
+
+  @override
+  String get voice_stateIdle => 'Dīkstāve';
+
+  @override
+  String get voice_listeningBanner => 'Klausos... runājiet tagad';
+
+  @override
+  String get voice_tapMicToInterrupt =>
+      'Pieskarieties mikrofonam, lai pārtrauktu';
+
+  @override
+  String get voice_describeHere => 'Aprakstiet šeit…';
+
+  @override
+  String get voice_stop => 'Apturēt';
+
+  @override
+  String get voice_headerTitle => 'AI pretenziju asistents';
+
+  @override
   String get voice_initialSummary => 'Sākotnējais kopsavilkums';
 
   @override
@@ -669,6 +694,16 @@ class AppLocalizationsLv extends AppLocalizations {
 
   @override
   String get voice_endSessionAction => 'Beigt sesiju';
+
+  @override
+  String get chat_leaveTitle => 'Pamest sarunu?';
+
+  @override
+  String get chat_leaveBody =>
+      'Jūsu progress šajā pieprasījumā tiks zaudēts. Vai tiešām vēlaties iziet?';
+
+  @override
+  String get chat_leaveAction => 'Iziet';
 
   @override
   String get voice_tryAgain => 'Mēģināt vēlreiz';
@@ -872,6 +907,21 @@ class AppLocalizationsLv extends AppLocalizations {
 
   @override
   String get chat_addCaps => 'PIEVIENOT';
+
+  @override
+  String get chat_skip => 'Izlaist';
+
+  @override
+  String chat_photosUploaded(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Augšupielādētas $count fotogrāfijas',
+      one: 'Augšupielādēta $count fotogrāfija',
+      zero: 'Augšupielādētas $count fotogrāfijas',
+    );
+    return '$_temp0';
+  }
 
   @override
   String chat_angleImageNotProper(String angle) {

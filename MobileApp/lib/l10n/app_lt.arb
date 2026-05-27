@@ -199,6 +199,14 @@
   "voice_settingsAction": "Nustatymai",
   "voice_error": "Balso klaida: {error}",
   "voice_genericError": "Atsiprašome, kažkas nepavyko. Bandykite dar kartą.",
+  "voice_stateListening": "Klausau...",
+  "voice_stateSpeaking": "Kalbu...",
+  "voice_stateIdle": "Neaktyvus",
+  "voice_listeningBanner": "Klausau... kalbėkite dabar",
+  "voice_tapMicToInterrupt": "Bakstelėkite mikrofoną, kad pertrauktumėte",
+  "voice_describeHere": "Aprašykite čia…",
+  "voice_stop": "Sustabdyti",
+  "voice_headerTitle": "AI pretenzijų asistentas",
 
   "voice_initialSummary": "Pradinė santrauka",
   "voice_claimSummary": "Žalos santrauka",
@@ -229,6 +237,10 @@
   "voice_endSessionTitle": "Baigti sesiją?",
   "voice_endSessionBody": "Ar tikrai norite baigti šią balso sesiją?",
   "voice_endSessionAction": "Baigti sesiją",
+
+  "chat_leaveTitle": "Palikti pokalbį?",
+  "chat_leaveBody": "Jūsų pažanga šioje pretenzijoje bus prarasta. Ar tikrai norite išeiti?",
+  "chat_leaveAction": "Išeiti",
 
   "voice_tryAgain": "Bandyti dar kartą",
 
@@ -300,6 +312,8 @@
   "chat_uploadCaps": "ĮKELTI",
   "chat_done": "ATLIKTA",
   "chat_addCaps": "PRIDĖTI",
+  "chat_skip": "Praleisti",
+  "chat_photosUploaded": "{count, plural, one{Įkelta {count} nuotrauka} few{Įkeltos {count} nuotraukos} many{Įkelta {count} nuotraukos} other{Įkelta {count} nuotraukų}}",
   "chat_angleImageNotProper": "Nuotrauka „{angle}“ netinkama. Prašome įkelti dar kartą.",
   "chat_addMore": "+ Pridėti daugiau",
   "chat_legacyUploadedCount": "{count}/{total} ĮKELTA",

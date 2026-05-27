@@ -16,10 +16,10 @@ public class TemplateRepository : GenericRepository<Template>, ITemplateReposito
     public async Task<Template?> GetByIdWithChildrenAsync(Guid id, CancellationToken cancellationToken = default)
     {
         return await _dbSet
-            .Include(t => t.IdentityFields)
+            .Include(t => t.IdentityFields).ThenInclude(f => f.Translations)
             .Include(t => t.GroupRules)
-            .Include(t => t.PhotoSettings)
-            .Include(t => t.DocumentSettings)
+            .Include(t => t.PhotoSettings).ThenInclude(p => p.Translations)
+            .Include(t => t.DocumentSettings).ThenInclude(d => d.Translations)
             .FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
     }
 
@@ -27,10 +27,10 @@ public class TemplateRepository : GenericRepository<Template>, ITemplateReposito
     public async Task<Template?> GetActiveAsync(string companyName, InsuranceType insuranceType, CancellationToken cancellationToken = default)
     {
         return await _dbSet
-            .Include(t => t.IdentityFields)
+            .Include(t => t.IdentityFields).ThenInclude(f => f.Translations)
             .Include(t => t.GroupRules)
-            .Include(t => t.PhotoSettings)
-            .Include(t => t.DocumentSettings)
+            .Include(t => t.PhotoSettings).ThenInclude(p => p.Translations)
+            .Include(t => t.DocumentSettings).ThenInclude(d => d.Translations)
             .FirstOrDefaultAsync(
                 t => t.CompanyName == companyName
                   && t.InsuranceType == insuranceType
@@ -42,10 +42,10 @@ public class TemplateRepository : GenericRepository<Template>, ITemplateReposito
     public async Task<Template?> GetSingleActiveAsync(CancellationToken cancellationToken = default)
     {
         return await _dbSet
-            .Include(t => t.IdentityFields)
+            .Include(t => t.IdentityFields).ThenInclude(f => f.Translations)
             .Include(t => t.GroupRules)
-            .Include(t => t.PhotoSettings)
-            .Include(t => t.DocumentSettings)
+            .Include(t => t.PhotoSettings).ThenInclude(p => p.Translations)
+            .Include(t => t.DocumentSettings).ThenInclude(d => d.Translations)
             .Where(t => t.Status == TemplateStatus.Active)
             .OrderByDescending(t => t.UpdatedAt ?? t.CreatedAt)
             .FirstOrDefaultAsync(cancellationToken);

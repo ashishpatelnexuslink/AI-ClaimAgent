@@ -567,6 +567,30 @@ class AppLocalizationsEn extends AppLocalizations {
       'Sorry, something went wrong. Please try again.';
 
   @override
+  String get voice_stateListening => 'Listening...';
+
+  @override
+  String get voice_stateSpeaking => 'Speaking...';
+
+  @override
+  String get voice_stateIdle => 'Idle';
+
+  @override
+  String get voice_listeningBanner => 'Listening... speak now';
+
+  @override
+  String get voice_tapMicToInterrupt => 'Tap mic to interrupt';
+
+  @override
+  String get voice_describeHere => 'Describe here…';
+
+  @override
+  String get voice_stop => 'Stop';
+
+  @override
+  String get voice_headerTitle => 'AI Claim Assistant';
+
+  @override
   String get voice_initialSummary => 'Initial Summary';
 
   @override
@@ -661,6 +685,16 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get voice_endSessionAction => 'End Session';
+
+  @override
+  String get chat_leaveTitle => 'Leave conversation?';
+
+  @override
+  String get chat_leaveBody =>
+      'Your progress in this claim will be lost. Are you sure you want to leave?';
+
+  @override
+  String get chat_leaveAction => 'Leave';
 
   @override
   String get voice_tryAgain => 'Try Again';
@@ -861,6 +895,20 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chat_addCaps => 'ADD';
+
+  @override
+  String get chat_skip => 'Skip';
+
+  @override
+  String chat_photosUploaded(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count photos uploaded',
+      one: '$count photo uploaded',
+    );
+    return '$_temp0';
+  }
 
   @override
   String chat_angleImageNotProper(String angle) {

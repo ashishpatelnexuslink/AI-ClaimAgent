@@ -199,6 +199,14 @@
   "voice_settingsAction": "Einstellungen",
   "voice_error": "Sprachfehler: {error}",
   "voice_genericError": "Entschuldigung, etwas ist schiefgelaufen. Bitte erneut versuchen.",
+  "voice_stateListening": "Höre zu...",
+  "voice_stateSpeaking": "Spreche...",
+  "voice_stateIdle": "Bereit",
+  "voice_listeningBanner": "Höre zu... sprich jetzt",
+  "voice_tapMicToInterrupt": "Mikrofon antippen, um zu unterbrechen",
+  "voice_describeHere": "Hier beschreiben…",
+  "voice_stop": "Stopp",
+  "voice_headerTitle": "KI-Schadensassistent",
 
   "voice_initialSummary": "Erste Übersicht",
   "voice_claimSummary": "Schadenübersicht",
@@ -229,6 +237,10 @@
   "voice_endSessionTitle": "Sitzung beenden?",
   "voice_endSessionBody": "Möchten Sie diese Sprachsitzung wirklich beenden?",
   "voice_endSessionAction": "Sitzung beenden",
+
+  "chat_leaveTitle": "Unterhaltung verlassen?",
+  "chat_leaveBody": "Ihr Fortschritt in diesem Anspruch geht verloren. Möchten Sie wirklich verlassen?",
+  "chat_leaveAction": "Verlassen",
 
   "voice_tryAgain": "Erneut versuchen",
 
@@ -300,6 +312,8 @@
   "chat_uploadCaps": "HOCHLADEN",
   "chat_done": "FERTIG",
   "chat_addCaps": "HINZUFÜGEN",
+  "chat_skip": "Überspringen",
+  "chat_photosUploaded": "{count, plural, one{{count} Foto hochgeladen} other{{count} Fotos hochgeladen}}",
   "chat_angleImageNotProper": "Das Bild „{angle}“ ist nicht korrekt. Bitte erneut hochladen.",
   "chat_addMore": "+ Weitere hinzufügen",
   "chat_legacyUploadedCount": "{count}/{total} HOCHGELADEN",

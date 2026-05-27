@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 import 'voice_mode_colors.dart';
 
 /// Center state-display avatar with status ring (idle / speaking / listening),
@@ -22,14 +23,15 @@ class StateAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final isListening = isRecording;
     final isSpeaking = botSpeaking;
+    final l = AppLocalizations.of(context);
 
     final Color ringColor = isListening ? const Color(0xFF22C55E) : kVmBlue;
     final Color dotColor = isListening
         ? const Color(0xFF22C55E)
         : (isSpeaking ? const Color(0xFFF59E0B) : Colors.grey.shade400);
     final String label = isListening
-        ? 'Listening...'
-        : (isSpeaking ? 'Speaking...' : 'Idle');
+        ? l.voice_stateListening
+        : (isSpeaking ? l.voice_stateSpeaking : l.voice_stateIdle);
     final Color labelColor = isListening
         ? const Color(0xFF22C55E)
         : (isSpeaking ? const Color(0xFFF59E0B) : Colors.grey);
@@ -120,9 +122,9 @@ class StateAvatar extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Text(
-                'Claim Assistant',
-                style: TextStyle(
+              Text(
+                l.chat_appBarTitle,
+                style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
                   color: kVmDark,

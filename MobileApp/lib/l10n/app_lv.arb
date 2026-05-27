@@ -199,6 +199,14 @@
   "voice_settingsAction": "Iestatījumi",
   "voice_error": "Balss kļūda: {error}",
   "voice_genericError": "Atvainojiet, kaut kas nogāja greizi. Mēģiniet vēlreiz.",
+  "voice_stateListening": "Klausos...",
+  "voice_stateSpeaking": "Runā...",
+  "voice_stateIdle": "Dīkstāve",
+  "voice_listeningBanner": "Klausos... runājiet tagad",
+  "voice_tapMicToInterrupt": "Pieskarieties mikrofonam, lai pārtrauktu",
+  "voice_describeHere": "Aprakstiet šeit…",
+  "voice_stop": "Apturēt",
+  "voice_headerTitle": "AI pretenziju asistents",
 
   "voice_initialSummary": "Sākotnējais kopsavilkums",
   "voice_claimSummary": "Prasības kopsavilkums",
@@ -229,6 +237,10 @@
   "voice_endSessionTitle": "Beigt sesiju?",
   "voice_endSessionBody": "Vai tiešām vēlaties beigt šo balss sesiju?",
   "voice_endSessionAction": "Beigt sesiju",
+
+  "chat_leaveTitle": "Pamest sarunu?",
+  "chat_leaveBody": "Jūsu progress šajā pieprasījumā tiks zaudēts. Vai tiešām vēlaties iziet?",
+  "chat_leaveAction": "Iziet",
 
   "voice_tryAgain": "Mēģināt vēlreiz",
 
@@ -300,6 +312,8 @@
   "chat_uploadCaps": "AUGŠUPIELĀDĒT",
   "chat_done": "GATAVS",
   "chat_addCaps": "PIEVIENOT",
+  "chat_skip": "Izlaist",
+  "chat_photosUploaded": "{count, plural, zero{Augšupielādētas {count} fotogrāfijas} one{Augšupielādēta {count} fotogrāfija} other{Augšupielādētas {count} fotogrāfijas}}",
   "chat_angleImageNotProper": "Attēls „{angle}” nav pareizs. Lūdzu, augšupielādējiet vēlreiz.",
   "chat_addMore": "+ Pievienot vēl",
   "chat_legacyUploadedCount": "{count}/{total} AUGŠUPIELĀDĒTAS",

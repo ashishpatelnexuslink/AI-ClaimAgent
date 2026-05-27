@@ -199,6 +199,14 @@
   "voice_settingsAction": "Ajustes",
   "voice_error": "Error de voz: {error}",
   "voice_genericError": "Lo sentimos, algo salió mal. Inténtelo de nuevo.",
+  "voice_stateListening": "Escuchando...",
+  "voice_stateSpeaking": "Hablando...",
+  "voice_stateIdle": "Inactivo",
+  "voice_listeningBanner": "Escuchando... habla ahora",
+  "voice_tapMicToInterrupt": "Toca el micrófono para interrumpir",
+  "voice_describeHere": "Describe aquí…",
+  "voice_stop": "Detener",
+  "voice_headerTitle": "Asistente de Reclamos IA",
 
   "voice_initialSummary": "Resumen inicial",
   "voice_claimSummary": "Resumen del siniestro",
@@ -229,6 +237,10 @@
   "voice_endSessionTitle": "¿Finalizar sesión?",
   "voice_endSessionBody": "¿Seguro que quiere finalizar esta sesión de voz?",
   "voice_endSessionAction": "Finalizar sesión",
+
+  "chat_leaveTitle": "¿Salir de la conversación?",
+  "chat_leaveBody": "Se perderá tu progreso en este reclamo. ¿Seguro que quieres salir?",
+  "chat_leaveAction": "Salir",
 
   "voice_tryAgain": "Reintentar",
 
@@ -300,6 +312,8 @@
   "chat_uploadCaps": "SUBIR",
   "chat_done": "LISTO",
   "chat_addCaps": "AÑADIR",
+  "chat_skip": "Omitir",
+  "chat_photosUploaded": "{count, plural, one{{count} foto subida} other{{count} fotos subidas}}",
   "chat_angleImageNotProper": "La imagen «{angle}» no es correcta. Vuelve a subirla.",
   "chat_addMore": "+ Añadir más",
   "chat_legacyUploadedCount": "{count}/{total} SUBIDAS",

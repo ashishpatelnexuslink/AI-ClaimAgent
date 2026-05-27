@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 import 'voice_mode_colors.dart';
 
 /// Footer banner shown while the mic is actively listening. A blinking red
@@ -20,6 +21,7 @@ class ListeningBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
@@ -49,9 +51,9 @@ class ListeningBanner extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              const Text(
-                'Listening... speak now',
-                style: TextStyle(
+              Text(
+                l.voice_listeningBanner,
+                style: const TextStyle(
                   fontSize: 13,
                   color: kVmDark,
                   fontStyle: FontStyle.italic,
@@ -87,9 +89,9 @@ class ListeningBanner extends StatelessWidget {
                     color: kVmRed.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(100),
                   ),
-                  child: const Text(
-                    'Stop',
-                    style: TextStyle(
+                  child: Text(
+                    l.voice_stop,
+                    style: const TextStyle(
                       fontSize: 13,
                       color: kVmRed,
                       fontWeight: FontWeight.w600,
