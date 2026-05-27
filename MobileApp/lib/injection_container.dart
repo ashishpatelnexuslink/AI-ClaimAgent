@@ -221,6 +221,7 @@ Future<void> init() async {
     () => NotificationsCubit(
       getPendingActionsUseCase: sl<GetPendingActionsUseCase>(),
       markAsReadUseCase: sl<MarkAsReadUseCase>(),
+      fcmService: sl<FcmService>(),
     ),
   );
 

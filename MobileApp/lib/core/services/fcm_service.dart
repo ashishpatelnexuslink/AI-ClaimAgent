@@ -25,6 +25,8 @@ class FcmService {
       FlutterLocalNotificationsPlugin();
   final StreamController<RemoteMessage> _tapStream =
       StreamController<RemoteMessage>.broadcast();
+  final StreamController<RemoteMessage> _messageStream =
+      StreamController<RemoteMessage>.broadcast();
 
   static const AndroidNotificationChannel _channel = AndroidNotificationChannel(
     'claim_ai_default',
@@ -38,6 +40,10 @@ class FcmService {
 
   /// Stream of messages emitted when the user taps a notification.
   Stream<RemoteMessage> get onMessageTap => _tapStream.stream;
+
+  /// Stream of every incoming foreground message — listeners use this to
+  /// refresh in-app state (e.g. the home page notification card).
+  Stream<RemoteMessage> get onMessageReceived => _messageStream.stream;
 
   /// Most recent FCM token (cached after registration).
   String? get currentToken => _currentToken;
@@ -112,6 +118,8 @@ class FcmService {
   }
 
   void _onForegroundMessage(RemoteMessage message) {
+    _messageStream.add(message);
+
     final notif = message.notification;
     if (notif == null) return;
 
@@ -134,5 +142,6 @@ class FcmService {
 
   Future<void> dispose() async {
     await _tapStream.close();
+    await _messageStream.close();
   }
 }
