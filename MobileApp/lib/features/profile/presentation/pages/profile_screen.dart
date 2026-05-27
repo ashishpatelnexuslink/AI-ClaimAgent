@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:country_picker/country_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -36,7 +35,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _selectedAvatar = 'Professional';
   bool _biometricEnabled = false;
   bool _biometricAvailable = false;
-  String? _selectedCountry;
   bool _isSaving = false;
   bool _isUploadingPhoto = false;
   String? _avatarPath; // local file path after picking
@@ -75,7 +73,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (_phoneController.text.isEmpty) {
       _phoneController.text = user.phone ?? '';
     }
-    _selectedCountry ??= user.country;
   }
 
   Future<void> _loadBiometricState() async {
@@ -560,8 +557,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _phoneController,
             TextInputType.phone,
           ),
-          const SizedBox(height: 12),
-          _countryDropdown(),
         ],
       ),
     );
@@ -610,69 +605,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
           ],
-        ),
-      ],
-    );
-  }
-
-  Widget _countryDropdown() {
-    final l = AppLocalizations.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          l.profile_country,
-          style: const TextStyle(fontSize: 11, color: Colors.grey),
-        ),
-        InkWell(
-          onTap: () {
-            showCountryPicker(
-              context: context,
-              showPhoneCode: false,
-              searchAutofocus: true,
-              countryListTheme: CountryListThemeData(
-                bottomSheetHeight: MediaQuery.of(context).size.height * 0.7,
-                inputDecoration: InputDecoration(
-                  hintText: l.profile_searchCountry,
-                  prefixIcon: const Icon(Icons.search, size: 20),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: _kBorder),
-                  ),
-                ),
-              ),
-              onSelect: (Country country) {
-                setState(() => _selectedCountry = country.name);
-              },
-            );
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: _kBorder)),
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.language_outlined,
-                  color: Colors.grey,
-                  size: 18,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    _selectedCountry ?? l.profile_selectCountry,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: _selectedCountry == null ? Colors.grey : _kDark,
-                    ),
-                  ),
-                ),
-                const Icon(Icons.keyboard_arrow_down, color: Colors.grey),
-              ],
-            ),
-          ),
         ),
       ],
     );
@@ -732,7 +664,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         fullName: fullName,
         email: _emailController.text.trim(),
         phone: _phoneController.text.trim(),
-        country: _selectedCountry,
       );
       if (mounted) {
         context.read<AuthCubit>().fetchUserProfile();
@@ -775,12 +706,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           // Language
           BlocBuilder<LocaleCubit, Locale>(
             builder: (context, locale) {
-              final langName =
-                  AppLocales.displayNames[locale.languageCode] ?? 'English';
-              final countryName =
-                  AppLocales.countryNames[locale.countryCode] ?? '';
               final display =
-                  countryName.isEmpty ? langName : '$langName · $countryName';
+                  AppLocales.displayNames[locale.languageCode] ?? 'English';
               return _settingRow(
                 icon: Icons.language_outlined,
                 title: l.profile_language,
@@ -908,60 +835,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
     if (chosenLang == null || !mounted) return;
-    await _showCountryDialog(chosenLang);
-  }
-
-  Future<void> _showCountryDialog(String langCode) async {
     final cubit = context.read<LocaleCubit>();
-    final currentCountry = cubit.state.languageCode == langCode
-        ? cubit.state.countryCode
-        : AppLocales.defaultCountryFor(langCode);
-    final countries = AppLocales.countriesFor(langCode);
-
-    // Single-country languages don't need a second step.
-    if (countries.length <= 1) {
-      await cubit.setLocale(Locale(langCode, AppLocales.defaultCountryFor(langCode)));
-      if (!mounted) return;
-      _showLanguageUpdatedToast(langCode);
-      return;
-    }
-
-    final chosenCountry = await showDialog<String>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: Text(
-          AppLocales.displayNames[langCode] ?? langCode,
-          style: const TextStyle(fontWeight: FontWeight.bold, color: _kDark),
-        ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        children: countries.map((countryCode) {
-          final name = AppLocales.countryNames[countryCode] ?? countryCode;
-          final isSelected = countryCode == currentCountry;
-          return SimpleDialogOption(
-            onPressed: () => Navigator.of(ctx).pop(countryCode),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      name,
-                      style: const TextStyle(fontSize: 15, color: _kDark),
-                    ),
-                  ),
-                  if (isSelected)
-                    const Icon(Icons.check, color: _kBlue, size: 20),
-                ],
-              ),
-            ),
-          );
-        }).toList(),
-      ),
+    await cubit.setLocale(
+      Locale(chosenLang, AppLocales.defaultCountryFor(chosenLang)),
     );
-    if (chosenCountry == null || !mounted) return;
-    await cubit.setLocale(Locale(langCode, chosenCountry));
     if (!mounted) return;
-    _showLanguageUpdatedToast(langCode);
+    _showLanguageUpdatedToast(chosenLang);
   }
 
   void _showLanguageUpdatedToast(String langCode) {

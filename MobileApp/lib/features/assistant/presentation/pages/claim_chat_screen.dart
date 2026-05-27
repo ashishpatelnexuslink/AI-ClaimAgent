@@ -3082,7 +3082,16 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         }
       }
 
-      if (!_savedOnSummary) {
+      // Only attempt a save when the conversation actually produced claim
+      // data. If the user ended the session early (e.g. rejecting policy
+      // details at `verified_summary`), there is no save_summary, no
+      // submitted claim id, and no claim_data — so closing must NOT create
+      // a database row.
+      final hasClaimToSave = _submittedClaimId != null ||
+          _latestSaveSummaryPayload() != null ||
+          (_latestClaimData()?.isNotEmpty ?? false);
+
+      if (!_savedOnSummary && hasClaimToSave) {
         try {
           await _runSaveClaimAndConversation(
             externalRef: _extractClaimReference(doneMsg.text),
