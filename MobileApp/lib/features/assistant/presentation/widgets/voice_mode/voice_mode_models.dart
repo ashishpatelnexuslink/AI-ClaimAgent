@@ -9,6 +9,9 @@ class ChatMessage {
   final Map<String, dynamic>? claimData;
   final String? payloadType;
   final Map<String, dynamic>? payload;
+  /// Stable-English keyed payload (parallel to [payload]) for DB persistence
+  /// on `save_summary` / `final_summary` turns. Null on older bot versions.
+  final Map<String, dynamic>? enPayload;
   final List<String> imagePaths;
   final List<String> documentNames;
 
@@ -52,6 +55,7 @@ class ChatMessage {
     this.claimData,
     this.payloadType,
     this.payload,
+    this.enPayload,
     this.imagePaths = const [],
     this.documentNames = const [],
     this.validationFailedAngles = const [],

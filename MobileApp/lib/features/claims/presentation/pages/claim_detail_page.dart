@@ -12,6 +12,7 @@ import 'package:claim_ai/core/constants/api_constants.dart';
 import 'package:claim_ai/core/constants/app_theme.dart';
 import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 import 'package:claim_ai/core/network/dio_client.dart';
+import 'package:claim_ai/features/assistant/presentation/widgets/voice_mode/triggers/image_trigger.dart' as img_trigger;
 import 'package:claim_ai/core/platform/android_downloads.dart';
 import 'package:claim_ai/core/utils/date_utils.dart';
 import 'package:claim_ai/core/widgets/loading_widget.dart';
@@ -61,6 +62,10 @@ class _ClaimDetailPageState extends State<ClaimDetailPage> {
   /// documents card can render groups dynamically from `photoSettings` /
   /// `documentSettings`. Failure leaves `_templateSettings` null and the
   /// section renders a "no template configured" empty state.
+  ///
+  /// `Accept-Language` is attached automatically by [ApiInterceptor] so the
+  /// backend substitutes localized Label / Instruction values from the
+  /// template translation tables.
   Future<void> _loadActiveTemplate() async {
     try {
       final response =
@@ -1136,13 +1141,15 @@ class _PhotoSection extends StatelessWidget {
     return 1;
   }
 
-  String _humanizeAngle(String angle) {
+  String _humanizeAngle(BuildContext context, String angle) {
     if (angle.isEmpty) return angle;
-    return angle
-        .split(RegExp(r'[_\s]+'))
-        .where((p) => p.isNotEmpty)
-        .map((p) => p.toUpperCase())
-        .join(' ');
+    // Reuse the shared localized humanizer so "front_left" becomes
+    // "Vorne links" in German, "Front Left" in English, etc. The claim
+    // summary page renders angles in all-caps to match the section header
+    // style, so uppercase the localized result.
+    return img_trigger
+        .humanizeAngle(angle, AppLocalizations.of(context))
+        .toUpperCase();
   }
 
   @override
@@ -1242,7 +1249,7 @@ class _PhotoSection extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        angle.isEmpty ? '—' : _humanizeAngle(angle),
+                        angle.isEmpty ? '—' : _humanizeAngle(context, angle),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
@@ -1288,7 +1295,7 @@ class _PhotoSection extends StatelessWidget {
                     width: (MediaQuery.of(context).size.width - 96) / 3,
                     child: _TagButton(
                       icon: Icons.camera_alt_outlined,
-                      label: _humanizeAngle(angle),
+                      label: _humanizeAngle(context, angle),
                       busy: busyKeys.contains('$groupKey::$angle'),
                       onTap: canStillAdd
                           ? () => onUpload(
@@ -1691,13 +1698,20 @@ class _TagButton extends StatelessWidget {
               else
                 Icon(icon, size: 14, color: AppColors.textPrimary),
               const SizedBox(width: 6),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
-                  letterSpacing: 0.4,
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
                 ),
               ),
             ],

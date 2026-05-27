@@ -573,6 +573,30 @@ class AppLocalizationsIt extends AppLocalizations {
       'Spiacenti, qualcosa è andato storto. Riprova.';
 
   @override
+  String get voice_stateListening => 'In ascolto...';
+
+  @override
+  String get voice_stateSpeaking => 'Sto parlando...';
+
+  @override
+  String get voice_stateIdle => 'Inattivo';
+
+  @override
+  String get voice_listeningBanner => 'In ascolto... parla ora';
+
+  @override
+  String get voice_tapMicToInterrupt => 'Tocca il microfono per interrompere';
+
+  @override
+  String get voice_describeHere => 'Descrivi qui…';
+
+  @override
+  String get voice_stop => 'Stop';
+
+  @override
+  String get voice_headerTitle => 'Assistente Sinistri AI';
+
+  @override
   String get voice_initialSummary => 'Riepilogo iniziale';
 
   @override
@@ -670,6 +694,16 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get voice_endSessionAction => 'Termina sessione';
+
+  @override
+  String get chat_leaveTitle => 'Uscire dalla conversazione?';
+
+  @override
+  String get chat_leaveBody =>
+      'I tuoi progressi su questo sinistro andranno persi. Sei sicuro di voler uscire?';
+
+  @override
+  String get chat_leaveAction => 'Esci';
 
   @override
   String get voice_tryAgain => 'Riprova';
@@ -873,6 +907,20 @@ class AppLocalizationsIt extends AppLocalizations {
 
   @override
   String get chat_addCaps => 'AGGIUNGI';
+
+  @override
+  String get chat_skip => 'Salta';
+
+  @override
+  String chat_photosUploaded(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count foto caricate',
+      one: '$count foto caricata',
+    );
+    return '$_temp0';
+  }
 
   @override
   String chat_angleImageNotProper(String angle) {

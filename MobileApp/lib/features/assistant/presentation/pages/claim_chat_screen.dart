@@ -212,13 +212,16 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
             claimData: msg.claimData,
             payloadType: msg.payloadType,
             payload: msg.payload,
+            enPayload: msg.enPayload,
           ),
         );
         // Bot has streamed the final summary — fire-and-forget the save
         // (claim row + doc attach + conversation transcript) right away so
         // the Close button only has to write the local transcript file.
+        // Uses the English-keyed payload so DB columns map cleanly without
+        // depending on the conversation language.
         if (msg.payloadType == 'save_summary') {
-          _triggerAutoSaveOnSummary(msg.payload, msg.content);
+          _triggerAutoSaveOnSummary(msg.enPayload, msg.content);
         }
         if (msg.triggers.contains('AUTO_GET_LOCATION')) {
           autoFetchLocation = true;
@@ -573,6 +576,22 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final navigator = Navigator.of(context);
+    return PopScope(
+      // Block direct system-back pops while a conversation is in flight;
+      // route through the leave-confirmation dialog instead.
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (await _confirmLeave()) {
+          if (mounted) navigator.pop();
+        }
+      },
+      child: _buildScaffold(context, navigator),
+    );
+  }
+
+  Widget _buildScaffold(BuildContext context, NavigatorState navigator) {
     return Scaffold(
       backgroundColor: _kBg,
       appBar: AppBar(
@@ -583,7 +602,11 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         leading: Padding(
           padding: const EdgeInsets.all(8),
           child: GestureDetector(
-            onTap: () => Navigator.of(context).pop(),
+            onTap: () async {
+              if (await _confirmLeave()) {
+                if (mounted) navigator.pop();
+              }
+            },
             child: Container(
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
@@ -1412,7 +1435,15 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   /// Returns `msg.triggers` plus an implicit `SKIP` when the AI flags the
   /// question as skippable via `payload.is_skippable` but didn't emit the
   /// trigger itself. De-duplicated.
+  ///
+  /// GET_DOCUMENT / GET_IMAGE turns already offer Skip via the suggestion
+  /// chip on the bot bubble, so we strip any sibling `SKIP` to avoid
+  /// showing two Skip controls side-by-side.
   List<String> _effectiveTriggers(_ChatMsg msg) {
+    if (msg.triggers.contains('GET_DOCUMENT') ||
+        msg.triggers.contains('GET_IMAGE')) {
+      return msg.triggers.where((t) => t != 'SKIP').toList(growable: false);
+    }
     if (!_isSkippable(msg) || msg.triggers.contains('SKIP')) {
       return msg.triggers;
     }
@@ -1895,7 +1926,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
 
     if (!mounted) return;
     final count = uploadedCount == 0 ? entries.length : uploadedCount;
-    final bubble = '$count photo${count > 1 ? 's' : ''} uploaded';
+    final bubble = AppLocalizations.of(context).chat_photosUploaded(count);
     final paths = prepared.map((p) => p.path).toList();
     setState(() {
       // Drop only the angles we just uploaded — preserves any picks the user
@@ -2424,7 +2455,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
 
     if (!mounted) return;
     final count = uploadedCount == 0 ? prepared.length : uploadedCount;
-    final bubble = '$count photo${count > 1 ? 's' : ''} uploaded';
+    final bubble = AppLocalizations.of(context).chat_photosUploaded(count);
     final paths = files.map((f) => f.path).toList();
     setState(() {
       _pickedImages.clear();
@@ -2638,6 +2669,43 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     return false;
   }
 
+  /// Whether the conversation is still mid-flight — i.e. the user has
+  /// exchanged at least one message past the bot's initial greeting and the
+  /// bot hasn't streamed a terminal `done` message yet. Fresh / completed
+  /// sessions skip the leave-confirmation dialog.
+  bool _isMidConversation() {
+    if (_messages.length <= 1) return false;
+    final last = _messages.last;
+    if (!last.isUser && last.messageType == 'done') return false;
+    return true;
+  }
+
+  /// Shows the leave-confirmation dialog when the conversation is in flight.
+  /// Returns true when the user confirms (or when there's nothing to lose).
+  Future<bool> _confirmLeave() async {
+    if (!_isMidConversation()) return true;
+    final l = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l.chat_leaveTitle),
+        content: Text(l.chat_leaveBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l.common_cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: Text(l.chat_leaveAction),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
   Widget _buildSeeSampleLink(_ChatMsg msg) {
     final l = AppLocalizations.of(context);
     return Padding(
@@ -2724,273 +2792,6 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   /// camelCase property names expected by `CreateClaimFromChatDto` on the
   /// backend. Unknown keys are kept verbatim — `[JsonExtensionData]` on the
   /// DTO captures them into the `AdditionalData` JSON blob.
-  /// Maps a possibly-localized save_summary key (e.g. "Policennummer",
-  /// "Numéro de police") to its canonical English alias so the existing
-  /// switch in [_mapSaveSummaryToDto] can stay single-language. Returns the
-  /// input verbatim (lowercased + trimmed) when no translation matches.
-  String _canonicalSummaryKey(String raw) {
-    final k = raw.toLowerCase().trim();
-    return _summaryKeyAliases[k] ?? k;
-  }
-
-  // Lowercase, trimmed translations of the save_summary labels the bot emits
-  // when it converses in a non-English language. Each entry maps the foreign
-  // label to the English label the switch in [_mapSaveSummaryToDto] expects.
-  // Add new aliases as the bot's output evolves.
-  static const Map<String, String> _summaryKeyAliases = {
-    // ── Policy Number ───────────────────────────────────────────────────
-    'policennummer': 'policy number',
-    'versicherungsnummer': 'policy number',
-    'numero di polizza': 'policy number',
-    'numero polizza': 'policy number',
-    'numéro de police': 'policy number',
-    'numero de police': 'policy number',
-    'número de póliza': 'policy number',
-    'numero de poliza': 'policy number',
-    'numer polisy': 'policy number',
-    'poliso numeris': 'policy number',
-    'polises numurs': 'policy number',
-
-    // ── Full Name / Policy Holder ──────────────────────────────────────
-    'vollständiger name': 'full name',
-    'name': 'full name',
-    'versicherungsnehmer': 'policy holder',
-    'policeninhaber': 'policy holder',
-    'nome completo': 'full name',
-    'nome': 'full name',
-    'intestatario della polizza': 'policy holder',
-    'nom complet': 'full name',
-    'nom': 'full name',
-    'titulaire de la police': 'policy holder',
-    'nombre completo': 'full name',
-    'nombre': 'full name',
-    'titular de la póliza': 'policy holder',
-    'imię i nazwisko': 'full name',
-    'ubezpieczający': 'policy holder',
-    'vardas ir pavardė': 'full name',
-    'draudėjas': 'policy holder',
-    'vārds un uzvārds': 'full name',
-    'apdrošinājuma ņēmējs': 'policy holder',
-
-    // ── Claimant Type ──────────────────────────────────────────────────
-    'anspruchsteller': 'claimant',
-    'anspruchstellertyp': 'claimant type',
-    'antragstellertyp': 'claimant type',
-    'tipo di richiedente': 'claimant type',
-    'richiedente': 'claimant',
-    'type de demandeur': 'claimant type',
-    'demandeur': 'claimant',
-    'tipo de reclamante': 'claimant type',
-    'reclamante': 'claimant',
-    'typ wnioskodawcy': 'claimant type',
-    'wnioskodawca': 'claimant',
-    'pareiškėjo tipas': 'claimant type',
-    'pareiškėjas': 'claimant',
-    'pieprasītāja veids': 'claimant type',
-    'pieprasītājs': 'claimant',
-
-    // ── Vehicle Registration / Plate Number ────────────────────────────
-    'kennzeichen': 'plate number',
-    'fahrzeugkennzeichen': 'plate number',
-    'amtliches kennzeichen': 'plate number',
-    'targa': 'plate number',
-    'numero di targa': 'plate number',
-    'numéro d\'immatriculation': 'plate number',
-    'immatriculation': 'plate number',
-    'plaque': 'plate number',
-    'matrícula': 'plate number',
-    'número de matrícula': 'plate number',
-    'placa': 'plate number',
-    'numer rejestracyjny': 'plate number',
-    'rejestracja': 'plate number',
-    'valstybinis numeris': 'plate number',
-    'registracijos numeris': 'plate number',
-    'reģistrācijas numurs': 'plate number',
-    'valsts numura zīme': 'plate number',
-
-    // ── VIN ────────────────────────────────────────────────────────────
-    'fahrgestellnummer': 'vin number',
-    'vin-nummer': 'vin number',
-    'numero di telaio': 'vin number',
-    'telaio': 'vin number',
-    'numéro de châssis': 'vin number',
-    'numéro vin': 'vin number',
-    'número de vin': 'vin number',
-    'número de bastidor': 'vin number',
-    'numer vin': 'vin number',
-    'numer nadwozia': 'vin number',
-    'vin numeris': 'vin number',
-    'kėbulo numeris': 'vin number',
-    'vin numurs': 'vin number',
-    'virsbūves numurs': 'vin number',
-
-    // ── Vehicle Model ──────────────────────────────────────────────────
-    'fahrzeug': 'vehicle',
-    'fahrzeugmodell': 'vehicle model',
-    'modell': 'vehicle model',
-    'veicolo': 'vehicle',
-    'modello del veicolo': 'vehicle model',
-    'modello': 'vehicle model',
-    'véhicule': 'vehicle',
-    'modèle du véhicule': 'vehicle model',
-    'modèle': 'vehicle model',
-    'vehículo': 'vehicle',
-    'modelo del vehículo': 'vehicle model',
-    'modelo': 'vehicle model',
-    'pojazd': 'vehicle',
-    'model pojazdu': 'vehicle model',
-    'model': 'vehicle model',
-    'transporto priemonė': 'vehicle',
-    'transporto priemonės modelis': 'vehicle model',
-    'modelis': 'vehicle model',
-    'transportlīdzeklis': 'vehicle',
-    'transportlīdzekļa modelis': 'vehicle model',
-
-    // ── Policy Status ──────────────────────────────────────────────────
-    'status': 'status',
-    'policenstatus': 'policy status',
-    'stato': 'status',
-    'stato della polizza': 'policy status',
-    'statut': 'status',
-    'statut de la police': 'policy status',
-    'estado': 'status',
-    'estado de la póliza': 'policy status',
-    'status polisy': 'policy status',
-    'būsena': 'status',
-    'poliso būsena': 'policy status',
-    'statuss': 'status',
-    'polises statuss': 'policy status',
-
-    // ── Policy Valid Until ─────────────────────────────────────────────
-    'gültig bis': 'valid until',
-    'police gültig bis': 'policy valid until',
-    'valido fino al': 'valid until',
-    'polizza valida fino al': 'policy valid until',
-    'valable jusqu\'au': 'valid until',
-    'police valable jusqu\'au': 'policy valid until',
-    'válido hasta': 'valid until',
-    'póliza válida hasta': 'policy valid until',
-    'ważna do': 'valid until',
-    'polisa ważna do': 'policy valid until',
-    'galioja iki': 'valid until',
-    'polisas galioja iki': 'policy valid until',
-    'derīga līdz': 'valid until',
-    'polise derīga līdz': 'policy valid until',
-
-    // ── Claim Type ─────────────────────────────────────────────────────
-    'schadenart': 'claim type',
-    'schadensart': 'claim type',
-    'schadentyp': 'claim type',
-    'tipo di sinistro': 'claim type',
-    'tipo sinistro': 'claim type',
-    'type de sinistre': 'claim type',
-    'type de réclamation': 'claim type',
-    'tipo de reclamación': 'claim type',
-    'tipo de siniestro': 'claim type',
-    'typ szkody': 'claim type',
-    'rodzaj szkody': 'claim type',
-    'žalos tipas': 'claim type',
-    'pretenzijos tipas': 'claim type',
-    'atlīdzības veids': 'claim type',
-    'zaudējuma veids': 'claim type',
-
-    // ── Incident Date ──────────────────────────────────────────────────
-    'schadensdatum': 'incident date',
-    'datum': 'date',
-    'vorfallsdatum': 'incident date',
-    'data del sinistro': 'incident date',
-    'data': 'date',
-    'date du sinistre': 'incident date',
-    'date': 'date',
-    'fecha del incidente': 'incident date',
-    'fecha': 'date',
-    'data zdarzenia': 'incident date',
-    'įvykio data': 'incident date',
-    'notikuma datums': 'incident date',
-    'datums': 'date',
-
-    // ── Incident Time ──────────────────────────────────────────────────
-    'uhrzeit': 'time',
-    'schadenszeit': 'incident time',
-    'vorfallszeit': 'incident time',
-    'zeit': 'time',
-    'ora del sinistro': 'incident time',
-    'ora': 'time',
-    'heure du sinistre': 'incident time',
-    'heure': 'time',
-    'hora del incidente': 'incident time',
-    'hora': 'time',
-    'godzina zdarzenia': 'incident time',
-    'godzina': 'time',
-    'įvykio laikas': 'incident time',
-    'laikas': 'time',
-    'notikuma laiks': 'incident time',
-    'laiks': 'time',
-
-    // ── Incident Location ──────────────────────────────────────────────
-    'schadensort': 'incident location',
-    'ort des vorfalls': 'incident location',
-    'ort': 'location',
-    'ereignisort': 'incident location',
-    'luogo del sinistro': 'incident location',
-    'luogo': 'location',
-    'località': 'location',
-    'lieu du sinistre': 'incident location',
-    'lieu': 'location',
-    'emplacement': 'location',
-    'lugar del incidente': 'incident location',
-    'lugar': 'location',
-    'ubicación': 'location',
-    'miejsce zdarzenia': 'incident location',
-    'miejsce': 'location',
-    'lokalizacja': 'location',
-    'įvykio vieta': 'incident location',
-    'vieta': 'location',
-    'lokacija': 'location',
-    'notikuma vieta': 'incident location',
-
-    // ── Incident Description ───────────────────────────────────────────
-    'schadensbeschreibung': 'incident description',
-    'schadenbeschreibung': 'incident description',
-    'beschreibung': 'description',
-    'schadensdetails': 'damage details',
-    'descrizione del sinistro': 'incident description',
-    'descrizione': 'description',
-    'dettagli del danno': 'damage details',
-    'description du sinistre': 'incident description',
-    'description': 'description',
-    'détails des dommages': 'damage details',
-    'descripción del incidente': 'incident description',
-    'descripción': 'description',
-    'detalles del daño': 'damage details',
-    'opis zdarzenia': 'incident description',
-    'opis': 'description',
-    'szczegóły szkody': 'damage details',
-    'įvykio aprašymas': 'incident description',
-    'aprašymas': 'description',
-    'žalos aprašymas': 'damage details',
-    'notikuma apraksts': 'incident description',
-    'apraksts': 'description',
-    'bojājumu apraksts': 'damage details',
-
-    // ── Claim Amount ───────────────────────────────────────────────────
-    'schadenshöhe': 'claim amount',
-    'schadenssumme': 'claim amount',
-    'betrag': 'amount',
-    'anspruchsbetrag': 'claim amount',
-    'importo del sinistro': 'claim amount',
-    'importo': 'amount',
-    'montant du sinistre': 'claim amount',
-    'montant': 'amount',
-    'monto del reclamo': 'claim amount',
-    'monto': 'amount',
-    'importe': 'amount',
-    'kwota szkody': 'claim amount',
-    'kwota': 'amount',
-    'žalos suma': 'claim amount',
-    'suma': 'amount',
-    'atlīdzības summa': 'claim amount',
-  };
 
   Map<String, dynamic> _mapSaveSummaryToDto(Map<String, dynamic> summary) {
     final mapped = <String, dynamic>{};
@@ -2999,12 +2800,10 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
 
     summary.forEach((key, value) {
       if (value == null) return;
-      // The bot localizes its `save_summary` keys to the conversation language
-      // (e.g. "Policennummer", "Numéro de police"). Normalize to the canonical
-      // English label first so the case-insensitive switch below stays
-      // single-language. Falls back to the original key for unknown labels.
-      final normalizedKey = _canonicalSummaryKey(key);
-      switch (normalizedKey) {
+      // Keys arrive via `en_payload` in stable English (e.g. "Policy Number",
+      // "Vin Number"), so a single-language switch is enough — case-insensitive
+      // match handles cosmetic casing differences.
+      switch (key.toLowerCase().trim()) {
         case 'policy number':
           mapped['policyNumber'] = value;
           break;
@@ -3283,7 +3082,16 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         }
       }
 
-      if (!_savedOnSummary) {
+      // Only attempt a save when the conversation actually produced claim
+      // data. If the user ended the session early (e.g. rejecting policy
+      // details at `verified_summary`), there is no save_summary, no
+      // submitted claim id, and no claim_data — so closing must NOT create
+      // a database row.
+      final hasClaimToSave = _submittedClaimId != null ||
+          _latestSaveSummaryPayload() != null ||
+          (_latestClaimData()?.isNotEmpty ?? false);
+
+      if (!_savedOnSummary && hasClaimToSave) {
         try {
           await _runSaveClaimAndConversation(
             externalRef: _extractClaimReference(doneMsg.text),
@@ -3325,7 +3133,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   Widget _buildCloseButton(_ChatMsg msg) {
     return _buildPillButton(
       icon: Icons.check_circle_outline,
-      label: 'Close',
+      label: AppLocalizations.of(context).common_close,
       onTap: () => _onCloseConversation(msg),
       isLoading: _closingConversation,
     );
@@ -3340,10 +3148,10 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
 
     String? errorMessage;
     try {
-      // Treat the final_summary payload as the authoritative source so
-      // _runSaveClaimAndConversation maps the human-readable keys via
+      // Treat the final_summary's English-keyed payload as the authoritative
+      // source so _runSaveClaimAndConversation maps keys via
       // _mapSaveSummaryToDto and creates a proper claim row.
-      await _runSaveClaimAndConversation(saveSummaryPayload: msg.payload);
+      await _runSaveClaimAndConversation(saveSummaryPayload: msg.enPayload);
       _savedOnSummary = true;
     } catch (e) {
       if (mounted) {
@@ -4457,6 +4265,9 @@ class _ChatMsg {
   final Map<String, dynamic>? claimData;
   final String? payloadType;
   final Map<String, dynamic>? payload;
+  /// Stable-English keyed payload (parallel to [payload]) for DB persistence
+  /// on `save_summary` / `final_summary` turns. Null on older bot versions.
+  final Map<String, dynamic>? enPayload;
 
   final List<String> imagePaths;
   final List<String> documentNames;
@@ -4501,6 +4312,7 @@ class _ChatMsg {
     this.claimData,
     this.payloadType,
     this.payload,
+    this.enPayload,
     this.imagePaths = const [],
     this.documentNames = const [],
     this.validationFailedAngles = const [],

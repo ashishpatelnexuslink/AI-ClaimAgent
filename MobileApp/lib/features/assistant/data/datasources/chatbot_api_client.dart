@@ -12,7 +12,7 @@ import 'package:claim_ai/features/assistant/data/datasources/chatbot_auth_servic
 /// Automatically injects tokens and retries once on 401.
 class ApiClient {
   static final _client = http.Client();
-  static const _timeout = Duration(seconds: 30);
+  static const _timeout = Duration(seconds: 60);
 
   // ── GET ──────────────────────────────────────────────────────────
   static Future<http.Response> get(
@@ -21,8 +21,9 @@ class ApiClient {
   }) async {
     return _executeWithRetry(() async {
       final token = await AuthService.getValidToken();
-      final uri = Uri.parse('${AppConfig.chatbotBaseUrl}$path')
-          .replace(queryParameters: queryParams);
+      final uri = Uri.parse(
+        '${AppConfig.chatbotBaseUrl}$path',
+      ).replace(queryParameters: queryParams);
       return await _client
           .get(uri, headers: _buildHeaders(token))
           .timeout(_timeout);
@@ -53,8 +54,9 @@ class ApiClient {
     Map<String, String>? queryParams,
   }) async* {
     final token = await AuthService.getValidToken();
-    final uri = Uri.parse('${AppConfig.chatbotBaseUrl}$path')
-        .replace(queryParameters: queryParams);
+    final uri = Uri.parse(
+      '${AppConfig.chatbotBaseUrl}$path',
+    ).replace(queryParameters: queryParams);
 
     if (kDebugMode) {
       debugPrint('[chat-stream] GET $uri');
@@ -96,9 +98,10 @@ class ApiClient {
   static Stream<Map<String, dynamic>> _parseSSEStream(
     http.StreamedResponse response,
   ) async* {
-    await for (final chunk in response.stream
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())) {
+    await for (final chunk
+        in response.stream
+            .transform(utf8.decoder)
+            .transform(const LineSplitter())) {
       if (chunk.startsWith('data: ')) {
         final data = chunk.substring(6).trim();
         if (data.isEmpty) continue;
@@ -123,7 +126,7 @@ class ApiClient {
   }
 
   static Map<String, String> _buildHeaders(String token) => {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      };
+    'Authorization': 'Bearer $token',
+    'Content-Type': 'application/json',
+  };
 }

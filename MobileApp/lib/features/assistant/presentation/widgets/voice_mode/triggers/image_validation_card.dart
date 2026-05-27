@@ -60,9 +60,9 @@ class ImageValidationFailureList extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
-            'Upload Photos',
-            style: TextStyle(
+          Text(
+            l.chat_uploadPhotos,
+            style: const TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.bold,
               color: kVmDark,
@@ -89,9 +89,9 @@ class ImageValidationFailureList extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
-                  'Some images need to be re-uploaded',
-                  style: TextStyle(
+                Text(
+                  l.chat_someImagesReupload,
+                  style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFFB00020),

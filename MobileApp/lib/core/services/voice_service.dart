@@ -85,31 +85,54 @@ class VoiceService {
     return _initialized;
   }
 
-  /// Picks the best English locale available on the device. Preference:
-  /// device system locale (if English) → en_IN (best for South Asian names)
-  /// → en_US → first available `en_*`. Returns null if the engine isn't
-  /// initialized or no English locale is available; caller can fall back to
-  /// the default in [start].
-  Future<String?> resolveBestEnglishLocale() async {
+  /// Picks the best STT locale available on the device for [languageCode]
+  /// (e.g. `'it'`, `'hi'`, `'en'`). Preference:
+  ///   1. exact `lang_COUNTRY` match (case-insensitive, `-` or `_` separator)
+  ///   2. device system locale if it starts with [languageCode]
+  ///   3. any available locale starting with `<lang>_` (or matching the bare
+  ///      language code)
+  /// Returns null if the engine isn't initialized or no matching locale is
+  /// available; the caller can fall back to a default in [start].
+  Future<String?> resolveLocaleFor(
+    String languageCode, [
+    String? countryCode,
+  ]) async {
     if (!_initialized) return null;
+    final lang = languageCode.toLowerCase();
     try {
-      final system = await _speech.systemLocale();
       final available = await _speech.locales();
       final ids = available.map((l) => l.localeId).toList();
 
+      // 1) Exact lang+country, tolerating `_` vs `-` separators.
+      if (countryCode != null && countryCode.isNotEmpty) {
+        final cc = countryCode.toUpperCase();
+        final wantU = '${lang}_$cc';
+        final wantD = '$lang-$cc';
+        for (final id in ids) {
+          final n = id.replaceAll('-', '_');
+          if (n.toLowerCase() == wantU.toLowerCase() ||
+              id.toLowerCase() == wantD.toLowerCase()) {
+            return id;
+          }
+        }
+      }
+
+      // 2) System locale, if it speaks the requested language.
+      final system = await _speech.systemLocale();
       final sysId = system?.localeId;
       if (sysId != null &&
-          sysId.toLowerCase().startsWith('en') &&
+          sysId.toLowerCase().startsWith(lang) &&
           ids.contains(sysId)) {
         return sysId;
       }
-      if (ids.contains('en_IN')) return 'en_IN';
-      if (ids.contains('en_US')) return 'en_US';
+
+      // 3) Any locale starting with the requested language code.
       for (final id in ids) {
-        if (id.toLowerCase().startsWith('en')) return id;
+        final n = id.toLowerCase().replaceAll('-', '_');
+        if (n == lang || n.startsWith('${lang}_')) return id;
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('[voice] resolveLocale failed: $e');
+      if (kDebugMode) debugPrint('[voice] resolveLocaleFor failed: $e');
     }
     return null;
   }

@@ -20,6 +20,12 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<TemplateFieldGroupRule> TemplateFieldGroupRules => Set<TemplateFieldGroupRule>();
     public DbSet<TemplatePhotoSetting> TemplatePhotoSettings => Set<TemplatePhotoSetting>();
     public DbSet<TemplateDocumentSetting> TemplateDocumentSettings => Set<TemplateDocumentSetting>();
+    public DbSet<TemplatePhotoSettingTranslation> TemplatePhotoSettingTranslations
+        => Set<TemplatePhotoSettingTranslation>();
+    public DbSet<TemplateDocumentSettingTranslation> TemplateDocumentSettingTranslations
+        => Set<TemplateDocumentSettingTranslation>();
+    public DbSet<TemplateIdentityFieldTranslation> TemplateIdentityFieldTranslations
+        => Set<TemplateIdentityFieldTranslation>();
 
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
         : base(options)

@@ -20,8 +20,12 @@ public interface ITemplateService
     /// <summary>
     /// Returns the single active template (no tenant filter). Used by the
     /// mobile claim-summary page which has no company/insurance-type context.
+    /// When <paramref name="language"/> is supplied (BCP-47, e.g. <c>de</c>),
+    /// per-locale Label / Instruction / PromptText / Placeholder rows on the
+    /// child translations tables are substituted into the returned DTO;
+    /// children with no matching translation keep their seed English values.
     /// </summary>
-    Task<Result<TemplateDetailDto>> GetSingleActiveAsync(CancellationToken cancellationToken = default);
+    Task<Result<TemplateDetailDto>> GetSingleActiveAsync(string? language = null, CancellationToken cancellationToken = default);
 
     /// <summary>Creates a new template tree. The new row is always persisted as <c>Draft, Version=1</c> (first version for that company + type) or <c>maxVersion+1</c> if an existing row already occupies version 1.</summary>
     Task<Result<TemplateDetailDto>> CreateAsync(CreateTemplateDto dto, CancellationToken cancellationToken = default);

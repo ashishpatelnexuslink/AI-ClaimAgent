@@ -199,6 +199,14 @@
   "voice_settingsAction": "Paramètres",
   "voice_error": "Erreur vocale : {error}",
   "voice_genericError": "Désolé, une erreur s'est produite. Veuillez réessayer.",
+  "voice_stateListening": "À l'écoute...",
+  "voice_stateSpeaking": "Je parle...",
+  "voice_stateIdle": "Inactif",
+  "voice_listeningBanner": "À l'écoute... parlez maintenant",
+  "voice_tapMicToInterrupt": "Appuyez sur le micro pour interrompre",
+  "voice_describeHere": "Décrivez ici…",
+  "voice_stop": "Arrêter",
+  "voice_headerTitle": "Assistant Sinistre IA",
 
   "voice_initialSummary": "Résumé initial",
   "voice_claimSummary": "Résumé du sinistre",
@@ -229,6 +237,10 @@
   "voice_endSessionTitle": "Terminer la session ?",
   "voice_endSessionBody": "Voulez-vous vraiment terminer cette session vocale ?",
   "voice_endSessionAction": "Terminer la session",
+
+  "chat_leaveTitle": "Quitter la conversation ?",
+  "chat_leaveBody": "Votre progression sur ce sinistre sera perdue. Voulez-vous vraiment quitter ?",
+  "chat_leaveAction": "Quitter",
 
   "voice_tryAgain": "Réessayer",
 
@@ -300,6 +312,8 @@
   "chat_uploadCaps": "TÉLÉVERSER",
   "chat_done": "TERMINÉ",
   "chat_addCaps": "AJOUTER",
+  "chat_skip": "Ignorer",
+  "chat_photosUploaded": "{count, plural, one{{count} photo téléchargée} other{{count} photos téléchargées}}",
   "chat_angleImageNotProper": "L''image « {angle} » n''est pas correcte. Veuillez la téléverser à nouveau.",
   "chat_addMore": "+ Ajouter d''autres",
   "chat_legacyUploadedCount": "{count}/{total} TÉLÉCHARGÉES",

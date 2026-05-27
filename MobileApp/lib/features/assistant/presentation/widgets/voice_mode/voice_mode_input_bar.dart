@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 import 'voice_mode_colors.dart';
 
 /// Bottom input bar: rounded white pill with the textfield + an in-pill mic
@@ -79,8 +80,8 @@ class VoiceModeInputBar extends StatelessWidget {
                       ),
                       decoration: InputDecoration(
                         hintText: botSpeaking
-                            ? 'Tap mic to interrupt'
-                            : 'Describe here…',
+                            ? AppLocalizations.of(context).voice_tapMicToInterrupt
+                            : AppLocalizations.of(context).voice_describeHere,
                         hintStyle: TextStyle(
                           fontSize: 15,
                           color: Colors.grey.shade500,

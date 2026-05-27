@@ -241,6 +241,14 @@
   "voice_error": "Voice error: {error}",
   "@voice_error": { "placeholders": { "error": { "type": "String" } } },
   "voice_genericError": "Sorry, something went wrong. Please try again.",
+  "voice_stateListening": "Listening...",
+  "voice_stateSpeaking": "Speaking...",
+  "voice_stateIdle": "Idle",
+  "voice_listeningBanner": "Listening... speak now",
+  "voice_tapMicToInterrupt": "Tap mic to interrupt",
+  "voice_describeHere": "Describe here…",
+  "voice_stop": "Stop",
+  "voice_headerTitle": "AI Claim Assistant",
 
   "voice_initialSummary": "Initial Summary",
   "voice_claimSummary": "Claim Summary",
@@ -277,6 +285,10 @@
   "voice_endSessionTitle": "End Session?",
   "voice_endSessionBody": "Are you sure you want to end this voice session?",
   "voice_endSessionAction": "End Session",
+
+  "chat_leaveTitle": "Leave conversation?",
+  "chat_leaveBody": "Your progress in this claim will be lost. Are you sure you want to leave?",
+  "chat_leaveAction": "Leave",
 
   "voice_tryAgain": "Try Again",
 
@@ -363,6 +375,9 @@
   "chat_uploadCaps": "UPLOAD",
   "chat_done": "DONE",
   "chat_addCaps": "ADD",
+  "chat_skip": "Skip",
+  "chat_photosUploaded": "{count, plural, one{{count} photo uploaded} other{{count} photos uploaded}}",
+  "@chat_photosUploaded": { "placeholders": { "count": { "type": "int" } } },
   "chat_angleImageNotProper": "{angle} image is not proper. Please re-upload.",
   "@chat_angleImageNotProper": { "placeholders": { "angle": { "type": "String" } } },
   "chat_addMore": "+ Add more",

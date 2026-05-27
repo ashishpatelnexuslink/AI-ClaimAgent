@@ -1,3 +1,4 @@
+import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
 
 import '../bot_avatar.dart';
@@ -181,9 +182,10 @@ class FinalSummaryCard extends StatelessWidget {
                                     valueColor: AlwaysStoppedAnimation(kVmBlue),
                                   ),
                                 )
-                              : const Text(
-                                  'Confirm & Submit Claim',
-                                  style: TextStyle(
+                              : Text(
+                                  AppLocalizations.of(context)
+                                      .chat_review_confirmSubmit,
+                                  style: const TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w600,
                                   ),

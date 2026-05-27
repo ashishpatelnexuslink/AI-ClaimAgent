@@ -199,6 +199,14 @@
   "voice_settingsAction": "Ustawienia",
   "voice_error": "Błąd głosowy: {error}",
   "voice_genericError": "Przepraszamy, coś poszło nie tak. Spróbuj ponownie.",
+  "voice_stateListening": "Słucham...",
+  "voice_stateSpeaking": "Mówię...",
+  "voice_stateIdle": "Bezczynny",
+  "voice_listeningBanner": "Słucham... mów teraz",
+  "voice_tapMicToInterrupt": "Dotknij mikrofonu, aby przerwać",
+  "voice_describeHere": "Opisz tutaj…",
+  "voice_stop": "Zatrzymaj",
+  "voice_headerTitle": "Asystent Roszczeń AI",
 
   "voice_initialSummary": "Wstępne podsumowanie",
   "voice_claimSummary": "Podsumowanie roszczenia",
@@ -229,6 +237,10 @@
   "voice_endSessionTitle": "Zakończyć sesję?",
   "voice_endSessionBody": "Czy na pewno chcesz zakończyć tę sesję głosową?",
   "voice_endSessionAction": "Zakończ sesję",
+
+  "chat_leaveTitle": "Opuścić rozmowę?",
+  "chat_leaveBody": "Twoje postępy w tym zgłoszeniu zostaną utracone. Czy na pewno chcesz wyjść?",
+  "chat_leaveAction": "Wyjdź",
 
   "voice_tryAgain": "Spróbuj ponownie",
 
@@ -300,6 +312,8 @@
   "chat_uploadCaps": "PRZEŚLIJ",
   "chat_done": "GOTOWE",
   "chat_addCaps": "DODAJ",
+  "chat_skip": "Pomiń",
+  "chat_photosUploaded": "{count, plural, one{Przesłano {count} zdjęcie} few{Przesłano {count} zdjęcia} many{Przesłano {count} zdjęć} other{Przesłano {count} zdjęcia}}",
   "chat_angleImageNotProper": "Zdjęcie „{angle}” jest nieprawidłowe. Prześlij je ponownie.",
   "chat_addMore": "+ Dodaj więcej",
   "chat_legacyUploadedCount": "{count}/{total} PRZESŁANE",

@@ -199,6 +199,14 @@
   "voice_settingsAction": "Impostazioni",
   "voice_error": "Errore vocale: {error}",
   "voice_genericError": "Spiacenti, qualcosa è andato storto. Riprova.",
+  "voice_stateListening": "In ascolto...",
+  "voice_stateSpeaking": "Sto parlando...",
+  "voice_stateIdle": "Inattivo",
+  "voice_listeningBanner": "In ascolto... parla ora",
+  "voice_tapMicToInterrupt": "Tocca il microfono per interrompere",
+  "voice_describeHere": "Descrivi qui…",
+  "voice_stop": "Stop",
+  "voice_headerTitle": "Assistente Sinistri AI",
 
   "voice_initialSummary": "Riepilogo iniziale",
   "voice_claimSummary": "Riepilogo sinistro",
@@ -229,6 +237,10 @@
   "voice_endSessionTitle": "Terminare sessione?",
   "voice_endSessionBody": "Sei sicuro di voler terminare questa sessione vocale?",
   "voice_endSessionAction": "Termina sessione",
+
+  "chat_leaveTitle": "Uscire dalla conversazione?",
+  "chat_leaveBody": "I tuoi progressi su questo sinistro andranno persi. Sei sicuro di voler uscire?",
+  "chat_leaveAction": "Esci",
 
   "voice_tryAgain": "Riprova",
 
@@ -300,6 +312,8 @@
   "chat_uploadCaps": "CARICA",
   "chat_done": "FATTO",
   "chat_addCaps": "AGGIUNGI",
+  "chat_skip": "Salta",
+  "chat_photosUploaded": "{count, plural, one{{count} foto caricata} other{{count} foto caricate}}",
   "chat_angleImageNotProper": "L''immagine «{angle}» non è corretta. Caricala di nuovo.",
   "chat_addMore": "+ Aggiungi altre",
   "chat_legacyUploadedCount": "{count}/{total} CARICATE",

@@ -14,7 +14,9 @@ import 'package:intl/intl.dart';
 import 'package:permission_handler/permission_handler.dart' hide ServiceStatus;
 import 'package:uuid/uuid.dart';
 
+import 'package:claim_ai/core/l10n/app_locales.dart';
 import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
+import 'package:claim_ai/core/l10n/locale_cubit.dart';
 import 'package:claim_ai/core/navigation/app_routes.dart';
 import 'package:claim_ai/core/services/voice_service.dart';
 import 'package:claim_ai/core/storage/chat_transcript_writer.dart';
@@ -129,6 +131,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   final FlutterTts _tts = FlutterTts();
   bool _botSpeaking = false;
 
+  // ─── Selected app language (drives both TTS and STT) ────────────────────
+  /// BCP-47 tag for flutter_tts, e.g. `it-IT`, `hi-IN`, `en-US`.
+  String _ttsLanguageTag = 'en-US';
+  StreamSubscription<Locale>? _localeSub;
+
   // ─── Speech-synced typewriter ──────────────────────────────────────────
   // Bot bubbles reveal their text progressively, in sync with TTS playback,
   // so reading and listening stay aligned. We queue an entry per utterance
@@ -191,9 +198,6 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       duration: const Duration(milliseconds: 700),
     );
 
-    _initVoice();
-    _initTts();
-
     _textController.addListener(() {
       final hasText = _textController.text.trim().isNotEmpty;
       if (hasText != _hasDraftText) {
@@ -211,11 +215,73 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      // Capture the currently-selected app locale *after* the first frame so
+      // context.read<LocaleCubit>() is safe to call. TTS/STT need this to
+      // speak and recognize in the user's chosen language rather than English.
+      final cubit = context.read<LocaleCubit>();
+      _ttsLanguageTag = _bcp47ForLocale(cubit.state);
+      _initVoice(cubit.state);
+      _initTts();
+      // Re-apply if the user switches language while voice mode is open.
+      _localeSub = cubit.stream.listen(_onLocaleChanged);
       _streamBotReply('hello');
     });
   }
 
-  Future<void> _initVoice() async {
+  /// Build a BCP-47 tag (`it-IT`, `en-US`, …) from a Flutter [Locale],
+  /// filling in the language's default country when none is set.
+  String _bcp47ForLocale(Locale locale) {
+    final cc = (locale.countryCode == null || locale.countryCode!.isEmpty)
+        ? AppLocales.defaultCountryFor(locale.languageCode)
+        : locale.countryCode!;
+    return cc.isEmpty ? locale.languageCode : '${locale.languageCode}-$cc';
+  }
+
+  /// Sets the flutter_tts engine language to [tag] (BCP-47, e.g. `it-IT`).
+  /// Falls back to `en-US` when the device's TTS engine doesn't ship a voice
+  /// for the requested language — better to hear English than silence.
+  ///
+  /// Android: the TTS service binds asynchronously. setLanguage internally
+  /// calls Android's isLanguageAvailable, and on a dead binder Android
+  /// returns LANG_NOT_SUPPORTED *without throwing*. flutter_tts then resolves
+  /// setLanguage with status 0 — a silent "didn't actually set the language"
+  /// result that leaves the engine unconfigured, and the first speak()
+  /// produces no audio. We poll until the binder reports success.
+  Future<void> _applyTtsLanguage(String tag) async {
+    String target = tag;
+    try {
+      final available = await _tts.isLanguageAvailable(tag);
+      if (available != true) target = 'en-US';
+    } catch (_) {
+      // Some engines don't implement isLanguageAvailable — just try the tag.
+    }
+    if (Platform.isAndroid) {
+      for (int attempt = 0; attempt < 30; attempt++) {
+        final result = await _tts.setLanguage(target);
+        if (result == 1) break;
+        await Future.delayed(const Duration(milliseconds: 200));
+      }
+    } else {
+      await _tts.setLanguage(target);
+    }
+  }
+
+  Future<void> _onLocaleChanged(Locale locale) async {
+    if (!mounted) return;
+    _ttsLanguageTag = _bcp47ForLocale(locale);
+    await _applyTtsLanguage(_ttsLanguageTag);
+    final resolved = await _voice.resolveLocaleFor(
+      locale.languageCode,
+      locale.countryCode,
+    );
+    if (mounted) {
+      setState(() {
+        _localeId = resolved ?? _localeId;
+      });
+    }
+  }
+
+  Future<void> _initVoice(Locale locale) async {
     _voice
       ..onTextUpdate = _onVoiceTextUpdate
       ..onFinalText = _onVoiceFinalText
@@ -225,7 +291,13 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     final ok = await _voice.initialize();
     _voiceAvailable = ok;
     if (ok) {
-      _localeId = await _voice.resolveBestEnglishLocale();
+      // Prefer the user's selected language; fall back to English if the
+      // device doesn't have an STT pack for it, so the mic still works.
+      _localeId = await _voice.resolveLocaleFor(
+            locale.languageCode,
+            locale.countryCode,
+          ) ??
+          await _voice.resolveLocaleFor('en', 'IN');
     }
     if (mounted) setState(() {});
   }
@@ -325,24 +397,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     // can't acquire the input route, so on iPhone the listening UI silently
     // does nothing after the first bot reply.
     await _applyIosSpeakerRoute();
-    // Android: the TTS service binds asynchronously. setLanguage internally
-    // calls Android's isLanguageAvailable, and on a dead binder Android
-    // returns LANG_NOT_SUPPORTED *without throwing*. flutter_tts then resolves
-    // setLanguage with status 0 — a silent "didn't actually set the language"
-    // result that leaves the engine unconfigured, and the first speak()
-    // produces no audio.
-    //
-    // Poll setLanguage until it returns 1 (success). The binder typically
-    // becomes live within a couple hundred ms after the plugin is created.
-    if (Platform.isAndroid) {
-      for (int attempt = 0; attempt < 30; attempt++) {
-        final result = await _tts.setLanguage('en-US');
-        if (result == 1) break;
-        await Future.delayed(const Duration(milliseconds: 200));
-      }
-    } else {
-      await _tts.setLanguage('en-US');
-    }
+    await _applyTtsLanguage(_ttsLanguageTag);
     await _tts.setSpeechRate(0.5);
     await _tts.setPitch(1.0);
     await _tts.setVolume(1.0);
@@ -595,6 +650,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   @override
   void dispose() {
     _cancelAutoListen();
+    _localeSub?.cancel();
     _voice.dispose();
     _tts.stop();
     // Stop the iOS route-change observer from force-routing audio to the
@@ -721,12 +777,15 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
             claimData: msg.claimData,
             payloadType: msg.payloadType,
             payload: msg.payload,
+            enPayload: msg.enPayload,
           ),
         );
         // Bot has streamed the final summary — fire-and-forget the save so
         // the Close button only has to write the local transcript file.
+        // Uses the English-keyed payload so DB column mapping doesn't depend
+        // on conversation language.
         if (msg.payloadType == 'save_summary') {
-          _triggerAutoSaveOnSummary(msg.payload, msg.content);
+          _triggerAutoSaveOnSummary(msg.enPayload, msg.content);
         }
         if (msg.triggers.contains('AUTO_GET_LOCATION')) {
           autoFetchLocation = true;
@@ -791,6 +850,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
     _cancelAutoListen();
 
+    // Capture before any await — context.read across async gaps is unsafe.
+    final selectedLocale = context.read<LocaleCubit>().state;
+
     if (_botSpeaking) {
       await _tts.stop();
       await Future.delayed(_postTtsStopDelay);
@@ -802,7 +864,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     }
 
     if (!_voiceAvailable) {
-      await _initVoice();
+      await _initVoice(selectedLocale);
       if (!_voiceAvailable) {
         if (!mounted) return;
         final l = AppLocalizations.of(context);
@@ -1291,7 +1353,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       _uploadingFiles = false;
     });
     _addUserAttachmentMessage(
-      text: '$count photo${count > 1 ? 's' : ''} uploaded',
+      text: AppLocalizations.of(context).chat_photosUploaded(count),
       imagePaths: paths,
     );
     _streamBotReply(count.toString());
@@ -1512,7 +1574,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       'fallbackCount=${files.length} sending="${count.toString()}"',
     );
     _addUserAttachmentMessage(
-      text: '$count photo${count > 1 ? 's' : ''} uploaded',
+      text: AppLocalizations.of(context).chat_photosUploaded(count),
       imagePaths: paths,
     );
     _streamBotReply(count.toString());
@@ -1662,7 +1724,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
     String? errorMessage;
     try {
-      await _runSaveClaimAndConversation(saveSummaryPayload: msg.payload);
+      // English-keyed payload makes DB column mapping language-independent.
+      await _runSaveClaimAndConversation(saveSummaryPayload: msg.enPayload);
       _savedOnSummary = true;
     } catch (e) {
       if (mounted) {
@@ -1803,6 +1866,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
     summary.forEach((key, value) {
       if (value == null) return;
+      // Keys arrive via `en_payload` in stable English (e.g. "Policy Number",
+      // "Vin Number"), so a single-language switch is enough — case-insensitive
+      // match handles cosmetic casing differences.
       switch (key.toLowerCase().trim()) {
         case 'policy number':
           mapped['policyNumber'] = value;
@@ -1812,6 +1878,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         case 'full name':
         case 'name':
           mapped['fullName'] = value;
+          break;
+        case 'claimant type':
+        case 'claimant':
+          mapped['claimantType'] = value.toString();
           break;
         case 'plat number':
         case 'plate number':
@@ -2039,7 +2109,16 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         } catch (_) {}
       }
 
-      if (!_savedOnSummary) {
+      // Only attempt a save when the conversation actually produced claim
+      // data. If the user ended the session early (e.g. rejecting policy
+      // details at `verified_summary`), there is no save_summary, no
+      // submitted claim id, and no claim_data — so closing must NOT create
+      // a database row.
+      final hasClaimToSave = _submittedClaimId != null ||
+          _latestSaveSummaryPayload() != null ||
+          (_latestClaimData()?.isNotEmpty ?? false);
+
+      if (!_savedOnSummary && hasClaimToSave) {
         try {
           await _runSaveClaimAndConversation(
             externalRef: _extractClaimReference(doneMsg.text),
@@ -2073,8 +2152,29 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     }
   }
 
-  void _showEndSessionDialog() {
-    showDialog(
+  Future<void> _showEndSessionDialog() async {
+    final navigator = Navigator.of(context);
+    if (await _confirmLeave()) {
+      if (mounted) navigator.pop();
+    }
+  }
+
+  /// True while a voice conversation is in flight — at least one bot/user
+  /// exchange beyond the initial greeting and the bot hasn't streamed a
+  /// terminal `done` message. Fresh / completed sessions skip the dialog.
+  bool _isMidConversation() {
+    if (_messages.length <= 1) return false;
+    final last = _messages.last;
+    if (last.type == 'bot' && last.messageType == 'done') return false;
+    return true;
+  }
+
+  /// Confirmation dialog shown before tearing down the voice session. Used
+  /// by the Close pill, the header back button, and the Android system
+  /// back gesture (via [PopScope]). Returns true when the user confirms.
+  Future<bool> _confirmLeave() async {
+    if (!_isMidConversation()) return true;
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) {
         final l = AppLocalizations.of(ctx);
@@ -2087,15 +2187,12 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           content: Text(l.voice_endSessionBody),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
+              onPressed: () => Navigator.of(ctx).pop(false),
               child: Text(l.common_cancel,
                   style: const TextStyle(color: Colors.grey)),
             ),
             TextButton(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                Navigator.of(context).pop();
-              },
+              onPressed: () => Navigator.of(ctx).pop(true),
               child: Text(
                 l.voice_endSessionAction,
                 style: const TextStyle(color: kVmRed, fontWeight: FontWeight.bold),
@@ -2105,6 +2202,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         );
       },
     );
+    return confirmed == true;
   }
 
   // ═════════════════════════════════════════════════════════════════════════
@@ -2113,10 +2211,22 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
   @override
   Widget build(BuildContext context) {
+    final navigator = Navigator.of(context);
     return PopScope(
-      canPop: true,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) _refreshClaimsList();
+      // Mid-conversation: block direct pop and route through the confirm
+      // dialog. After a clean exit (or no conversation yet), allow the pop
+      // and refresh the claims list as before.
+      canPop: !_isMidConversation(),
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) {
+          _refreshClaimsList();
+          return;
+        }
+        if (await _confirmLeave()) {
+          if (!mounted) return;
+          _refreshClaimsList();
+          navigator.pop();
+        }
       },
       child: Scaffold(
         backgroundColor: kVmBg,
@@ -2127,7 +2237,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
               child: Column(
                 children: [
                   VoiceModeHeader(
-                    onBack: () => Navigator.of(context).pop(),
+                    onBack: () async {
+                      if (await _confirmLeave()) {
+                        if (mounted) navigator.pop();
+                      }
+                    },
                     onEndSession: _showEndSessionDialog,
                   ),
                   StateAvatar(
@@ -2201,11 +2315,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   Widget _buildBotBubble(ChatMessage msg, int index) {
     final isLastBot = index == _lastBotIndex();
     final visibleText = _visibleBotText(index, msg.text);
-    // Hide the "Skip" chip when Skip is already rendered as a trigger pill
-    // (skippable GET_DOCUMENT / GET_IMAGE turn) to avoid showing it twice.
-    final List<String> visibleChips = (msg.chips ?? [])
-        .where((s) => s.trim().toLowerCase() != 'skip' || !_isSkippable(msg))
-        .toList();
+    // Skip is offered exclusively as a suggestion chip — the per-trigger
+    // Skip pill was removed from DocumentTrigger so we no longer need to
+    // dedup. Show every chip as-is.
+    final List<String> visibleChips = List<String>.from(msg.chips ?? const []);
 
     // Final summary uses the dedicated "Review Your Claim" card with a
     // "Confirm & Submit Claim" CTA that persists to the database.
@@ -2295,9 +2408,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                           padding: const EdgeInsets.only(top: 6),
                           child: GestureDetector(
                             onTap: () => _openSampleImagesViewer(msg),
-                            child: const Text(
-                              '(See sample)',
-                              style: TextStyle(
+                            child: Text(
+                              AppLocalizations.of(context).chat_seeSample,
+                              style: const TextStyle(
                                 fontSize: 13,
                                 color: kVmBlue,
                                 decoration: TextDecoration.underline,
@@ -2425,7 +2538,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
               padding: const EdgeInsets.only(left: 46),
               child: PillButton(
                 icon: Icons.check_circle_outline,
-                label: 'Close',
+                label: AppLocalizations.of(context).common_close,
                 onTap: () => _onCloseConversation(msg),
                 isLoading: _closingConversation,
               ),
@@ -2814,7 +2927,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
               padding: const EdgeInsets.only(left: 46),
               child: PillButton(
                 icon: Icons.check_circle_outline,
-                label: 'Close',
+                label: AppLocalizations.of(context).common_close,
                 onTap: () => _onCloseConversation(msg),
                 isLoading: _closingConversation,
               ),

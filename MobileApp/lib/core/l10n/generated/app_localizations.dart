@@ -1136,6 +1136,54 @@ abstract class AppLocalizations {
   /// **'Sorry, something went wrong. Please try again.'**
   String get voice_genericError;
 
+  /// No description provided for @voice_stateListening.
+  ///
+  /// In en, this message translates to:
+  /// **'Listening...'**
+  String get voice_stateListening;
+
+  /// No description provided for @voice_stateSpeaking.
+  ///
+  /// In en, this message translates to:
+  /// **'Speaking...'**
+  String get voice_stateSpeaking;
+
+  /// No description provided for @voice_stateIdle.
+  ///
+  /// In en, this message translates to:
+  /// **'Idle'**
+  String get voice_stateIdle;
+
+  /// No description provided for @voice_listeningBanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Listening... speak now'**
+  String get voice_listeningBanner;
+
+  /// No description provided for @voice_tapMicToInterrupt.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap mic to interrupt'**
+  String get voice_tapMicToInterrupt;
+
+  /// No description provided for @voice_describeHere.
+  ///
+  /// In en, this message translates to:
+  /// **'Describe here…'**
+  String get voice_describeHere;
+
+  /// No description provided for @voice_stop.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop'**
+  String get voice_stop;
+
+  /// No description provided for @voice_headerTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'AI Claim Assistant'**
+  String get voice_headerTitle;
+
   /// No description provided for @voice_initialSummary.
   ///
   /// In en, this message translates to:
@@ -1285,6 +1333,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'End Session'**
   String get voice_endSessionAction;
+
+  /// No description provided for @chat_leaveTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave conversation?'**
+  String get chat_leaveTitle;
+
+  /// No description provided for @chat_leaveBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Your progress in this claim will be lost. Are you sure you want to leave?'**
+  String get chat_leaveBody;
+
+  /// No description provided for @chat_leaveAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave'**
+  String get chat_leaveAction;
 
   /// No description provided for @voice_tryAgain.
   ///
@@ -1645,6 +1711,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'ADD'**
   String get chat_addCaps;
+
+  /// No description provided for @chat_skip.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip'**
+  String get chat_skip;
+
+  /// No description provided for @chat_photosUploaded.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{{count} photo uploaded} other{{count} photos uploaded}}'**
+  String chat_photosUploaded(int count);
 
   /// No description provided for @chat_angleImageNotProper.
   ///

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 import '../pill_button.dart';
 import '../voice_mode_colors.dart';
 
@@ -21,6 +22,7 @@ class LocationTrigger extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context);
     return SizedBox(
       width: double.infinity,
       child: Column(
@@ -32,7 +34,7 @@ class LocationTrigger extends StatelessWidget {
             onSubmitted: (_) => onSubmit(),
             style: const TextStyle(fontSize: 13, color: kVmDark),
             decoration: InputDecoration(
-              hintText: 'Enter street, city or zip code',
+              hintText: l.chat_locationHint,
               hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade400),
               prefixIcon: Icon(
                 Icons.location_on_outlined,
@@ -65,7 +67,7 @@ class LocationTrigger extends StatelessWidget {
           const SizedBox(height: 8),
           PillButton(
             icon: Icons.my_location,
-            label: 'Use Current Location',
+            label: l.chat_useCurrentLocation,
             onTap: onUseCurrent,
             isLoading: fetchingLocation,
           ),

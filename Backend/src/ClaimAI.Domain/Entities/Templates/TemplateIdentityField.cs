@@ -14,4 +14,7 @@ public class TemplateIdentityField : BaseEntity
     public string? GroupKey { get; set; }
     public bool IsSkippable { get; set; }
     public int DisplayOrder { get; set; }
+
+    public ICollection<TemplateIdentityFieldTranslation> Translations { get; set; }
+        = new List<TemplateIdentityFieldTranslation>();
 }
