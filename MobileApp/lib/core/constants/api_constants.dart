@@ -61,6 +61,10 @@ class ApiConstants {
   // Templates
   static const String activeTemplate = '/mobile/templates/active';
 
+  // App versions
+  static const String appVersionLatest = '/mobile/app-versions/latest';
+  static const String appVersionCheck = '/mobile/app-versions/check';
+
   // Documents
   static const String documents = '/documents';
   static const String documentUpload = '/documents/upload';

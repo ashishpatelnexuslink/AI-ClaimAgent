@@ -127,6 +127,7 @@
   "claimDetail_notFound": "Prasība nav atrasta",
   "claimDetail_policyDetails": "Polises detaļas",
   "claimDetail_policyHolder": "Polises turētājs",
+  "claimDetail_claimantType": "Pieprasītāja tips",
   "claimDetail_policyNumber": "Polises numurs",
   "claimDetail_vehicle": "Transportlīdzeklis",
   "claimDetail_platNumber": "Reģistrācijas numurs",

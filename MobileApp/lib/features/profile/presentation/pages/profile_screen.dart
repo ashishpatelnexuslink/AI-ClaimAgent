@@ -8,6 +8,7 @@ import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 import 'package:claim_ai/core/l10n/locale_cubit.dart';
 import 'package:claim_ai/core/navigation/app_routes.dart';
 import 'package:claim_ai/core/services/biometric_service.dart';
+import 'package:claim_ai/core/utils/app_version_info.dart';
 import 'package:claim_ai/core/storage/local_storage.dart';
 import 'package:claim_ai/features/auth/data/datasources/auth_remote_datasource.dart';
 import 'package:claim_ai/features/auth/domain/entities/user_entity.dart';
@@ -933,11 +934,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildAppVersion() {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Text(
-        AppLocalizations.of(context).profile_appVersion('1.0.0'),
-        style: const TextStyle(
-            fontSize: 11, color: Colors.grey, letterSpacing: 1.2),
-        textAlign: TextAlign.center,
+      child: FutureBuilder<AppVersionInfo>(
+        future: AppVersionInfo.current(),
+        builder: (ctx, snapshot) {
+          final info = snapshot.data;
+          final label = info == null
+              ? '...'
+              : '${info.versionName} (${info.versionCode})';
+          return Text(
+            AppLocalizations.of(context).profile_appVersion(label),
+            style: const TextStyle(
+                fontSize: 11, color: Colors.grey, letterSpacing: 1.2),
+            textAlign: TextAlign.center,
+          );
+        },
       ),
     );
   }

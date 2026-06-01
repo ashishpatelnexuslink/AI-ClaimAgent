@@ -14,6 +14,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<UserDevice> UserDevices => Set<UserDevice>();
     public DbSet<Conversation> Conversations => Set<Conversation>();
     public DbSet<ClaimDocument> ClaimDocuments => Set<ClaimDocument>();
+    public DbSet<AppVersion> AppVersions => Set<AppVersion>();
 
     public DbSet<Template> Templates => Set<Template>();
     public DbSet<TemplateIdentityField> TemplateIdentityFields => Set<TemplateIdentityField>();

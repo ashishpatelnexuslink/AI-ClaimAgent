@@ -127,6 +127,7 @@
   "claimDetail_notFound": "Žala nerasta",
   "claimDetail_policyDetails": "Poliso detalės",
   "claimDetail_policyHolder": "Poliso turėtojas",
+  "claimDetail_claimantType": "Pareiškėjo tipas",
   "claimDetail_policyNumber": "Poliso numeris",
   "claimDetail_vehicle": "Transporto priemonė",
   "claimDetail_platNumber": "Valstybinis numeris",

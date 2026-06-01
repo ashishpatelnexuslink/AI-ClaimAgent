@@ -127,6 +127,7 @@
   "claimDetail_notFound": "Siniestro no encontrado",
   "claimDetail_policyDetails": "Detalles de la póliza",
   "claimDetail_policyHolder": "Titular de la póliza",
+  "claimDetail_claimantType": "Tipo de reclamante",
   "claimDetail_policyNumber": "Número de póliza",
   "claimDetail_vehicle": "Vehículo",
   "claimDetail_platNumber": "Matrícula",

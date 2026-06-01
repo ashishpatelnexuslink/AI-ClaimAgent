@@ -352,6 +352,9 @@ class AppLocalizationsIt extends AppLocalizations {
   String get claimDetail_policyHolder => 'Contraente';
 
   @override
+  String get claimDetail_claimantType => 'Tipo di richiedente';
+
+  @override
   String get claimDetail_policyNumber => 'Numero polizza';
 
   @override

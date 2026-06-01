@@ -67,6 +67,12 @@ dependencies:
   # UUID
   uuid: ^4.5.1
 
+  # App version info (reads installed version + buildNumber)
+  package_info_plus: ^8.0.0
+
+  # Launch URLs (store deep links for force update)
+  url_launcher: ^6.3.0
+
   # Google Fonts
   google_fonts: ^6.2.1
 

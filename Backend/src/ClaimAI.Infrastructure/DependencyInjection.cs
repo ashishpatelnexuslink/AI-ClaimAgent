@@ -63,6 +63,7 @@ public static class DependencyInjection
         services.AddScoped<IAdminUserService, AdminUserService>();
         services.AddScoped<IMobileUserService, MobileUserService>();
         services.AddScoped<ITemplateService, TemplateService>();
+        services.AddScoped<IAppVersionService, AppVersionService>();
 
         services.Configure<FirebaseOptions>(configuration.GetSection(FirebaseOptions.SectionName));
         InitializeFirebaseApp(configuration);

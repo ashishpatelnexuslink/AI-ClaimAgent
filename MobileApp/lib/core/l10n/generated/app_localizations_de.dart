@@ -352,6 +352,9 @@ class AppLocalizationsDe extends AppLocalizations {
   String get claimDetail_policyHolder => 'Versicherungsnehmer';
 
   @override
+  String get claimDetail_claimantType => 'Anspruchstellertyp';
+
+  @override
   String get claimDetail_policyNumber => 'Policennummer';
 
   @override

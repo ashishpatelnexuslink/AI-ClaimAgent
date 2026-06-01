@@ -20,6 +20,7 @@ import 'package:claim_ai/core/l10n/locale_cubit.dart';
 import 'package:claim_ai/core/navigation/app_routes.dart';
 import 'package:claim_ai/core/services/voice_service.dart';
 import 'package:claim_ai/core/storage/chat_transcript_writer.dart';
+import 'package:claim_ai/core/utils/request_context.dart';
 import 'package:claim_ai/features/assistant/presentation/widgets/sample_images_dialog.dart';
 import 'package:claim_ai/features/claims/presentation/cubit/claims_cubit.dart';
 import 'package:claim_ai/features/claims/data/datasources/claims_remote_datasource.dart';
@@ -113,6 +114,12 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   // `save_summary` message. Close button only writes the local transcript
   // unless this flag is still false (then it falls back to a full save).
   bool _savedOnSummary = false;
+  // True after the bot streams `final_summary` (the review-claim card); the
+  // very next outgoing message (typically "Yes Confirm") is what triggers
+  // save_summary on the bot side, so we attach device_id / ip_address /
+  // app_version on that message so the AI has the context when it saves.
+  // Single-shot: flips back to false once the params have been sent.
+  bool _attachContextOnNextSend = false;
   Future<void>? _autoSaveFuture;
 
   // GET_DATE_TIME trigger selection (nullable until user picks).
@@ -758,10 +765,26 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
     try {
       final locale = Localizations.localeOf(context);
+
+      // Single-shot context attach: when the previous bot turn streamed
+      // `save_summary`, this outgoing message carries device_id / ip_address /
+      // app_version. Resolved up-front so a slow public-IP lookup doesn't
+      // block message dispatch indefinitely (ChatRequestContext.gather caps
+      // the IP call at ~5s and tolerates failure).
+      final attachContext = _attachContextOnNextSend;
+      ChatRequestContext? ctx;
+      if (attachContext) {
+        ctx = await ChatRequestContext.gather();
+        _attachContextOnNextSend = false;
+      }
+
       await for (final msg in ChatService.sendMessage(
         userMessage,
         threadId: _threadId,
         language: locale.languageCode,
+        deviceId: ctx?.deviceId,
+        ipAddress: ctx?.ipAddress,
+        appVersion: ctx?.appVersion,
       )) {
         if (!mounted) return;
         setState(() {
@@ -786,6 +809,13 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         // on conversation language.
         if (msg.payloadType == 'save_summary') {
           _triggerAutoSaveOnSummary(msg.enPayload, msg.content);
+        }
+        // `final_summary` is the bot's "Review Your Claim" card. The user's
+        // reply to it (typically "Yes Confirm") is the message that triggers
+        // save_summary on the bot side, so we tag that outgoing message with
+        // device_id / ip_address / app_version.
+        if (msg.payloadType == 'final_summary') {
+          _attachContextOnNextSend = true;
         }
         if (msg.triggers.contains('AUTO_GET_LOCATION')) {
           autoFetchLocation = true;

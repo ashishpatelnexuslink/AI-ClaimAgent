@@ -79,6 +79,8 @@ public class ClaimsService : IClaimsService
         _context.Claims.Add(claim);
         await _context.SaveChangesAsync();
 
+        await NotifyMissingUploadsAsync(claim, userId);
+
         return Result<ClaimResponseDto>.Success(MapToDto(claim));
     }
 
@@ -128,6 +130,8 @@ public class ClaimsService : IClaimsService
 
         _context.Claims.Add(claim);
         await _context.SaveChangesAsync();
+
+        await NotifyMissingUploadsAsync(claim, userId);
 
         return Result<ClaimResponseDto>.Success(MapToDto(claim));
     }
@@ -227,6 +231,48 @@ public class ClaimsService : IClaimsService
             : $"Your claim {statusText}. {dto.Note}";
 
         return (title, message);
+    }
+
+    private async Task NotifyMissingUploadsAsync(Claim claim, string userId)
+    {
+        // Pick up docs already bound to the claim, plus docs uploaded during
+        // chat that share the claim's ChatThreadId but haven't been attached yet
+        // (the /claim-documents/attach call usually follows claim creation).
+        var query = _context.ClaimDocuments
+            .Where(d => d.UserId == userId &&
+                (d.ClaimId == claim.Id ||
+                    (claim.ChatThreadId != null
+                        && d.ChatThreadId == claim.ChatThreadId
+                        && d.ClaimId == null)));
+
+        var photoCount = await query.CountAsync(d => d.Kind == "Image");
+        var docCount = await query.CountAsync(d => d.Kind != "Image");
+
+        var missingPhotos = photoCount == 0;
+        var missingDocs = docCount == 0;
+        if (!missingPhotos && !missingDocs) return;
+
+        string message;
+        if (missingPhotos && missingDocs)
+        {
+            message = $"Please upload photos and supporting documents to complete your claim {claim.ClaimNumber}.";
+        }
+        else if (missingPhotos)
+        {
+            message = $"Please upload photos of the damage to complete your claim {claim.ClaimNumber}.";
+        }
+        else
+        {
+            message = $"Please upload supporting documents to complete your claim {claim.ClaimNumber}.";
+        }
+
+        await _notificationService.CreateAndPushAsync(
+            userId: userId,
+            title: "Action Required",
+            message: message,
+            actionType: "upload_documents",
+            claimId: claim.Id,
+            actionUrl: $"/claims/{claim.Id}/documents");
     }
 
     private async Task<string> GenerateClaimNumberAsync()

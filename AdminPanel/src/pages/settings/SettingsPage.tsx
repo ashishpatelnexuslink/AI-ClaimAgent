@@ -12,9 +12,17 @@ import {
   type CreateAdminUserPayload,
   type UpdateAdminUserPayload,
 } from '../../services/adminUsers.service';
+import {
+  appVersionsService,
+  type AppPlatform,
+  type AppVersion,
+  type CreateAppVersionPayload,
+} from '../../services/appVersions.service';
 import type { AdminUser } from '../../types';
 
-const tabs = ['General', 'API Configuration', 'Notifications', 'Admin Users'] as const;
+const tabs = ['General', 'API Configuration', 'Notifications', 'Admin Users', 'App Versions'] as const;
+
+const APP_PLATFORMS: AppPlatform[] = ['Android', 'iOS', 'Web', 'BackendApi'];
 
 const ADMIN_ROLES: AdminUser['role'][] = ['Super Admin', 'Reviewer', 'Viewer'];
 const ADMIN_STATUSES: AdminUser['status'][] = ['Active', 'Suspended'];
@@ -62,6 +70,7 @@ export default function SettingsPage() {
           {activeTab === 'API Configuration' && <APITab onSave={() => addToast('API settings saved', 'success')} />}
           {activeTab === 'Notifications' && <NotificationsTab onSave={() => addToast('Notification settings saved', 'success')} />}
           {activeTab === 'Admin Users' && <AdminUsersTab />}
+          {activeTab === 'App Versions' && <AppVersionsTab />}
         </div>
       </div>
     </div>
@@ -420,6 +429,308 @@ function AdminUserFormModal({ mode, initial, onClose, onSubmit, submitting }: Ad
             </select>
           </div>
         )}
+      </div>
+    </Modal>
+  );
+}
+
+function AppVersionsTab() {
+  const { addToast } = useToastContext();
+  const queryClient = useQueryClient();
+
+  const [platformFilter, setPlatformFilter] = useState<AppPlatform | ''>('');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [editing, setEditing] = useState<AppVersion | null>(null);
+  const [deleting, setDeleting] = useState<AppVersion | null>(null);
+
+  const { data: versions, isLoading, isError } = useQuery({
+    queryKey: ['app-versions', platformFilter || 'all'],
+    queryFn: () => appVersionsService.getAll(platformFilter || undefined),
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (payload: CreateAppVersionPayload) => appVersionsService.create(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['app-versions'] });
+      addToast('App version created', 'success');
+      setShowAddModal(false);
+    },
+    onError: (err) => addToast(extractApiError(err, 'Failed to create version'), 'error'),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: CreateAppVersionPayload }) =>
+      appVersionsService.update(id, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['app-versions'] });
+      addToast('App version updated', 'success');
+      setEditing(null);
+    },
+    onError: (err) => addToast(extractApiError(err, 'Failed to update version'), 'error'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => appVersionsService.remove(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['app-versions'] });
+      addToast('App version deleted', 'success');
+      setDeleting(null);
+    },
+    onError: (err) => addToast(extractApiError(err, 'Failed to delete version'), 'error'),
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <select
+          value={platformFilter}
+          onChange={(e) => setPlatformFilter(e.target.value as AppPlatform | '')}
+          className="px-3 py-2 text-sm border border-gray-300 rounded-lg"
+        >
+          <option value="">All platforms</option>
+          {APP_PLATFORMS.map((p) => <option key={p} value={p}>{p}</option>)}
+        </select>
+        <Button size="sm" onClick={() => setShowAddModal(true)}>
+          <Plus size={16} /> Add Version
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12"><Spinner size="md" /></div>
+      ) : isError ? (
+        <div className="text-center py-12 text-sm text-danger">Failed to load app versions.</div>
+      ) : (
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-gray-100">
+              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Platform</th>
+              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Version</th>
+              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Code</th>
+              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Min Code</th>
+              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Flags</th>
+              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Released</th>
+              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(versions ?? []).map((v) => (
+              <tr key={v.id} className="border-b border-gray-50">
+                <td className="px-4 py-3 text-sm font-medium text-gray-800">{v.platform}</td>
+                <td className="px-4 py-3 text-sm text-gray-600">{v.versionName}</td>
+                <td className="px-4 py-3 text-sm text-gray-600">{v.versionCode}</td>
+                <td className="px-4 py-3 text-sm text-gray-600">{v.minSupportedVersionCode}</td>
+                <td className="px-4 py-3 text-sm text-gray-600">
+                  <div className="flex gap-1 flex-wrap">
+                    {v.isLatest && <span className="px-2 py-0.5 text-xs rounded bg-green-100 text-green-700">Latest</span>}
+                    {v.isMandatory && <span className="px-2 py-0.5 text-xs rounded bg-red-100 text-red-700">Mandatory</span>}
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-600">
+                  {new Date(v.releaseDate).toLocaleDateString()}
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex gap-1">
+                    <button
+                      className="p-1.5 text-gray-400 hover:text-primary hover:bg-gray-100 rounded-lg"
+                      onClick={() => setEditing(v)}
+                    >
+                      <Edit size={14} />
+                    </button>
+                    <button
+                      className="p-1.5 text-gray-400 hover:text-danger hover:bg-red-50 rounded-lg"
+                      onClick={() => setDeleting(v)}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {(versions ?? []).length === 0 && (
+              <tr>
+                <td colSpan={7} className="text-center py-12 text-sm text-gray-400">No app versions yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      )}
+
+      {showAddModal && (
+        <AppVersionFormModal
+          mode="create"
+          onClose={() => setShowAddModal(false)}
+          onSubmit={(payload) => createMutation.mutate(payload)}
+          submitting={createMutation.isPending}
+        />
+      )}
+
+      {editing && (
+        <AppVersionFormModal
+          mode="edit"
+          initial={editing}
+          onClose={() => setEditing(null)}
+          onSubmit={(payload) => updateMutation.mutate({ id: editing.id, payload })}
+          submitting={updateMutation.isPending}
+        />
+      )}
+
+      {deleting && (
+        <Modal
+          isOpen={!!deleting}
+          onClose={() => setDeleting(null)}
+          title="Delete App Version"
+          footer={
+            <>
+              <Button variant="outline" onClick={() => setDeleting(null)}>Cancel</Button>
+              <Button
+                variant="danger"
+                loading={deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate(deleting.id)}
+              >
+                Delete
+              </Button>
+            </>
+          }
+        >
+          <p className="text-sm text-gray-600">
+            Delete <strong>{deleting.platform} {deleting.versionName}</strong>?
+          </p>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+interface AppVersionFormModalProps {
+  mode: 'create' | 'edit';
+  initial?: AppVersion;
+  onClose: () => void;
+  onSubmit: (payload: CreateAppVersionPayload) => void;
+  submitting: boolean;
+}
+
+function AppVersionFormModal({ mode, initial, onClose, onSubmit, submitting }: AppVersionFormModalProps) {
+  const [platform, setPlatform] = useState<AppPlatform>(initial?.platform ?? 'Android');
+  const [versionName, setVersionName] = useState(initial?.versionName ?? '');
+  const [versionCode, setVersionCode] = useState<number>(initial?.versionCode ?? 1);
+  const [minSupportedVersionCode, setMinSupportedVersionCode] = useState<number>(
+    initial?.minSupportedVersionCode ?? 1,
+  );
+  const [isLatest, setIsLatest] = useState(initial?.isLatest ?? false);
+  const [isMandatory, setIsMandatory] = useState(initial?.isMandatory ?? false);
+  const [releaseNotes, setReleaseNotes] = useState(initial?.releaseNotes ?? '');
+  const [storeUrl, setStoreUrl] = useState(initial?.storeUrl ?? '');
+  const [releaseDate, setReleaseDate] = useState(
+    initial?.releaseDate ? initial.releaseDate.slice(0, 10) : new Date().toISOString().slice(0, 10),
+  );
+
+  const handleSubmit = () => {
+    onSubmit({
+      platform,
+      versionName: versionName.trim(),
+      versionCode: Number(versionCode),
+      minSupportedVersionCode: Number(minSupportedVersionCode),
+      isLatest,
+      isMandatory,
+      releaseNotes: releaseNotes.trim() || null,
+      storeUrl: storeUrl.trim() || null,
+      releaseDate: new Date(releaseDate).toISOString(),
+    });
+  };
+
+  return (
+    <Modal
+      isOpen
+      onClose={onClose}
+      title={mode === 'create' ? 'Add App Version' : 'Edit App Version'}
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSubmit} loading={submitting}>
+            {mode === 'create' ? 'Create' : 'Save'}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Platform</label>
+            <select
+              value={platform}
+              onChange={(e) => setPlatform(e.target.value as AppPlatform)}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
+            >
+              {APP_PLATFORMS.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Version Name</label>
+            <input
+              type="text"
+              value={versionName}
+              onChange={(e) => setVersionName(e.target.value)}
+              placeholder="1.4.2"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Version Code</label>
+            <input
+              type="number"
+              value={versionCode}
+              onChange={(e) => setVersionCode(Number(e.target.value))}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Min Supported Code</label>
+            <input
+              type="number"
+              value={minSupportedVersionCode}
+              onChange={(e) => setMinSupportedVersionCode(Number(e.target.value))}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Release Date</label>
+            <input
+              type="date"
+              value={releaseDate}
+              onChange={(e) => setReleaseDate(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Store URL</label>
+            <input
+              type="url"
+              value={storeUrl ?? ''}
+              onChange={(e) => setStoreUrl(e.target.value)}
+              placeholder="https://play.google.com/..."
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
+            />
+          </div>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Release Notes</label>
+          <textarea
+            value={releaseNotes ?? ''}
+            onChange={(e) => setReleaseNotes(e.target.value)}
+            rows={4}
+            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
+          />
+        </div>
+        <div className="flex gap-6">
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" checked={isLatest} onChange={(e) => setIsLatest(e.target.checked)} />
+            Mark as latest
+          </label>
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" checked={isMandatory} onChange={(e) => setIsMandatory(e.target.checked)} />
+            Mandatory update
+          </label>
+        </div>
       </div>
     </Modal>
   );

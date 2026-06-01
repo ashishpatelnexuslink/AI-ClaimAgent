@@ -3,6 +3,7 @@ import 'package:claim_ai/core/auth/session_event_bus.dart';
 import 'package:claim_ai/core/storage/local_storage.dart';
 import 'package:claim_ai/core/constants/api_constants.dart';
 import 'package:claim_ai/core/config/env_config.dart';
+import 'package:claim_ai/core/utils/app_version_info.dart';
 
 class ApiInterceptor extends Interceptor {
   final LocalStorage _localStorage;
@@ -31,6 +32,14 @@ class ApiInterceptor extends Interceptor {
       options.headers['Content-Type'] = 'application/json';
     }
     options.headers['Accept'] = 'application/json';
+
+    try {
+      final info = await AppVersionInfo.current();
+      options.headers['X-App-Version'] = info.versionName;
+      options.headers['X-App-Platform'] = info.platform;
+    } catch (_) {
+      // PackageInfo can fail in some test contexts — skip silently.
+    }
 
     // Tell the backend which language to localize its response in (validation
     // messages, AI chat replies, notification text, etc.). Reads directly from
