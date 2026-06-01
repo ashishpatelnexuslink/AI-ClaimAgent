@@ -20,4 +20,12 @@ public interface IClaimsService
         Guid claimId,
         string userId,
         UpdateAccidentInfoDto dto);
+
+    /// <summary>
+    /// Admin/system-initiated status update. Persists the new status and
+    /// emits a push notification to the claim owner's registered devices.
+    /// </summary>
+    Task<Result<ClaimResponseDto>> UpdateClaimStatusAsync(
+        Guid claimId,
+        UpdateClaimStatusDto dto);
 }

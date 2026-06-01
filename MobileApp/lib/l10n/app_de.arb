@@ -127,6 +127,7 @@
   "claimDetail_notFound": "Schaden nicht gefunden",
   "claimDetail_policyDetails": "Policendetails",
   "claimDetail_policyHolder": "Versicherungsnehmer",
+  "claimDetail_claimantType": "Anspruchstellertyp",
   "claimDetail_policyNumber": "Policennummer",
   "claimDetail_vehicle": "Fahrzeug",
   "claimDetail_platNumber": "Kennzeichen",

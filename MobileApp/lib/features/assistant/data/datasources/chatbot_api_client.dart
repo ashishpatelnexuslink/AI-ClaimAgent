@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 import 'package:http/http.dart' as http;
 
 import 'package:claim_ai/config/app_config.dart';
+import 'package:claim_ai/core/utils/app_version_info.dart';
 import 'package:claim_ai/features/assistant/data/datasources/chatbot_auth_service.dart';
 
 /// Single place for all authenticated HTTP calls to the chatbot API.
@@ -25,7 +26,7 @@ class ApiClient {
         '${AppConfig.chatbotBaseUrl}$path',
       ).replace(queryParameters: queryParams);
       return await _client
-          .get(uri, headers: _buildHeaders(token))
+          .get(uri, headers: await _buildHeaders(token))
           .timeout(_timeout);
     });
   }
@@ -40,7 +41,7 @@ class ApiClient {
       return await _client
           .post(
             Uri.parse('${AppConfig.chatbotBaseUrl}$path'),
-            headers: _buildHeaders(token),
+            headers: await _buildHeaders(token),
             body: jsonEncode(body),
           )
           .timeout(_timeout);
@@ -63,14 +64,14 @@ class ApiClient {
     }
 
     final request = http.Request('GET', uri);
-    request.headers.addAll(_buildHeaders(token));
+    request.headers.addAll(await _buildHeaders(token));
 
     final streamedResponse = await _client.send(request);
 
     if (streamedResponse.statusCode == 401) {
       final newToken = await AuthService.forceRefresh();
       final retryRequest = http.Request('GET', uri);
-      retryRequest.headers.addAll(_buildHeaders(newToken));
+      retryRequest.headers.addAll(await _buildHeaders(newToken));
       final retryResponse = await _client.send(retryRequest);
       yield* _parseSSEStream(retryResponse);
       return;
@@ -125,8 +126,18 @@ class ApiClient {
     }
   }
 
-  static Map<String, String> _buildHeaders(String token) => {
-    'Authorization': 'Bearer $token',
-    'Content-Type': 'application/json',
-  };
+  static Future<Map<String, String>> _buildHeaders(String token) async {
+    final headers = <String, String>{
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+    };
+    try {
+      final info = await AppVersionInfo.current();
+      headers['X-App-Version'] = info.versionName;
+      headers['X-App-Platform'] = info.platform;
+    } catch (_) {
+      // Skip silently if PackageInfo is unavailable.
+    }
+    return headers;
+  }
 }

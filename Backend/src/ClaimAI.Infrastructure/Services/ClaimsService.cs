@@ -11,10 +11,14 @@ namespace ClaimAI.Infrastructure.Services;
 public class ClaimsService : IClaimsService
 {
     private readonly ApplicationDbContext _context;
+    private readonly INotificationService _notificationService;
 
-    public ClaimsService(ApplicationDbContext context)
+    public ClaimsService(
+        ApplicationDbContext context,
+        INotificationService notificationService)
     {
         _context = context;
+        _notificationService = notificationService;
     }
 
     public async Task<Result<DashboardSummaryDto>> GetDashboardSummaryAsync(string userId)
@@ -75,6 +79,8 @@ public class ClaimsService : IClaimsService
         _context.Claims.Add(claim);
         await _context.SaveChangesAsync();
 
+        await NotifyMissingUploadsAsync(claim, userId);
+
         return Result<ClaimResponseDto>.Success(MapToDto(claim));
     }
 
@@ -124,6 +130,8 @@ public class ClaimsService : IClaimsService
 
         _context.Claims.Add(claim);
         await _context.SaveChangesAsync();
+
+        await NotifyMissingUploadsAsync(claim, userId);
 
         return Result<ClaimResponseDto>.Success(MapToDto(claim));
     }
@@ -175,6 +183,96 @@ public class ClaimsService : IClaimsService
         await _context.SaveChangesAsync();
 
         return Result<ClaimResponseDto>.Success(MapToDto(claim));
+    }
+
+    public async Task<Result<ClaimResponseDto>> UpdateClaimStatusAsync(
+        Guid claimId,
+        UpdateClaimStatusDto dto)
+    {
+        var claim = await _context.Claims.FirstOrDefaultAsync(c => c.Id == claimId);
+        if (claim is null)
+            return Result<ClaimResponseDto>.Failure("Claim not found.");
+
+        if (claim.Status == dto.Status)
+            return Result<ClaimResponseDto>.Success(MapToDto(claim));
+
+        claim.Status = dto.Status;
+        await _context.SaveChangesAsync();
+
+        var (title, message) = BuildStatusNotification(claim, dto);
+        await _notificationService.CreateAndPushAsync(
+            userId: claim.UserId,
+            title: title,
+            message: message,
+            actionType: "claim_status_changed",
+            claimId: claim.Id);
+
+        return Result<ClaimResponseDto>.Success(MapToDto(claim));
+    }
+
+    private static (string Title, string Message) BuildStatusNotification(
+        Claim claim, UpdateClaimStatusDto dto)
+    {
+        var statusText = dto.Status switch
+        {
+            ClaimStatus.InReview => "is now under review",
+            ClaimStatus.Approved => "has been approved",
+            ClaimStatus.Rejected => "has been rejected",
+            ClaimStatus.Closed => "has been closed",
+            ClaimStatus.Submitted => "has been submitted",
+            ClaimStatus.Pending => "is pending",
+            ClaimStatus.Draft => "was reverted to draft",
+            _ => $"status changed to {dto.Status}",
+        };
+
+        var title = $"Claim {claim.ClaimNumber} updated";
+        var message = string.IsNullOrWhiteSpace(dto.Note)
+            ? $"Your claim {statusText}."
+            : $"Your claim {statusText}. {dto.Note}";
+
+        return (title, message);
+    }
+
+    private async Task NotifyMissingUploadsAsync(Claim claim, string userId)
+    {
+        // Pick up docs already bound to the claim, plus docs uploaded during
+        // chat that share the claim's ChatThreadId but haven't been attached yet
+        // (the /claim-documents/attach call usually follows claim creation).
+        var query = _context.ClaimDocuments
+            .Where(d => d.UserId == userId &&
+                (d.ClaimId == claim.Id ||
+                    (claim.ChatThreadId != null
+                        && d.ChatThreadId == claim.ChatThreadId
+                        && d.ClaimId == null)));
+
+        var photoCount = await query.CountAsync(d => d.Kind == "Image");
+        var docCount = await query.CountAsync(d => d.Kind != "Image");
+
+        var missingPhotos = photoCount == 0;
+        var missingDocs = docCount == 0;
+        if (!missingPhotos && !missingDocs) return;
+
+        string message;
+        if (missingPhotos && missingDocs)
+        {
+            message = $"Please upload photos and supporting documents to complete your claim {claim.ClaimNumber}.";
+        }
+        else if (missingPhotos)
+        {
+            message = $"Please upload photos of the damage to complete your claim {claim.ClaimNumber}.";
+        }
+        else
+        {
+            message = $"Please upload supporting documents to complete your claim {claim.ClaimNumber}.";
+        }
+
+        await _notificationService.CreateAndPushAsync(
+            userId: userId,
+            title: "Action Required",
+            message: message,
+            actionType: "upload_documents",
+            claimId: claim.Id,
+            actionUrl: $"/claims/{claim.Id}/documents");
     }
 
     private async Task<string> GenerateClaimNumberAsync()

@@ -353,6 +353,9 @@ class AppLocalizationsLv extends AppLocalizations {
   String get claimDetail_policyHolder => 'Polises turētājs';
 
   @override
+  String get claimDetail_claimantType => 'Pieprasītāja tips';
+
+  @override
   String get claimDetail_policyNumber => 'Polises numurs';
 
   @override

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:claim_ai/core/constants/app_theme.dart';
@@ -44,20 +45,27 @@ class _HomePageState extends State<HomePage> {
           ).pushNamedAndRemoveUntil(AppRoutes.login, (_) => false);
         }
       },
-      child: Scaffold(
-        body: IndexedStack(
-          index: _currentIndex,
-          children: [
-            _WelcomeContent(
-              onTabSwitch: (index) => setState(() => _currentIndex = index),
-            ),
-            const ClaimsListPage(),
-            const ProfileScreen(),
-          ],
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.dark,
+          statusBarBrightness: Brightness.light,
         ),
-        bottomNavigationBar: _BottomNavBar(
-          currentIndex: _currentIndex,
-          onTap: (index) => setState(() => _currentIndex = index),
+        child: Scaffold(
+          body: IndexedStack(
+            index: _currentIndex,
+            children: [
+              _WelcomeContent(
+                onTabSwitch: (index) => setState(() => _currentIndex = index),
+              ),
+              const ClaimsListPage(),
+              const ProfileScreen(),
+            ],
+          ),
+          bottomNavigationBar: _BottomNavBar(
+            currentIndex: _currentIndex,
+            onTap: (index) => setState(() => _currentIndex = index),
+          ),
         ),
       ),
     );
@@ -198,9 +206,34 @@ class _HeaderSection extends StatelessWidget {
             ),
 
             // Notification bell
-            GestureDetector(
-              onTap: () {},
-              child: Container(
+            const _NotificationBell(),
+          ],
+        );
+      },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Notification Bell (with unread badge) — opens a bottom sheet
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _NotificationBell extends StatelessWidget {
+  const _NotificationBell();
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<NotificationsCubit, NotificationsState>(
+      buildWhen: (prev, curr) =>
+          prev.pendingActions.length != curr.pendingActions.length,
+      builder: (context, state) {
+        final unreadCount = state.pendingActions.length;
+        return GestureDetector(
+          onTap: () => _openSheet(context),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
@@ -219,6 +252,186 @@ class _HeaderSection extends StatelessWidget {
                   color: Color(0xFF1A1D3B),
                   size: 24,
                 ),
+              ),
+              if (unreadCount > 0)
+                Positioned(
+                  top: -2,
+                  right: -2,
+                  child: Container(
+                    constraints: const BoxConstraints(
+                      minWidth: 18,
+                      minHeight: 18,
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      shape: unreadCount > 9
+                          ? BoxShape.rectangle
+                          : BoxShape.circle,
+                      borderRadius: unreadCount > 9
+                          ? BorderRadius.circular(9)
+                          : null,
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      unreadCount > 99 ? '99+' : '$unreadCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _openSheet(BuildContext context) {
+    final cubit = context.read<NotificationsCubit>();
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => BlocProvider<NotificationsCubit>.value(
+        value: cubit,
+        child: const _NotificationsSheet(),
+      ),
+    );
+  }
+}
+
+class _NotificationsSheet extends StatelessWidget {
+  const _NotificationsSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.6,
+      minChildSize: 0.3,
+      maxChildSize: 0.9,
+      expand: false,
+      builder: (context, scrollController) {
+        return Column(
+          children: [
+            // Drag handle
+            Container(
+              margin: const EdgeInsets.only(top: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
+              child: Row(
+                children: [
+                  const Text(
+                    'Notifications',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1A1D3B),
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.grey),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: BlocBuilder<NotificationsCubit, NotificationsState>(
+                builder: (context, state) {
+                  if (state.pendingActions.isEmpty) {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.notifications_off_outlined,
+                              size: 48,
+                              color: Colors.grey,
+                            ),
+                            SizedBox(height: 12),
+                            Text(
+                              "You're all caught up",
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+                  return ListView.separated(
+                    controller: scrollController,
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    itemCount: state.pendingActions.length,
+                    separatorBuilder: (_, _) => const Divider(
+                      height: 1,
+                      indent: 56,
+                    ),
+                    itemBuilder: (_, i) {
+                      final action = state.pendingActions[i];
+                      return ListTile(
+                        leading: const CircleAvatar(
+                          backgroundColor: Color(0xFFFFF4E5),
+                          child: Icon(
+                            Icons.warning_amber_rounded,
+                            color: Colors.orange,
+                          ),
+                        ),
+                        title: Text(
+                          action.title,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                        subtitle: Text(
+                          action.claimNumber != null
+                              ? '${action.message} #${action.claimNumber}'
+                              : action.message,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        trailing: IconButton(
+                          icon: const Icon(
+                            Icons.check_circle_outline,
+                            color: Colors.grey,
+                          ),
+                          tooltip: 'Mark as read',
+                          onPressed: () => context
+                              .read<NotificationsCubit>()
+                              .markAsRead(action.id),
+                        ),
+                        onTap: () {
+                          Navigator.of(context).pop();
+                          Navigator.of(context).pushNamed(
+                            AppRoutes.claimDetail,
+                            arguments: {'claimId': action.claimId ?? ''},
+                          );
+                        },
+                      );
+                    },
+                  );
+                },
               ),
             ),
           ],
@@ -290,11 +503,8 @@ class _ActionRequiredSection extends StatelessWidget {
                     GestureDetector(
                       onTap: () {
                         Navigator.of(context).pushNamed(
-                          AppRoutes.documents,
+                          AppRoutes.claimDetail,
                           arguments: {'claimId': action.claimId ?? ''},
-                        );
-                        context.read<NotificationsCubit>().markAsRead(
-                          action.id,
                         );
                       },
                       child: Row(

@@ -764,6 +764,12 @@ abstract class AppLocalizations {
   /// **'Policy Holder'**
   String get claimDetail_policyHolder;
 
+  /// No description provided for @claimDetail_claimantType.
+  ///
+  /// In en, this message translates to:
+  /// **'Claimant Type'**
+  String get claimDetail_claimantType;
+
   /// No description provided for @claimDetail_policyNumber.
   ///
   /// In en, this message translates to:

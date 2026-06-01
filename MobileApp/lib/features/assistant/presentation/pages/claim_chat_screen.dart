@@ -15,6 +15,7 @@ import 'package:uuid/uuid.dart';
 import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 import 'package:claim_ai/core/navigation/app_routes.dart';
 import 'package:claim_ai/core/storage/chat_transcript_writer.dart';
+import 'package:claim_ai/core/utils/request_context.dart';
 import 'package:claim_ai/features/assistant/data/datasources/chat_service.dart';
 import 'package:claim_ai/features/assistant/presentation/widgets/sample_images_dialog.dart';
 import 'package:claim_ai/features/assistant/presentation/widgets/voice_mode/triggers/image_trigger.dart' show humanizeAngle;
@@ -56,6 +57,12 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   // Set when the bot streams a `save_summary` message; the Close button uses
   // this to skip its own save and only write the local transcript file.
   bool _savedOnSummary = false;
+  // True after the bot streams `final_summary` (the review-claim card); the
+  // very next outgoing message (typically "Yes Confirm") is what triggers
+  // save_summary on the bot side, so we attach device_id / ip_address /
+  // app_version on that message so the AI has the context when it saves.
+  // Single-shot: flips back to false once the params have been sent.
+  bool _attachContextOnNextSend = false;
   // Tracks the in-flight auto-save so the Close button can await it before
   // deciding whether to run a fallback save (prevents a duplicate claim if
   // the user taps Close while auto-save is still uploading).
@@ -195,10 +202,25 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     bool autoFetchLocation = false;
     try {
       final locale = Localizations.localeOf(context);
+
+      // Single-shot context attach: when the previous bot turn streamed
+      // `save_summary`, this outgoing message carries device_id / ip_address /
+      // app_version. We resolve them up-front (rather than inside the stream
+      // builder) so a failed lookup doesn't block the request.
+      final attachContext = _attachContextOnNextSend;
+      ChatRequestContext? ctx;
+      if (attachContext) {
+        ctx = await ChatRequestContext.gather();
+        _attachContextOnNextSend = false;
+      }
+
       await for (final msg in ChatService.sendMessage(
         userMessage,
         threadId: _threadId,
         language: locale.languageCode,
+        deviceId: ctx?.deviceId,
+        ipAddress: ctx?.ipAddress,
+        appVersion: ctx?.appVersion,
       )) {
         if (!mounted) return;
         _pendingBotMessages.add(
@@ -222,6 +244,13 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         // depending on the conversation language.
         if (msg.payloadType == 'save_summary') {
           _triggerAutoSaveOnSummary(msg.enPayload, msg.content);
+        }
+        // `final_summary` is the bot's "Review Your Claim" card. The user's
+        // reply to it (typically "Yes Confirm") is the message that triggers
+        // save_summary on the bot side, so we tag that outgoing message with
+        // device_id / ip_address / app_version.
+        if (msg.payloadType == 'final_summary') {
+          _attachContextOnNextSend = true;
         }
         if (msg.triggers.contains('AUTO_GET_LOCATION')) {
           autoFetchLocation = true;
@@ -1436,13 +1465,17 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   /// question as skippable via `payload.is_skippable` but didn't emit the
   /// trigger itself. De-duplicated.
   ///
-  /// GET_DOCUMENT / GET_IMAGE turns already offer Skip via the suggestion
-  /// chip on the bot bubble, so we strip any sibling `SKIP` to avoid
-  /// showing two Skip controls side-by-side.
+  /// GET_DOCUMENT / GET_IMAGE turns render the upload UI plus an inline Skip
+  /// pill when the bot marks the question as skippable (`is_skippable` payload
+  /// flag OR a literal "Skip" suggestion chip). The chip itself is hidden in
+  /// the suggestion row (see `_buildBubble`) to avoid showing two Skip
+  /// controls — so SKIP must be in the trigger list whenever skippable.
   List<String> _effectiveTriggers(_ChatMsg msg) {
     if (msg.triggers.contains('GET_DOCUMENT') ||
         msg.triggers.contains('GET_IMAGE')) {
-      return msg.triggers.where((t) => t != 'SKIP').toList(growable: false);
+      final withoutSkip = msg.triggers.where((t) => t != 'SKIP').toList();
+      if (_isSkippable(msg)) withoutSkip.add('SKIP');
+      return withoutSkip;
     }
     if (!_isSkippable(msg) || msg.triggers.contains('SKIP')) {
       return msg.triggers;
@@ -2788,6 +2821,22 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     return null;
   }
 
+  /// Picks up the last `final_summary` payload (the "Review Your Claim" card).
+  /// Used as a fallback data source when `save_summary` is sparse or missing
+  /// fields — the bot may emit a thin save_summary payload while the review
+  /// card carries the full structured data. Prefers the stable-English keyed
+  /// `en_payload` for predictable DTO mapping.
+  Map<String, dynamic>? _latestFinalSummaryEnPayload() {
+    for (int i = _messages.length - 1; i >= 0; i--) {
+      final m = _messages[i];
+      if (m.payloadType == 'final_summary') {
+        if (m.enPayload != null && m.enPayload!.isNotEmpty) return m.enPayload;
+        if (m.payload != null && m.payload!.isNotEmpty) return m.payload;
+      }
+    }
+    return null;
+  }
+
   /// Translates the human-readable keys from a `save_summary` payload into the
   /// camelCase property names expected by `CreateClaimFromChatDto` on the
   /// backend. Unknown keys are kept verbatim — `[JsonExtensionData]` on the
@@ -3024,15 +3073,25 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
 
     if (finalClaimId == null || finalClaimId.isEmpty) {
       final claimData = _latestClaimData() ?? <String, dynamic>{};
+      // Merge order (lowest → highest precedence):
+      //  1. claim_data — the bot's structured snapshot streamed earlier.
+      //  2. final_summary.en_payload — rich review-card data (the AI's
+      //     "Review Your Claim" output). Some bot runs ship a thin
+      //     save_summary; we don't want to lose this data.
+      //  3. save_summary — the AI's authoritative confirmation payload,
+      //     so it wins over earlier sources when present.
+      final finalSummary = _latestFinalSummaryEnPayload();
+      final finalSummaryFields = finalSummary != null
+          ? _mapSaveSummaryToDto(finalSummary)
+          : <String, dynamic>{};
       final saveSummary = saveSummaryPayload ?? _latestSaveSummaryPayload();
-      final summaryFields = saveSummary != null
+      final saveSummaryFields = saveSummary != null
           ? _mapSaveSummaryToDto(saveSummary)
           : <String, dynamic>{};
-      // save_summary is the authoritative final payload from the bot, so its
-      // values take precedence over any earlier claim_data snapshot.
       final payload = <String, dynamic>{
         ...claimData,
-        ...summaryFields,
+        ...finalSummaryFields,
+        ...saveSummaryFields,
         'chatThreadId': _threadId,
         'externalReference': ?externalRef,
       };

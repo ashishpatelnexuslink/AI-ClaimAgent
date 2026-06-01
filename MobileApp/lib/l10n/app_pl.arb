@@ -127,6 +127,7 @@
   "claimDetail_notFound": "Nie znaleziono roszczenia",
   "claimDetail_policyDetails": "Szczegóły polisy",
   "claimDetail_policyHolder": "Ubezpieczający",
+  "claimDetail_claimantType": "Typ wnioskodawcy",
   "claimDetail_policyNumber": "Numer polisy",
   "claimDetail_vehicle": "Pojazd",
   "claimDetail_platNumber": "Numer rejestracyjny",

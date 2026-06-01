@@ -5,4 +5,9 @@ import 'package:claim_ai/features/notifications/domain/entities/pending_action_e
 abstract class NotificationsRepository {
   Future<Either<Failure, List<PendingActionEntity>>> getPendingActions();
   Future<Either<Failure, void>> markAsRead(String notificationId);
+  Future<Either<Failure, void>> registerDevice({
+    required String fcmToken,
+    required String platform,
+  });
+  Future<Either<Failure, void>> unregisterDevice(String fcmToken);
 }
