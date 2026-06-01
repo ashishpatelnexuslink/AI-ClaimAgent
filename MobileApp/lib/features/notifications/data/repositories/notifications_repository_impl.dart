@@ -40,4 +40,36 @@ class NotificationsRepositoryImpl implements NotificationsRepository {
       return Left(ServerFailure(message: e.message, statusCode: e.statusCode));
     }
   }
+
+  @override
+  Future<Either<Failure, void>> registerDevice({
+    required String fcmToken,
+    required String platform,
+  }) async {
+    if (!await networkInfo.isConnected) {
+      return const Left(NetworkFailure());
+    }
+    try {
+      await remoteDataSource.registerDevice(
+        fcmToken: fcmToken,
+        platform: platform,
+      );
+      return const Right(null);
+    } on ServerException catch (e) {
+      return Left(ServerFailure(message: e.message, statusCode: e.statusCode));
+    }
+  }
+
+  @override
+  Future<Either<Failure, void>> unregisterDevice(String fcmToken) async {
+    if (!await networkInfo.isConnected) {
+      return const Left(NetworkFailure());
+    }
+    try {
+      await remoteDataSource.unregisterDevice(fcmToken);
+      return const Right(null);
+    } on ServerException catch (e) {
+      return Left(ServerFailure(message: e.message, statusCode: e.statusCode));
+    }
+  }
 }

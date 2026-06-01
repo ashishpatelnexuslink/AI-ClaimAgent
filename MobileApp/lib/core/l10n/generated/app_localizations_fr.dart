@@ -353,6 +353,9 @@ class AppLocalizationsFr extends AppLocalizations {
   String get claimDetail_policyHolder => 'Titulaire de la police';
 
   @override
+  String get claimDetail_claimantType => 'Type de réclamant';
+
+  @override
   String get claimDetail_policyNumber => 'Numéro de police';
 
   @override

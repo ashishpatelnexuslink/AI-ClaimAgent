@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:claim_ai/core/auth/session_event_bus.dart';
+import 'package:claim_ai/core/services/fcm_service.dart';
 import 'package:claim_ai/core/usecases/usecase.dart';
 import 'package:claim_ai/features/auth/presentation/cubit/auth_state.dart';
 import 'package:claim_ai/features/auth/domain/usecases/login_usecase.dart';
@@ -20,6 +21,7 @@ class AuthCubit extends Cubit<AuthState> {
   final LogoutUseCase _logoutUseCase;
   final BiometricLoginUseCase _biometricLoginUseCase;
   final UpdateBiometricSettingUseCase _updateBiometricSettingUseCase;
+  final FcmService? _fcmService;
   final StreamSubscription<SessionEvent> _sessionSub;
 
   AuthCubit({
@@ -31,6 +33,7 @@ class AuthCubit extends Cubit<AuthState> {
     required BiometricLoginUseCase biometricLoginUseCase,
     required UpdateBiometricSettingUseCase updateBiometricSettingUseCase,
     required SessionEventBus sessionBus,
+    FcmService? fcmService,
   })  : _loginUseCase = loginUseCase,
         _sendOtpUseCase = sendOtpUseCase,
         _verifyOtpUseCase = verifyOtpUseCase,
@@ -38,6 +41,7 @@ class AuthCubit extends Cubit<AuthState> {
         _logoutUseCase = logoutUseCase,
         _biometricLoginUseCase = biometricLoginUseCase,
         _updateBiometricSettingUseCase = updateBiometricSettingUseCase,
+        _fcmService = fcmService,
         _sessionSub = sessionBus.stream.listen((_) {}),
         super(const AuthState()) {
     _sessionSub.onData((event) {
@@ -68,6 +72,7 @@ class AuthCubit extends Cubit<AuthState> {
       (_) async {
         await fetchUserProfile();
         emit(state.copyWith(status: AuthStatus.authenticated));
+        await _registerForPush();
       },
     );
   }
@@ -110,6 +115,7 @@ class AuthCubit extends Cubit<AuthState> {
       (_) async {
         await fetchUserProfile();
         emit(state.copyWith(status: AuthStatus.authenticated));
+        await _registerForPush();
       },
     );
   }
@@ -131,10 +137,13 @@ class AuthCubit extends Cubit<AuthState> {
         status: AuthStatus.error,
         errorMessage: failure.message,
       )),
-      (user) => emit(state.copyWith(
-        status: AuthStatus.authenticated,
-        user: user,
-      )),
+      (user) async {
+        emit(state.copyWith(
+          status: AuthStatus.authenticated,
+          user: user,
+        ));
+        await _registerForPush();
+      },
     );
   }
 
@@ -148,6 +157,7 @@ class AuthCubit extends Cubit<AuthState> {
 
   Future<void> logout() async {
     emit(state.copyWith(status: AuthStatus.loading));
+    await _unregisterFromPush();
     final result = await _logoutUseCase(const NoParams());
     result.fold(
       (failure) => emit(state.copyWith(
@@ -156,5 +166,25 @@ class AuthCubit extends Cubit<AuthState> {
       )),
       (_) => emit(const AuthState(status: AuthStatus.unauthenticated)),
     );
+  }
+
+  Future<void> _registerForPush() async {
+    final fcm = _fcmService;
+    if (fcm == null) return;
+    try {
+      await fcm.initializeAndRegister();
+    } catch (_) {
+      // Push registration is best-effort — never break the auth flow.
+    }
+  }
+
+  Future<void> _unregisterFromPush() async {
+    final fcm = _fcmService;
+    if (fcm == null) return;
+    try {
+      await fcm.unregister();
+    } catch (_) {
+      // Best-effort.
+    }
   }
 }

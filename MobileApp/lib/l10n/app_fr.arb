@@ -127,6 +127,7 @@
   "claimDetail_notFound": "Sinistre introuvable",
   "claimDetail_policyDetails": "Détails de la police",
   "claimDetail_policyHolder": "Titulaire de la police",
+  "claimDetail_claimantType": "Type de réclamant",
   "claimDetail_policyNumber": "Numéro de police",
   "claimDetail_vehicle": "Véhicule",
   "claimDetail_platNumber": "Plaque d'immatriculation",

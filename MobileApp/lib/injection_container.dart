@@ -43,7 +43,11 @@ import 'package:claim_ai/features/notifications/data/repositories/notifications_
 import 'package:claim_ai/features/notifications/domain/repositories/notifications_repository.dart';
 import 'package:claim_ai/features/notifications/domain/usecases/get_pending_actions_usecase.dart';
 import 'package:claim_ai/features/notifications/domain/usecases/mark_as_read_usecase.dart';
+import 'package:claim_ai/core/services/fcm_service.dart';
 import 'package:claim_ai/features/notifications/presentation/cubit/notifications_cubit.dart';
+
+// App Version
+import 'package:claim_ai/features/app_version/data/app_version_service.dart';
 
 // Documents
 import 'package:claim_ai/features/documents/data/datasources/documents_remote_datasource.dart';
@@ -155,6 +159,7 @@ Future<void> init() async {
       biometricLoginUseCase: sl<BiometricLoginUseCase>(),
       updateBiometricSettingUseCase: sl<UpdateBiometricSettingUseCase>(),
       sessionBus: sl<SessionEventBus>(),
+      fcmService: sl<FcmService>(),
     ),
   );
 
@@ -194,6 +199,11 @@ Future<void> init() async {
   // ============ ASSISTANT (chatbot stack) ============
   sl.registerLazySingleton<ChatTranscriptWriter>(() => ChatTranscriptWriter());
 
+  // ============ APP VERSION ============
+  sl.registerLazySingleton<AppVersionService>(
+    () => AppVersionService(client: sl<DioClient>()),
+  );
+
   // ============ NOTIFICATIONS ============
   sl.registerLazySingleton<NotificationsRemoteDataSource>(
     () => NotificationsRemoteDataSourceImpl(client: sl<DioClient>()),
@@ -210,12 +220,16 @@ Future<void> init() async {
   sl.registerLazySingleton(
     () => MarkAsReadUseCase(repository: sl<NotificationsRepository>()),
   );
+  sl.registerLazySingleton<FcmService>(
+    () => FcmService(repository: sl<NotificationsRepository>()),
+  );
 
   // Cubit
   sl.registerFactory(
     () => NotificationsCubit(
       getPendingActionsUseCase: sl<GetPendingActionsUseCase>(),
       markAsReadUseCase: sl<MarkAsReadUseCase>(),
+      fcmService: sl<FcmService>(),
     ),
   );
 

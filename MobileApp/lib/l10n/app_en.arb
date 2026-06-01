@@ -152,6 +152,7 @@
   "claimDetail_notFound": "Claim not found",
   "claimDetail_policyDetails": "Policy Details",
   "claimDetail_policyHolder": "Policy Holder",
+  "claimDetail_claimantType": "Claimant Type",
   "claimDetail_policyNumber": "Policy Number",
   "claimDetail_vehicle": "Vehicle",
   "claimDetail_platNumber": "Plat Number",

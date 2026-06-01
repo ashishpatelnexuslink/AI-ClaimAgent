@@ -534,6 +534,7 @@ class _PolicyDetailsCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           _kv(l.claimDetail_policyHolder, claim.fullName ?? '—'),
+          _kv(l.claimDetail_claimantType, claim.claimantType ?? '—'),
           _kv(l.claimDetail_policyNumber,
               claim.policyNumber != null ? '#${claim.policyNumber}' : '—'),
           _kv(l.claimDetail_vehicle, claim.vehicleModel ?? '—'),

@@ -127,6 +127,7 @@
   "claimDetail_notFound": "Sinistro non trovato",
   "claimDetail_policyDetails": "Dettagli polizza",
   "claimDetail_policyHolder": "Contraente",
+  "claimDetail_claimantType": "Tipo di richiedente",
   "claimDetail_policyNumber": "Numero polizza",
   "claimDetail_vehicle": "Veicolo",
   "claimDetail_platNumber": "Targa",

@@ -354,6 +354,9 @@ class AppLocalizationsEs extends AppLocalizations {
   String get claimDetail_policyHolder => 'Titular de la póliza';
 
   @override
+  String get claimDetail_claimantType => 'Tipo de reclamante';
+
+  @override
   String get claimDetail_policyNumber => 'Número de póliza';
 
   @override

@@ -349,6 +349,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get claimDetail_policyHolder => 'Policy Holder';
 
   @override
+  String get claimDetail_claimantType => 'Claimant Type';
+
+  @override
   String get claimDetail_policyNumber => 'Policy Number';
 
   @override

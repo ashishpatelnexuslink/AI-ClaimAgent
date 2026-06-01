@@ -46,4 +46,32 @@ public class NotificationsController : ControllerBase
 
         return Ok(ApiResponse<object>.SuccessResponse(new { }, result.Message));
     }
+
+    [HttpPost("devices/register")]
+    public async Task<IActionResult> RegisterDevice([FromBody] RegisterDeviceDto dto)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId is null)
+            return Unauthorized();
+
+        var result = await _notificationService.RegisterDeviceAsync(userId, dto);
+        if (!result.Succeeded)
+            return BadRequest(ApiResponse<object>.FailResponse(result.Errors));
+
+        return Ok(ApiResponse<object>.SuccessResponse(new { }, result.Message));
+    }
+
+    [HttpDelete("devices/{token}")]
+    public async Task<IActionResult> UnregisterDevice(string token)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId is null)
+            return Unauthorized();
+
+        var result = await _notificationService.UnregisterDeviceAsync(userId, token);
+        if (!result.Succeeded)
+            return BadRequest(ApiResponse<object>.FailResponse(result.Errors));
+
+        return Ok(ApiResponse<object>.SuccessResponse(new { }, result.Message));
+    }
 }
