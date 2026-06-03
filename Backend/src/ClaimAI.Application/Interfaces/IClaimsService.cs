@@ -22,6 +22,15 @@ public interface IClaimsService
         UpdateAccidentInfoDto dto);
 
     /// <summary>
+    /// Overwrites the claim's <c>ClaimNumber</c> with the reference number
+    /// returned by the AI chatbot at the end of a chat/voice submission flow.
+    /// </summary>
+    Task<Result<ClaimResponseDto>> UpdateClaimNumberAsync(
+        Guid claimId,
+        string userId,
+        UpdateClaimNumberDto dto);
+
+    /// <summary>
     /// Admin/system-initiated status update. Persists the new status and
     /// emits a push notification to the claim owner's registered devices.
     /// </summary>

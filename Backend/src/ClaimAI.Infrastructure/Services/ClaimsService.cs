@@ -185,6 +185,26 @@ public class ClaimsService : IClaimsService
         return Result<ClaimResponseDto>.Success(MapToDto(claim));
     }
 
+    public async Task<Result<ClaimResponseDto>> UpdateClaimNumberAsync(
+        Guid claimId,
+        string userId,
+        UpdateClaimNumberDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.ClaimNumber))
+            return Result<ClaimResponseDto>.Failure("ClaimNumber is required.");
+
+        var claim = await _context.Claims
+            .FirstOrDefaultAsync(c => c.Id == claimId && c.UserId == userId);
+
+        if (claim is null)
+            return Result<ClaimResponseDto>.Failure("Claim not found.");
+
+        claim.ClaimNumber = dto.ClaimNumber.Trim();
+        await _context.SaveChangesAsync();
+
+        return Result<ClaimResponseDto>.Success(MapToDto(claim));
+    }
+
     public async Task<Result<ClaimResponseDto>> UpdateClaimStatusAsync(
         Guid claimId,
         UpdateClaimStatusDto dto)
