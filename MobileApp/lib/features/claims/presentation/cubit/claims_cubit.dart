@@ -10,6 +10,13 @@ class ClaimsCubit extends Cubit<ClaimsState> {
   final GetClaimDetailUseCase _getClaimDetailUseCase;
   final GetDashboardSummaryUseCase _getDashboardSummaryUseCase;
 
+  /// In-flight fetch, used to coalesce overlapping callers. Multiple widgets
+  /// (HomePage.initState, voice mode close, ClaimsListPage refresh) can all
+  /// trigger fetchClaims around the same time. Without this guard two
+  /// page-1 requests race and their `fold`s both append to `state.claims`,
+  /// producing duplicate rows in the list until the next refresh.
+  Future<void>? _inFlight;
+
   ClaimsCubit({
     required GetClaimsUseCase getClaimsUseCase,
     required GetClaimDetailUseCase getClaimDetailUseCase,
@@ -19,7 +26,15 @@ class ClaimsCubit extends Cubit<ClaimsState> {
         _getDashboardSummaryUseCase = getDashboardSummaryUseCase,
         super(const ClaimsState());
 
-  Future<void> fetchClaims({bool refresh = false}) async {
+  Future<void> fetchClaims({bool refresh = false}) {
+    final pending = _inFlight;
+    if (pending != null) return pending;
+    final future = _doFetchClaims(refresh: refresh);
+    _inFlight = future;
+    return future.whenComplete(() => _inFlight = null);
+  }
+
+  Future<void> _doFetchClaims({required bool refresh}) async {
     if (refresh) {
       emit(state.copyWith(
         currentPage: 1,
@@ -46,12 +61,20 @@ class ClaimsCubit extends Cubit<ClaimsState> {
         isLoading: false,
         errorMessage: failure.message,
       )),
-      (newClaims) => emit(state.copyWith(
-        isLoading: false,
-        claims: [...state.claims, ...newClaims],
-        hasMore: newClaims.length >= 20,
-        currentPage: state.currentPage + 1,
-      )),
+      (newClaims) {
+        // Dedup by id when appending the next page — defense in depth against
+        // any caller that bypasses the coalescing guard or against the server
+        // returning an overlapping window between pages.
+        final seen = {for (final c in state.claims) c.id};
+        final additions =
+            newClaims.where((c) => seen.add(c.id)).toList(growable: false);
+        emit(state.copyWith(
+          isLoading: false,
+          claims: [...state.claims, ...additions],
+          hasMore: newClaims.length >= 20,
+          currentPage: state.currentPage + 1,
+        ));
+      },
     );
   }
 

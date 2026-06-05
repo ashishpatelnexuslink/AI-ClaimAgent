@@ -237,6 +237,12 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
             enPayload: msg.enPayload,
           ),
         );
+        // Drain the queue as soon as a message arrives if nothing is currently
+        // animating. Without this, a bot `wait` message that is the only thing
+        // in a still-open SSE stream (bot is doing server-side validation
+        // before yielding the next message) never reaches `_messages`, so the
+        // "validating..." bubble is invisible to the user.
+        if (!_isAnimating) _showNextPendingMessage();
         // Bot has streamed the final summary — fire-and-forget the save
         // (claim row + doc attach + conversation transcript) right away so
         // the Close button only has to write the local transcript file.
@@ -244,6 +250,9 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         // depending on the conversation language.
         if (msg.payloadType == 'save_summary') {
           _triggerAutoSaveOnSummary(msg.enPayload, msg.content);
+        }
+        if (msg.payloadType == 'claim_reference') {
+          unawaited(_applyClaimReferencePayload(msg.enPayload ?? msg.payload));
         }
         // `final_summary` is the bot's "Review Your Claim" card. The user's
         // reply to it (typically "Yes Confirm") is the message that triggers
@@ -256,7 +265,8 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           autoFetchLocation = true;
         }
       }
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('[chat/stream] error: $e\n$st');
       if (!mounted) return;
       _pendingBotMessages.add(
         _ChatMsg(
@@ -338,17 +348,37 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   /// widgets (like policy card) can render instead of plain markdown.
   void _clearLastAnimation() {
     for (int i = _messages.length - 1; i >= 0; i--) {
-      if (_messages[i].animate && !_messages[i].isUser) {
+      final m = _messages[i];
+      if (m.animate && !m.isUser) {
+        // CRITICAL: copy every field. An earlier version of this method
+        // forgot `enPayload`, which silently dropped the English-keyed
+        // payload from `final_summary` / `save_summary` messages the moment
+        // their typewriter animation finished. The DB persistence path
+        // (_runSaveClaimAndConversation) then saw `en=false` on the final
+        // message and fell through to an empty body, so non-English chats
+        // created claims with all columns null. Keep this list in sync with
+        // every field on `_ChatMsg`.
         _messages[i] = _ChatMsg(
-          text: _messages[i].text,
+          text: m.text,
           isUser: false,
           animate: false,
-          messageType: _messages[i].messageType,
-          suggestions: _messages[i].suggestions,
-          triggers: _messages[i].triggers,
-          claimData: _messages[i].claimData,
-          payloadType: _messages[i].payloadType,
-          payload: _messages[i].payload,
+          messageType: m.messageType,
+          suggestions: m.suggestions,
+          triggers: m.triggers,
+          claimData: m.claimData,
+          payloadType: m.payloadType,
+          payload: m.payload,
+          enPayload: m.enPayload,
+          imagePaths: m.imagePaths,
+          documentNames: m.documentNames,
+          validationFailedAngles: m.validationFailedAngles,
+          validationFailedLegacy: m.validationFailedLegacy,
+          validationGroupKey: m.validationGroupKey,
+          validationAllowedAngles: m.validationAllowedAngles,
+          validationTimeoutRetry: m.validationTimeoutRetry,
+          validationRetryImages: m.validationRetryImages,
+          validationRetryQuestion: m.validationRetryQuestion,
+          validationRetryIsLegacy: m.validationRetryIsLegacy,
         );
         break;
       }
@@ -2797,9 +2827,24 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   }
 
   /// Picks up the most recent `claim_data` payload we received during the chat.
-  Map<String, dynamic>? _latestClaimData() {
+  /// Walks `_messages` then `_pendingBotMessages` (newest → oldest) so callers
+  /// see data that's already streamed in from SSE even while the typewriter
+  /// animation is still draining the queue. Without this, an auto-save that
+  /// fires immediately after a `final_summary` / `save_summary` chunk arrives
+  /// can miss the data because the message hasn't yet been promoted from
+  /// `_pendingBotMessages` to `_messages`.
+  Iterable<_ChatMsg> _allBotMessagesNewestFirst() sync* {
     for (int i = _messages.length - 1; i >= 0; i--) {
-      final data = _messages[i].claimData;
+      yield _messages[i];
+    }
+    for (int i = _pendingBotMessages.length - 1; i >= 0; i--) {
+      yield _pendingBotMessages[i];
+    }
+  }
+
+  Map<String, dynamic>? _latestClaimData() {
+    for (final m in _allBotMessagesNewestFirst()) {
+      final data = m.claimData;
       if (data != null && data.isNotEmpty) return data;
     }
     return null;
@@ -2809,13 +2854,17 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   /// bubble. This is the authoritative final summary the bot shows just before
   /// the Close button, and contains human-readable keys like "Policy Number".
   Map<String, dynamic>? _latestSaveSummaryPayload() {
-    for (int i = _messages.length - 1; i >= 0; i--) {
-      final m = _messages[i];
-      if (m.messageType == 'done' &&
-          m.payloadType == 'save_summary' &&
-          m.payload != null &&
-          m.payload!.isNotEmpty) {
-        return m.payload;
+    for (final m in _allBotMessagesNewestFirst()) {
+      if (m.messageType == 'done' && m.payloadType == 'save_summary') {
+        // Only return the English-keyed payload. NEVER fall back to the
+        // localized `m.payload` — _mapSaveSummaryToDto's switch only matches
+        // English keys, so localized (de/it/…) keys would pass through
+        // verbatim into the request body (e.g. "Versicherungsnummer",
+        // "Vollständiger Name"), polluting the DTO and leaving DB columns
+        // null. Returning null forces the caller to rely on `claim_data` /
+        // final_summary.en_payload instead.
+        if (m.enPayload != null && m.enPayload!.isNotEmpty) return m.enPayload;
+        return null;
       }
     }
     return null;
@@ -2827,11 +2876,13 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
   /// card carries the full structured data. Prefers the stable-English keyed
   /// `en_payload` for predictable DTO mapping.
   Map<String, dynamic>? _latestFinalSummaryEnPayload() {
-    for (int i = _messages.length - 1; i >= 0; i--) {
-      final m = _messages[i];
+    for (final m in _allBotMessagesNewestFirst()) {
       if (m.payloadType == 'final_summary') {
+        // English-only — see the comment in `_latestSaveSummaryPayload`. A
+        // localized fallback here would re-introduce German/Italian keys
+        // into the create-claim request body for non-English conversations.
         if (m.enPayload != null && m.enPayload!.isNotEmpty) return m.enPayload;
-        if (m.payload != null && m.payload!.isNotEmpty) return m.payload;
+        return null;
       }
     }
     return null;
@@ -3041,7 +3092,15 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     Map<String, dynamic>? saveSummaryPayload,
     String doneText,
   ) {
-    if (_savedOnSummary || _autoSaveFuture != null) return;
+    // Also bail when confirm has already created the claim — `_submittedClaimId`
+    // is set by `_onConfirmFinalSummary` before `_savedOnSummary` flips, so
+    // without this guard a `save_summary` arriving mid-confirm would race a
+    // second INSERT.
+    if (_savedOnSummary ||
+        _autoSaveFuture != null ||
+        (_submittedClaimId != null && _submittedClaimId!.isNotEmpty)) {
+      return;
+    }
     final externalRef = _extractClaimReference(doneText);
     final future = _runSaveClaimAndConversation(
       saveSummaryPayload: saveSummaryPayload,
@@ -3059,6 +3118,36 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
           // Clear the future so the Close-button fallback can run a fresh attempt.
           _autoSaveFuture = null;
         });
+  }
+
+  /// Handles a streaming message with `payload_type == "claim_reference"`.
+  /// Waits for the in-flight auto-save (so we know the claim row's id) and
+  /// then PUTs the AI-supplied reference number onto the claim's ClaimNumber
+  /// column. Best-effort — failures are logged but don't surface to the user.
+  Future<void> _applyClaimReferencePayload(
+    Map<String, dynamic>? payload,
+  ) async {
+    final ref = payload?['claim_reference']?.toString().trim();
+    if (ref == null || ref.isEmpty) return;
+    try {
+      if (_autoSaveFuture != null) {
+        await _autoSaveFuture;
+      }
+      final claimId = _submittedClaimId;
+      if (claimId == null || claimId.isEmpty) {
+        debugPrint(
+          '[ClaimRef] received claim_reference "$ref" but no claim id yet',
+        );
+        return;
+      }
+      await di.sl<ClaimsRemoteDataSource>().updateClaimNumber(
+            id: claimId,
+            claimNumber: ref,
+          );
+      debugPrint('[ClaimRef] updated claim $claimId ClaimNumber to $ref');
+    } catch (e) {
+      debugPrint('[ClaimRef] update failed: $e');
+    }
   }
 
   /// Performs the full server-side save: create claim row (if not already
@@ -3210,9 +3299,18 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
       // Treat the final_summary's English-keyed payload as the authoritative
       // source so _runSaveClaimAndConversation maps keys via
       // _mapSaveSummaryToDto and creates a proper claim row.
-      await _runSaveClaimAndConversation(saveSummaryPayload: msg.enPayload);
+      // Publish the future on `_autoSaveFuture` so a `save_summary` that the
+      // bot streams right after the user's "Yes Confirm" reply sees an
+      // in-flight save and short-circuits in `_triggerAutoSaveOnSummary`,
+      // preventing a duplicate claim INSERT.
+      final future = _runSaveClaimAndConversation(
+        saveSummaryPayload: msg.enPayload,
+      );
+      _autoSaveFuture = future;
+      await future;
       _savedOnSummary = true;
     } catch (e) {
+      _autoSaveFuture = null;
       if (mounted) {
         errorMessage = AppLocalizations.of(context)
             .voice_failedToSaveClaim(e.toString());

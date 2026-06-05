@@ -20,8 +20,15 @@ import 'package:speech_to_text/speech_to_text.dart';
 ///      [realSilenceTimeout].
 class VoiceService {
   // ─── Tunables ──────────────────────────────────────────────────────────
-  static const Duration restartDelay = Duration(milliseconds: 50);
+  static const Duration restartDelay = Duration(milliseconds: 150);
   static const Duration realSilenceTimeout = Duration(seconds: 5);
+
+  /// If a final result arrived AND the user has been silent for at least this
+  /// long, skip the restart on the next `done` status. The silence watcher
+  /// will stop the session shortly after via [realSilenceTimeout]; restarting
+  /// in this window just produces an extra native session (and an extra mic
+  /// chime pair) for no captured speech.
+  static const Duration _postFinalSilenceSkipRestart = Duration(seconds: 2);
   static const Duration maxListenDuration = Duration(minutes: 5);
   static const Duration maxPauseDuration = Duration(seconds: 30);
   static const Duration silenceWatcherInterval = Duration(milliseconds: 500);
@@ -65,6 +72,13 @@ class VoiceService {
 
   String? _activeLocaleId;
   DateTime _lastSoundActivity = DateTime.now();
+
+  /// True once the engine has emitted at least one `finalResult` in the
+  /// current user-listen session. Used to decide whether a `done` status that
+  /// follows extended silence should restart the engine or just let the
+  /// silence watcher stop us.
+  bool _hadFinalThisSession = false;
+
   Timer? _restartTimer;
   Timer? _silenceWatcher;
   Timer? _maxListenTimer;
@@ -151,6 +165,7 @@ class VoiceService {
     _accumulatedText = '';
     _currentSessionText = '';
     _segmentLongestPartial = '';
+    _hadFinalThisSession = false;
     _activeLocaleId = localeId;
     _lastSoundActivity = DateTime.now();
 
@@ -289,6 +304,7 @@ class VoiceService {
       }
       _currentSessionText = '';
       _segmentLongestPartial = '';
+      _hadFinalThisSession = true;
       onTextUpdate?.call(_accumulatedText);
       // Don't restart here — the status callback will follow with `done`
       // and trigger the restart from a single, canonical place.
@@ -311,6 +327,20 @@ class VoiceService {
         _currentSessionText = '';
         _segmentLongestPartial = '';
         onTextUpdate?.call(_accumulatedText);
+      }
+      // If a final result already arrived in this session and the user has
+      // been quiet for ≥ [_postFinalSilenceSkipRestart], the user is done
+      // talking — the silence watcher will stop us shortly via
+      // [realSilenceTimeout]. Skipping the restart here avoids an extra
+      // native session that produces a second mic chime pair and re-emits
+      // tail-buffer text (the source of "GJ 01 ab GJ 0 1 ab" duplicates).
+      final silentFor = DateTime.now().difference(_lastSoundActivity);
+      if (_hadFinalThisSession && silentFor >= _postFinalSilenceSkipRestart) {
+        if (kDebugMode) {
+          debugPrint('[voice] skipping restart: had final, silent '
+              '${silentFor.inMilliseconds}ms');
+        }
+        return;
       }
       _scheduleRestart(_activeLocaleId ?? 'en_IN');
     }
@@ -389,6 +419,23 @@ class VoiceService {
     return a.trim().length > b.trim().length;
   }
 
+  /// Collapse a string to lowercase alphanumerics only — used to compare
+  /// suffix/slice in [_mergeText] so that tokenization or punctuation
+  /// differences across a restart boundary (e.g. `"01"` vs `"0 1"`,
+  /// `"hello"` vs `"hello,"`, `"GJ01AB"` vs `"gj 01 ab"`) still count as a
+  /// match. Only used for comparison — the original text is preserved in
+  /// the merged output.
+  String _normalizeForMatch(String s) {
+    final buf = StringBuffer();
+    for (final r in s.runes) {
+      final c = String.fromCharCode(r);
+      if (RegExp(r'[A-Za-z0-9]').hasMatch(c)) {
+        buf.write(c.toLowerCase());
+      }
+    }
+    return buf.toString();
+  }
+
   /// Merges previously-accumulated text with new session text, deduping any
   /// trailing-suffix / leading-prefix overlap. The native engine sometimes
   /// resends words across a restart boundary; without this, phrases like
@@ -424,10 +471,13 @@ class VoiceService {
         // Single-word coincidences are too noisy once we're skipping prefix
         // words — only the strict k=0 path accepts a one-word overlap.
         if (k > 0 && i < 2) break;
-        final prevSuffix =
-            prevWords.sublist(prevWords.length - i).join(' ').toLowerCase();
-        final nextSlice = nextWords.sublist(k, k + i).join(' ').toLowerCase();
-        if (prevSuffix == nextSlice) {
+        final prevSuffix = prevWords.sublist(prevWords.length - i).join(' ');
+        final nextSlice = nextWords.sublist(k, k + i).join(' ');
+        // Normalized compare so "01" matches "0 1", "hello" matches "hello,"
+        // etc. Only the *comparison* is normalized — the words appended back
+        // into the merged transcript are still the original `nextWords`
+        // slice with their original spacing and punctuation.
+        if (_normalizeForMatch(prevSuffix) == _normalizeForMatch(nextSlice)) {
           if (i > bestOverlap) {
             bestOverlap = i;
             bestK = k;
