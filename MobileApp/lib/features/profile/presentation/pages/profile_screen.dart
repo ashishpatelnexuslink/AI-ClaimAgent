@@ -713,8 +713,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 icon: Icons.language_outlined,
                 title: l.profile_language,
                 subtitle: l.profile_languageSubtitle,
-                trailing: GestureDetector(
-                  onTap: _showLanguageDialog,
+                trailing: Opacity(
+                  opacity: 0.5,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -739,11 +739,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
             subtitle: _biometricAvailable
                 ? l.profile_biometricFaceFingerprint
                 : l.profile_biometricNotAvailable,
-            trailing: Switch(
-              value: _biometricEnabled,
-              onChanged: _biometricAvailable ? _onBiometricToggle : null,
-              activeThumbColor: _kBlue,
-              activeTrackColor: _kBlue.withValues(alpha: 0.3),
+            trailing: Opacity(
+              opacity: 0.5,
+              child: Switch(
+                value: _biometricEnabled,
+                onChanged: null,
+                activeThumbColor: _kBlue,
+                activeTrackColor: _kBlue.withValues(alpha: 0.3),
+              ),
             ),
           ),
         ],

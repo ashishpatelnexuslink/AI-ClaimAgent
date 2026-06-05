@@ -1,4 +1,5 @@
-import 'dart:io';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:package_info_plus/package_info_plus.dart';
 
 class AppVersionInfo {
@@ -10,9 +11,16 @@ class AppVersionInfo {
 
   static AppVersionInfo? _cached;
 
+  /// `Platform.isIOS` from dart:io throws `UnsupportedError` on Flutter Web,
+  /// so gate the lookup behind `kIsWeb` before touching it.
+  static String _detectPlatform() {
+    if (kIsWeb) return 'Web';
+    return Platform.isIOS ? 'iOS' : 'Android';
+  }
+
   static Future<AppVersionInfo> current() async {
     if (_cached != null) return _cached!;
-    final platform = Platform.isIOS ? 'iOS' : 'Android';
+    final platform = _detectPlatform();
     try {
       final info = await PackageInfo.fromPlatform();
       final code = int.tryParse(info.buildNumber) ?? 0;

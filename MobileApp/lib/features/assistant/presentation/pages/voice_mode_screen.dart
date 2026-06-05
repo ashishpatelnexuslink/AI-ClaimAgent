@@ -810,6 +810,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         if (msg.payloadType == 'save_summary') {
           _triggerAutoSaveOnSummary(msg.enPayload, msg.content);
         }
+        if (msg.payloadType == 'claim_reference') {
+          unawaited(_applyClaimReferencePayload(msg.enPayload ?? msg.payload));
+        }
         // `final_summary` is the bot's "Review Your Claim" card. The user's
         // reply to it (typically "Yes Confirm") is the message that triggers
         // save_summary on the bot side, so we tag that outgoing message with
@@ -1841,22 +1844,45 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     return match?.group(1);
   }
 
-  Map<String, dynamic>? _latestClaimData() {
+  /// Walks `_messages` then `_pendingBotReplies` (newest → oldest). The pending
+  /// queue is gated on TTS completion, so an auto-save that fires synchronously
+  /// when `save_summary` streams in would otherwise miss earlier `claim_data` /
+  /// `final_summary` bubbles that haven't been spoken yet.
+  Iterable<ChatMessage> _allBotMessagesNewestFirst() sync* {
     for (int i = _messages.length - 1; i >= 0; i--) {
-      final data = _messages[i].claimData;
+      yield _messages[i];
+    }
+    for (int i = _pendingBotReplies.length - 1; i >= 0; i--) {
+      yield _pendingBotReplies[i];
+    }
+  }
+
+  Map<String, dynamic>? _latestClaimData() {
+    for (final m in _allBotMessagesNewestFirst()) {
+      final data = m.claimData;
       if (data != null && data.isNotEmpty) return data;
     }
     return null;
   }
 
   Map<String, dynamic>? _latestSaveSummaryPayload() {
-    for (int i = _messages.length - 1; i >= 0; i--) {
-      final m = _messages[i];
-      if (m.messageType == 'done' &&
-          m.payloadType == 'save_summary' &&
-          m.payload != null &&
-          m.payload!.isNotEmpty) {
-        return m.payload;
+    for (final m in _allBotMessagesNewestFirst()) {
+      if (m.messageType == 'done' && m.payloadType == 'save_summary') {
+        // English-only — `_mapSaveSummaryToDto` only matches English keys, so
+        // returning the localized `m.payload` would pass German/Italian keys
+        // through verbatim into the request body and leave DB columns null.
+        if (m.enPayload != null && m.enPayload!.isNotEmpty) return m.enPayload;
+        return null;
+      }
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? _latestFinalSummaryEnPayload() {
+    for (final m in _allBotMessagesNewestFirst()) {
+      if (m.payloadType == 'final_summary') {
+        if (m.enPayload != null && m.enPayload!.isNotEmpty) return m.enPayload;
+        return null;
       }
     }
     return null;
@@ -2060,6 +2086,36 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         });
   }
 
+  /// Handles a streaming message with `payload_type == "claim_reference"`.
+  /// Waits for the in-flight auto-save (so we know the claim row's id) and
+  /// then PUTs the AI-supplied reference number onto the claim's ClaimNumber
+  /// column. Best-effort — failures are logged but don't surface to the user.
+  Future<void> _applyClaimReferencePayload(
+    Map<String, dynamic>? payload,
+  ) async {
+    final ref = payload?['claim_reference']?.toString().trim();
+    if (ref == null || ref.isEmpty) return;
+    try {
+      if (_autoSaveFuture != null) {
+        await _autoSaveFuture;
+      }
+      final claimId = _submittedClaimId;
+      if (claimId == null || claimId.isEmpty) {
+        debugPrint(
+          '[ClaimRef] received claim_reference "$ref" but no claim id yet',
+        );
+        return;
+      }
+      await di.sl<ClaimsRemoteDataSource>().updateClaimNumber(
+            id: claimId,
+            claimNumber: ref,
+          );
+      debugPrint('[ClaimRef] updated claim $claimId ClaimNumber to $ref');
+    } catch (e) {
+      debugPrint('[ClaimRef] update failed: $e');
+    }
+  }
+
   /// Performs the full server-side save: create claim row (if not already
   /// created via SUBMIT_CLAIM) and attach uploaded documents. Throws on any
   /// step failure.
@@ -2071,12 +2127,24 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
     if (finalClaimId == null || finalClaimId.isEmpty) {
       final claimData = _latestClaimData() ?? <String, dynamic>{};
+      // Merge order (lowest → highest precedence):
+      //  1. claim_data — the bot's structured snapshot streamed earlier.
+      //  2. final_summary.en_payload — rich "Review Your Claim" data; the bot
+      //     sometimes ships a thin save_summary while the review card carries
+      //     the full structured fields.
+      //  3. save_summary — the AI's authoritative confirmation payload, so it
+      //     wins over earlier sources when present.
+      final finalSummary = _latestFinalSummaryEnPayload();
+      final finalSummaryFields = finalSummary != null
+          ? _mapSaveSummaryToDto(finalSummary)
+          : <String, dynamic>{};
       final saveSummary = saveSummaryPayload ?? _latestSaveSummaryPayload();
       final summaryFields = saveSummary != null
           ? _mapSaveSummaryToDto(saveSummary)
           : <String, dynamic>{};
       final payload = <String, dynamic>{
         ...claimData,
+        ...finalSummaryFields,
         ...summaryFields,
         'chatThreadId': _threadId,
         'externalReference': ?externalRef,
@@ -2706,6 +2774,13 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   /// same turn.
   List<String> _effectiveTriggers(ChatMessage msg) {
     if (msg.triggers.contains('GET_DOCUMENT')) {
+      return msg.triggers.where((t) => t != 'SKIP').toList(growable: false);
+    }
+    // If a "Skip" suggestion chip is already rendered, don't also add a
+    // SKIP trigger pill — that produced two Skip controls on the same turn.
+    final hasSkipChip = (msg.chips ?? const [])
+        .any((s) => s.trim().toLowerCase() == 'skip');
+    if (hasSkipChip) {
       return msg.triggers.where((t) => t != 'SKIP').toList(growable: false);
     }
     if (!_isSkippable(msg) || msg.triggers.contains('SKIP')) {
