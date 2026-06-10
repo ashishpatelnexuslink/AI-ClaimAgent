@@ -317,6 +317,10 @@ class AppLocalizationsLv extends AppLocalizations {
   String get claims_empty => 'Prasības nav atrastas';
 
   @override
+  String get claims_empty_subtitle =>
+      'Sāciet savu pirmo prasību un ļaujiet mūsu MI asistentam jūs vadīt.';
+
+  @override
   String get claims_filter_all => 'Visas';
 
   @override

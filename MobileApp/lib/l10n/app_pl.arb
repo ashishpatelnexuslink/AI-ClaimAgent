@@ -113,6 +113,7 @@
   "claims_appBarTitle": "Roszczenia",
   "claims_loading": "Ładowanie roszczeń...",
   "claims_empty": "Nie znaleziono roszczeń",
+  "claims_empty_subtitle": "Rozpocznij swoje pierwsze roszczenie, a nasz asystent AI poprowadzi Cię krok po kroku.",
   "claims_filter_all": "Wszystkie",
 
   "claim_status_draft": "SZKIC",

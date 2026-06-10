@@ -13,6 +13,7 @@ public class CreateClaimFromChatDto
 {
     public string? ChatThreadId { get; set; }
     public string? ExternalReference { get; set; }
+    public string? ClaimNumber { get; set; }
 
     public string? ClaimType { get; set; }
     public string? FullName { get; set; }

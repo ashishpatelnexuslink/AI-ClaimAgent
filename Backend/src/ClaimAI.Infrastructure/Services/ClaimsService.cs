@@ -87,7 +87,9 @@ public class ClaimsService : IClaimsService
     public async Task<Result<ClaimResponseDto>> CreateClaimFromChatAsync(
         CreateClaimFromChatDto dto, string userId)
     {
-        var claimNumber = await GenerateClaimNumberAsync();
+        var claimNumber = string.IsNullOrWhiteSpace(dto.ClaimNumber)
+            ? await GenerateClaimNumberAsync()
+            : dto.ClaimNumber.Trim();
 
         var claimType = string.IsNullOrWhiteSpace(dto.ClaimType)
             ? "Vehicle"

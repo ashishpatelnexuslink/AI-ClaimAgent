@@ -315,6 +315,10 @@ class AppLocalizationsLt extends AppLocalizations {
   String get claims_empty => 'Žalų nerasta';
 
   @override
+  String get claims_empty_subtitle =>
+      'Pradėkite pirmą žalą ir leiskite mūsų DI asistentui jus vesti.';
+
+  @override
   String get claims_filter_all => 'Visos';
 
   @override

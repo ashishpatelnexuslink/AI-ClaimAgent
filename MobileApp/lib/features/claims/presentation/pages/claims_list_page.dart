@@ -9,6 +9,7 @@ import 'package:claim_ai/core/widgets/empty_widget.dart';
 import 'package:claim_ai/features/claims/presentation/cubit/claims_cubit.dart';
 import 'package:claim_ai/features/claims/presentation/cubit/claims_state.dart';
 import 'package:claim_ai/features/claims/presentation/widgets/claim_card.dart';
+import 'package:claim_ai/features/claims/presentation/widgets/claims_empty_state.dart';
 
 class ClaimsListPage extends StatelessWidget {
   const ClaimsListPage({super.key});
@@ -42,9 +43,9 @@ class ClaimsListPage extends StatelessWidget {
           }
 
           if (state.claims.isEmpty) {
-            return EmptyWidget(
-              message: l.claims_empty,
-              icon: Icons.description_outlined,
+            return ClaimsEmptyState(
+              onClaimNow: () =>
+                  Navigator.of(context).pushNamed(AppRoutes.avatarAssistant),
             );
           }
 

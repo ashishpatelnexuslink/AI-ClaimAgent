@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 
@@ -13,7 +14,13 @@ class AuthLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
-    return Scaffold(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.dark.copyWith(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+        statusBarBrightness: Brightness.light,
+      ),
+      child: Scaffold(
       backgroundColor: _bgColor,
       body: SafeArea(
         child: SingleChildScrollView(
@@ -181,6 +188,7 @@ class AuthLayout extends StatelessWidget {
         ),
       ),
     ),
+  ),
   );
   }
 }

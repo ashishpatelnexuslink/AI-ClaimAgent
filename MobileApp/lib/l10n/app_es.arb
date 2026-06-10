@@ -113,6 +113,7 @@
   "claims_appBarTitle": "Siniestros",
   "claims_loading": "Cargando siniestros...",
   "claims_empty": "No se encontraron siniestros",
+  "claims_empty_subtitle": "Inicia tu primer siniestro y deja que nuestro asistente de IA te guíe paso a paso.",
   "claims_filter_all": "Todos",
 
   "claim_status_draft": "BORRADOR",

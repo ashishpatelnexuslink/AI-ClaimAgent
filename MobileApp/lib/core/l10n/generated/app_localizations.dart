@@ -692,6 +692,12 @@ abstract class AppLocalizations {
   /// **'No claims found'**
   String get claims_empty;
 
+  /// No description provided for @claims_empty_subtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Start your first claim and let our AI assistant guide you through it.'**
+  String get claims_empty_subtitle;
+
   /// No description provided for @claims_filter_all.
   ///
   /// In en, this message translates to:

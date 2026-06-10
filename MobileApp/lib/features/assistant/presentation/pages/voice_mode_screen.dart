@@ -803,13 +803,11 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
             enPayload: msg.enPayload,
           ),
         );
-        // Bot has streamed the final summary — fire-and-forget the save so
-        // the Close button only has to write the local transcript file.
-        // Uses the English-keyed payload so DB column mapping doesn't depend
-        // on conversation language.
-        if (msg.payloadType == 'save_summary') {
-          _triggerAutoSaveOnSummary(msg.enPayload, msg.content);
-        }
+        // Claim row is inserted when the bot streams `claim_reference` — the
+        // payload carries the AI-assigned reference number that becomes the
+        // claim's ClaimNumber. `save_summary` is intentionally not used to
+        // insert anymore; the Close button still acts as a fallback if
+        // `claim_reference` never arrives.
         if (msg.payloadType == 'claim_reference') {
           unawaited(_applyClaimReferencePayload(msg.enPayload ?? msg.payload));
         }
@@ -2059,60 +2057,27 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     return isImage ? 'vehicle_photos' : 'supporting_docs';
   }
 
-  /// Fire-and-forget auto-save invoked the moment the bot streams a message
-  /// with `payload_type == "save_summary"`. Idempotent — only the first call
-  /// per session does any work; the Close button awaits [_autoSaveFuture]
-  /// so it won't race-create a duplicate claim.
-  void _triggerAutoSaveOnSummary(
-    Map<String, dynamic>? saveSummaryPayload,
-    String doneText,
-  ) {
-    if (_savedOnSummary || _autoSaveFuture != null) return;
-    final externalRef = _extractClaimReference(doneText);
-    final future = _runSaveClaimAndConversation(
-      saveSummaryPayload: saveSummaryPayload,
-      externalRef: externalRef,
-    );
-    _autoSaveFuture = future;
-    future
-        .then((_) {
-          _savedOnSummary = true;
-        })
-        .catchError((Object e) {
-          debugPrint(
-            '[AutoSave] save_summary save failed (will retry on Close): $e',
-          );
-          _autoSaveFuture = null;
-        });
-  }
-
   /// Handles a streaming message with `payload_type == "claim_reference"`.
-  /// Waits for the in-flight auto-save (so we know the claim row's id) and
-  /// then PUTs the AI-supplied reference number onto the claim's ClaimNumber
-  /// column. Best-effort — failures are logged but don't surface to the user.
+  /// Inserts the claim row directly using the AI-supplied reference number as
+  /// the ClaimNumber. Idempotent — only the first claim_reference message per
+  /// session does any work. Failures are logged; the Close button retries.
   Future<void> _applyClaimReferencePayload(
     Map<String, dynamic>? payload,
   ) async {
     final ref = payload?['claim_reference']?.toString().trim();
     if (ref == null || ref.isEmpty) return;
+    if (_savedOnSummary || _autoSaveFuture != null) return;
+    if (_submittedClaimId != null && _submittedClaimId!.isNotEmpty) return;
+
+    final future = _runSaveClaimAndConversation(claimNumber: ref);
+    _autoSaveFuture = future;
     try {
-      if (_autoSaveFuture != null) {
-        await _autoSaveFuture;
-      }
-      final claimId = _submittedClaimId;
-      if (claimId == null || claimId.isEmpty) {
-        debugPrint(
-          '[ClaimRef] received claim_reference "$ref" but no claim id yet',
-        );
-        return;
-      }
-      await di.sl<ClaimsRemoteDataSource>().updateClaimNumber(
-            id: claimId,
-            claimNumber: ref,
-          );
-      debugPrint('[ClaimRef] updated claim $claimId ClaimNumber to $ref');
+      await future;
+      _savedOnSummary = true;
+      debugPrint('[ClaimRef] inserted claim with ClaimNumber $ref');
     } catch (e) {
-      debugPrint('[ClaimRef] update failed: $e');
+      _autoSaveFuture = null;
+      debugPrint('[ClaimRef] insert failed (will retry on Close): $e');
     }
   }
 
@@ -2122,6 +2087,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   Future<void> _runSaveClaimAndConversation({
     Map<String, dynamic>? saveSummaryPayload,
     String? externalRef,
+    String? claimNumber,
   }) async {
     String? finalClaimId = _submittedClaimId;
 
@@ -2148,6 +2114,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         ...summaryFields,
         'chatThreadId': _threadId,
         'externalReference': ?externalRef,
+        'claimNumber': ?claimNumber,
       };
       final response = await di
           .sl<ClaimsRemoteDataSource>()

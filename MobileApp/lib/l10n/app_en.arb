@@ -138,6 +138,7 @@
   "claims_appBarTitle": "Claims",
   "claims_loading": "Loading claims...",
   "claims_empty": "No claims found",
+  "claims_empty_subtitle": "Start your first claim and let our AI assistant guide you through it.",
   "claims_filter_all": "All",
 
   "claim_status_draft": "DRAFT",

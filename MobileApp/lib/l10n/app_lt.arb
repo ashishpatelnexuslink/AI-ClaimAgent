@@ -113,6 +113,7 @@
   "claims_appBarTitle": "Žalos",
   "claims_loading": "Įkeliamos žalos...",
   "claims_empty": "Žalų nerasta",
+  "claims_empty_subtitle": "Pradėkite pirmą žalą ir leiskite mūsų DI asistentui jus vesti.",
   "claims_filter_all": "Visos",
 
   "claim_status_draft": "JUODRAŠTIS",

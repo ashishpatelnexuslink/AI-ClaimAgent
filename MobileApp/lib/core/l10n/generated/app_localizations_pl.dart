@@ -314,6 +314,10 @@ class AppLocalizationsPl extends AppLocalizations {
   String get claims_empty => 'Nie znaleziono roszczeń';
 
   @override
+  String get claims_empty_subtitle =>
+      'Rozpocznij swoje pierwsze roszczenie, a nasz asystent AI poprowadzi Cię krok po kroku.';
+
+  @override
   String get claims_filter_all => 'Wszystkie';
 
   @override

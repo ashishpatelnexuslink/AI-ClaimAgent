@@ -24,30 +24,19 @@ class _OnboardingPageState extends State<OnboardingPage> {
   static const _iconBg = Color(0xFFEEF3FC);
 
   final _nameController = TextEditingController();
-  final _emailController = TextEditingController();
   bool _isSaving = false;
 
   @override
   void dispose() {
     _nameController.dispose();
-    _emailController.dispose();
     super.dispose();
-  }
-
-  bool _isValidEmail(String value) {
-    return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value);
   }
 
   Future<void> _submit() async {
     final fullName = _nameController.text.trim();
-    final email = _emailController.text.trim();
 
     if (fullName.isEmpty) {
       _showError('Please enter your full name');
-      return;
-    }
-    if (email.isEmpty || !_isValidEmail(email)) {
-      _showError('Please enter a valid email address');
       return;
     }
 
@@ -56,7 +45,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
       final currentUser = context.read<AuthCubit>().state.user;
       await sl<AuthRemoteDataSource>().updateProfile(
         fullName: fullName,
-        email: email,
+        email: currentUser?.email ?? '',
         phone: currentUser?.phone,
         country: currentUser?.country,
       );
@@ -116,15 +105,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
             hint: 'Enter your full name',
             icon: Icons.person_outline,
             keyboardType: TextInputType.name,
-          ),
-          const SizedBox(height: 16),
-          _fieldLabel('Email'),
-          const SizedBox(height: 8),
-          _input(
-            controller: _emailController,
-            hint: 'Enter your email',
-            icon: Icons.mail_outline,
-            keyboardType: TextInputType.emailAddress,
           ),
           const SizedBox(height: 24),
           AuthGradientButton(
