@@ -317,6 +317,10 @@ class AppLocalizationsFr extends AppLocalizations {
   String get claims_empty => 'Aucun sinistre trouvé';
 
   @override
+  String get claims_empty_subtitle =>
+      'Démarrez votre premier sinistre et laissez notre assistant IA vous guider.';
+
+  @override
   String get claims_filter_all => 'Tous';
 
   @override

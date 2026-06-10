@@ -318,6 +318,10 @@ class AppLocalizationsEs extends AppLocalizations {
   String get claims_empty => 'No se encontraron siniestros';
 
   @override
+  String get claims_empty_subtitle =>
+      'Inicia tu primer siniestro y deja que nuestro asistente de IA te guíe paso a paso.';
+
+  @override
   String get claims_filter_all => 'Todos';
 
   @override

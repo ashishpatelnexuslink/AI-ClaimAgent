@@ -113,6 +113,7 @@
   "claims_appBarTitle": "Schäden",
   "claims_loading": "Schäden werden geladen...",
   "claims_empty": "Keine Schäden gefunden",
+  "claims_empty_subtitle": "Reichen Sie Ihren ersten Schaden ein und lassen Sie sich von unserem KI-Assistenten begleiten.",
   "claims_filter_all": "Alle",
 
   "claim_status_draft": "ENTWURF",

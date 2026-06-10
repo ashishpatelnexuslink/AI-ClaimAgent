@@ -113,6 +113,7 @@
   "claims_appBarTitle": "Sinistres",
   "claims_loading": "Chargement des sinistres...",
   "claims_empty": "Aucun sinistre trouvé",
+  "claims_empty_subtitle": "Démarrez votre premier sinistre et laissez notre assistant IA vous guider.",
   "claims_filter_all": "Tous",
 
   "claim_status_draft": "BROUILLON",

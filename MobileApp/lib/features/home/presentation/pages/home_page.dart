@@ -35,6 +35,20 @@ class _HomePageState extends State<HomePage> {
     context.read<NotificationsCubit>().fetchPendingActions();
   }
 
+  Widget _buildTab(int index) {
+    switch (index) {
+      case 1:
+        return const ClaimsListPage();
+      case 2:
+        return const ProfileScreen();
+      case 0:
+      default:
+        return _WelcomeContent(
+          onTabSwitch: (i) => setState(() => _currentIndex = i),
+        );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocListener<AuthCubit, AuthState>(
@@ -52,15 +66,24 @@ class _HomePageState extends State<HomePage> {
           statusBarBrightness: Brightness.light,
         ),
         child: Scaffold(
-          body: IndexedStack(
-            index: _currentIndex,
-            children: [
-              _WelcomeContent(
-                onTabSwitch: (index) => setState(() => _currentIndex = index),
-              ),
-              const ClaimsListPage(),
-              const ProfileScreen(),
-            ],
+          body: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 320),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, animation) {
+              final offset = Tween<Offset>(
+                begin: const Offset(0.04, 0),
+                end: Offset.zero,
+              ).animate(animation);
+              return FadeTransition(
+                opacity: animation,
+                child: SlideTransition(position: offset, child: child),
+              );
+            },
+            child: KeyedSubtree(
+              key: ValueKey<int>(_currentIndex),
+              child: _buildTab(_currentIndex),
+            ),
           ),
           bottomNavigationBar: _BottomNavBar(
             currentIndex: _currentIndex,
@@ -467,19 +490,35 @@ class _ActionRequiredSection extends StatelessWidget {
         return Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE8E4FF), width: 1.2),
+            color: const Color(0xFFF3EFFF),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFD9CFFF), width: 1.2),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(
-                Icons.warning_amber_rounded,
-                color: Colors.orange,
-                size: 22,
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 4,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
+                ),
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.warning_amber_rounded,
+                  color: Color(0xFFE05757),
+                  size: 20,
+                ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
 
               // Content
               Expanded(
@@ -1032,40 +1071,82 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const duration = Duration(milliseconds: 320);
+    const curve = Curves.easeOutCubic;
+
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
+        duration: duration,
+        curve: curve,
         padding: EdgeInsets.symmetric(
-          horizontal: isSelected ? 20 : 12,
+          horizontal: isSelected ? 18 : 12,
           vertical: 8,
         ),
         decoration: BoxDecoration(
           color: isSelected
-              ? AppColors.primary.withValues(alpha: 0.1)
+              ? AppColors.primary.withValues(alpha: 0.12)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(AppRadius.round),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 22,
-              color: isSelected ? AppColors.primary : AppColors.textHint,
-            ),
-            if (isSelected) ...[
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.primary,
+            TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: 1.0, end: isSelected ? 1.18 : 1.0),
+              duration: duration,
+              curve: Curves.elasticOut,
+              builder: (context, scale, child) {
+                return Transform.scale(scale: scale, child: child);
+              },
+              child: AnimatedSwitcher(
+                duration: duration,
+                transitionBuilder: (child, anim) => RotationTransition(
+                  turns: Tween<double>(begin: 0.85, end: 1).animate(anim),
+                  child: FadeTransition(opacity: anim, child: child),
+                ),
+                child: Icon(
+                  icon,
+                  key: ValueKey<bool>(isSelected),
+                  size: 22,
+                  color: isSelected ? AppColors.primary : AppColors.textHint,
                 ),
               ),
-            ],
+            ),
+            AnimatedSize(
+              duration: duration,
+              curve: curve,
+              child: AnimatedSwitcher(
+                duration: duration,
+                transitionBuilder: (child, anim) {
+                  final slide = Tween<Offset>(
+                    begin: const Offset(-0.3, 0),
+                    end: Offset.zero,
+                  ).animate(anim);
+                  return ClipRect(
+                    child: FadeTransition(
+                      opacity: anim,
+                      child: SlideTransition(position: slide, child: child),
+                    ),
+                  );
+                },
+                child: isSelected
+                    ? Padding(
+                        key: ValueKey(label),
+                        padding: const EdgeInsets.only(left: 6),
+                        child: Text(
+                          label,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ),
           ],
         ),
       ),

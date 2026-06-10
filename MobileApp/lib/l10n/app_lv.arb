@@ -113,6 +113,7 @@
   "claims_appBarTitle": "Prasības",
   "claims_loading": "Ielādē prasības...",
   "claims_empty": "Prasības nav atrastas",
+  "claims_empty_subtitle": "Sāciet savu pirmo prasību un ļaujiet mūsu MI asistentam jūs vadīt.",
   "claims_filter_all": "Visas",
 
   "claim_status_draft": "MELNRAKSTS",

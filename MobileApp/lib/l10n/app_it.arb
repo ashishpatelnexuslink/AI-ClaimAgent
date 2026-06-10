@@ -113,6 +113,7 @@
   "claims_appBarTitle": "Sinistri",
   "claims_loading": "Caricamento sinistri...",
   "claims_empty": "Nessun sinistro trovato",
+  "claims_empty_subtitle": "Avvia il tuo primo sinistro e lascia che il nostro assistente IA ti guidi.",
   "claims_filter_all": "Tutti",
 
   "claim_status_draft": "BOZZA",

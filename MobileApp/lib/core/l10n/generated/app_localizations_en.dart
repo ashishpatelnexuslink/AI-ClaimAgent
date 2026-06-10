@@ -313,6 +313,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get claims_empty => 'No claims found';
 
   @override
+  String get claims_empty_subtitle =>
+      'Start your first claim and let our AI assistant guide you through it.';
+
+  @override
   String get claims_filter_all => 'All';
 
   @override

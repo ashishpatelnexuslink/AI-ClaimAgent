@@ -316,6 +316,10 @@ class AppLocalizationsDe extends AppLocalizations {
   String get claims_empty => 'Keine Schäden gefunden';
 
   @override
+  String get claims_empty_subtitle =>
+      'Reichen Sie Ihren ersten Schaden ein und lassen Sie sich von unserem KI-Assistenten begleiten.';
+
+  @override
   String get claims_filter_all => 'Alle';
 
   @override
