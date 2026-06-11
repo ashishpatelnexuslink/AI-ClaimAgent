@@ -887,6 +887,12 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         // claim's ClaimNumber. `save_summary` is intentionally not used to
         // insert anymore; the Close button still acts as a fallback if
         // `claim_reference` never arrives.
+        //
+        // Prefer en_payload (English-keyed twin) but fall back to payload —
+        // the bot sometimes streams only the localized payload, and chat
+        // mode handles this with the same `enPayload ?? payload` pattern at
+        // [claim_chat_screen.dart:254]. Keep both screens aligned so a
+        // backend change can't regress one and not the other.
         if (msg.payloadType == 'claim_reference') {
           unawaited(_applyClaimReferencePayload(msg.enPayload ?? msg.payload));
         }
@@ -1969,40 +1975,27 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   }
 
   // ── Confirm & Submit Claim (final_summary card) ─────────────────────────
+  /// User tapped the "Confirm & Submit Claim" CTA on the review card.
+  ///
+  /// The claim row is intentionally NOT created here. The bot's response to
+  /// "Yes Confirm" includes a `payload_type == "claim_reference"` SSE
+  /// message; `_applyClaimReferencePayload` performs the single INSERT with
+  /// the AI-assigned reference as `ClaimNumber`. This matches chat mode's
+  /// working behaviour: one INSERT per claim, sourced from the AI, never
+  /// overwritten.
+  ///
+  /// If the bot never streams `claim_reference` (network drop, AI failure),
+  /// no row is created and `_onCloseConversation` surfaces an error — by
+  /// design, per product call: no backend-generated fallback number, the
+  /// user must retry the conversation.
   Future<void> _onConfirmFinalSummary(ChatMessage msg) async {
     if (_confirmingFinalSummary || _botTyping) return;
     setState(() => _confirmingFinalSummary = true);
-
-    String? errorMessage;
-    try {
-      // English-keyed payload makes DB column mapping language-independent.
-      await _runSaveClaimAndConversation(saveSummaryPayload: msg.enPayload);
-      _savedOnSummary = true;
-    } catch (e) {
-      if (mounted) {
-        errorMessage =
-            AppLocalizations.of(context).voice_failedToSaveClaim(e.toString());
-      }
-      debugPrint('[ConfirmFinalSummary] save failed: $e');
-    }
-
-    if (!mounted) return;
-    setState(() => _confirmingFinalSummary = false);
-
-    if (errorMessage != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(errorMessage),
-          backgroundColor: Colors.red.shade700,
-          duration: const Duration(seconds: 4),
-        ),
-      );
-      return;
-    }
-
     final reply = AppLocalizations.of(context).voice_yesConfirm;
     _addUserMessage(reply);
     _streamBotReply(reply);
+    if (!mounted) return;
+    setState(() => _confirmingFinalSummary = false);
   }
 
   // ── SUBMIT_CLAIM ─────────────────────────────────────────────────────────
@@ -2053,14 +2046,6 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   }
 
   // ── Close conversation (message_type == 'done') ─────────────────────────
-  static final _claimRefPattern = RegExp(
-    r'([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})',
-  );
-
-  String? _extractClaimReference(String text) {
-    final match = _claimRefPattern.firstMatch(text);
-    return match?.group(1);
-  }
 
   /// Walks `_messages` then `_pendingBotReplies` (newest → oldest). The pending
   /// queue is gated on TTS completion, so an auto-save that fires synchronously
@@ -2386,35 +2371,29 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         );
       } catch (_) {}
 
-      // Wait for any in-flight auto-save so we don't race-create a duplicate
-      // claim, then fall back to a fresh save if it never succeeded.
+      // Wait for any in-flight save triggered by a streaming
+      // `claim_reference` so the local _submittedClaimId is up to date
+      // before we decide whether to warn.
       if (_autoSaveFuture != null) {
         try {
           await _autoSaveFuture;
         } catch (_) {}
       }
 
-      // Only attempt a save when the conversation actually produced claim
-      // data. If the user ended the session early (e.g. rejecting policy
-      // details at `verified_summary`), there is no save_summary, no
-      // submitted claim id, and no claim_data — so closing must NOT create
-      // a database row.
-      final hasClaimToSave = _submittedClaimId != null ||
-          _latestSaveSummaryPayload() != null ||
+      // No fallback INSERT on Close. The single source of truth for the
+      // claim row is the bot's `claim_reference` SSE message, which is
+      // applied by `_applyClaimReferencePayload`. If the bot never streamed
+      // it (network drop, AI failure), surface an error — by design, per
+      // product call: no backend-generated ClaimNumber fallback, the user
+      // must retry the conversation. Filters out the case where the user
+      // ended the session early (rejecting policy at `verified_summary`),
+      // in which case there is no claim_data and nothing to warn about.
+      final hadClaimData = _latestSaveSummaryPayload() != null ||
           (_latestClaimData()?.isNotEmpty ?? false);
-
-      if (!_savedOnSummary && hasClaimToSave) {
-        try {
-          await _runSaveClaimAndConversation(
-            externalRef: _extractClaimReference(doneMsg.text),
-          );
-          _savedOnSummary = true;
-        } catch (e) {
-          if (mounted) {
-            errorMessage = AppLocalizations.of(context)
-                .voice_failedToSaveClaim(e.toString());
-          }
-        }
+      final claimWasSaved = _submittedClaimId != null && _savedOnSummary;
+      if (hadClaimData && !claimWasSaved && mounted) {
+        errorMessage = AppLocalizations.of(context)
+            .voice_failedToSaveClaim('claim_reference not received');
       }
     } finally {
       if (mounted) {
