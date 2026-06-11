@@ -374,6 +374,24 @@ abstract class AppLocalizations {
   /// **'Pending Claims'**
   String get home_pendingClaims;
 
+  /// No description provided for @notifications_title.
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications'**
+  String get notifications_title;
+
+  /// No description provided for @notifications_empty.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re all caught up'**
+  String get notifications_empty;
+
+  /// No description provided for @notifications_markAsRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Mark as read'**
+  String get notifications_markAsRead;
+
   /// No description provided for @nav_home.
   ///
   /// In en, this message translates to:

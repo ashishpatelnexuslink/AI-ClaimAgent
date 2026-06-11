@@ -145,6 +145,15 @@ class AppLocalizationsLt extends AppLocalizations {
   String get home_pendingClaims => 'Laukiančios žalos';
 
   @override
+  String get notifications_title => 'Pranešimai';
+
+  @override
+  String get notifications_empty => 'Viskas perskaityta';
+
+  @override
+  String get notifications_markAsRead => 'Pažymėti kaip skaitytą';
+
+  @override
   String get nav_home => 'Pradžia';
 
   @override

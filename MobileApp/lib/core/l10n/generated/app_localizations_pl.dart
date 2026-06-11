@@ -145,6 +145,15 @@ class AppLocalizationsPl extends AppLocalizations {
   String get home_pendingClaims => 'Oczekujące roszczenia';
 
   @override
+  String get notifications_title => 'Powiadomienia';
+
+  @override
+  String get notifications_empty => 'Wszystko na bieżąco';
+
+  @override
+  String get notifications_markAsRead => 'Oznacz jako przeczytane';
+
+  @override
   String get nav_home => 'Start';
 
   @override

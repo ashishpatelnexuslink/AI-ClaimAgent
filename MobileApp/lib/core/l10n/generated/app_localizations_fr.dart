@@ -147,6 +147,15 @@ class AppLocalizationsFr extends AppLocalizations {
   String get home_pendingClaims => 'Sinistres en attente';
 
   @override
+  String get notifications_title => 'Notifications';
+
+  @override
+  String get notifications_empty => 'Vous êtes à jour';
+
+  @override
+  String get notifications_markAsRead => 'Marquer comme lu';
+
+  @override
   String get nav_home => 'Accueil';
 
   @override
