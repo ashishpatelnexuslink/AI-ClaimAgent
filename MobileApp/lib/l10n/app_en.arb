@@ -60,6 +60,11 @@
   "home_claimSummary": "Claim Summary",
   "home_totalClaims": "Total Claims",
   "home_pendingClaims": "Pending Claims",
+
+  "notifications_title": "Notifications",
+  "notifications_empty": "You're all caught up",
+  "notifications_markAsRead": "Mark as read",
+
   "nav_home": "Home",
   "nav_claims": "Claims",
   "nav_profile": "Profile",

@@ -50,6 +50,11 @@
   "home_claimSummary": "Prasību kopsavilkums",
   "home_totalClaims": "Kopējās prasības",
   "home_pendingClaims": "Gaidošās prasības",
+
+  "notifications_title": "Paziņojumi",
+  "notifications_empty": "Esat visu paveicis",
+  "notifications_markAsRead": "Atzīmēt kā izlasītu",
+
   "nav_home": "Sākums",
   "nav_claims": "Prasības",
   "nav_profile": "Profils",

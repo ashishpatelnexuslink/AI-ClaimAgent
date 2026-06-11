@@ -6,6 +6,42 @@ import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
+/// Hint to the recognizer about the shape of the expected utterance.
+///
+/// Maps to `taskHint` on iOS (`SFSpeechRecognitionTaskHint`) and to
+/// [ListenMode] on Android. Picking the right mode meaningfully improves
+/// accuracy because the engine swaps in a different language model.
+enum VoicePromptMode { dictation, shortAnswer, confirmation }
+
+/// Outcome of resolving an app language code to an installed STT locale on
+/// the device. [exactMatch] is true when a locale for the requested language
+/// was found; false means we either returned null or had to fall back to
+/// some other language, and the UI should tell the user the pack is missing.
+class LocaleResolution {
+  final String? localeId;
+
+  /// True when the engine *or* our synthesized fallback claims support for
+  /// the requested language. False only when neither path produced a tag,
+  /// in which case the caller should fall back to English.
+  final bool exactMatch;
+
+  /// True when [localeId] was not in `_speech.locales()` and we synthesized
+  /// it from `<lang>_<defaultCountry>`. Engines often accept synthesized
+  /// tags via online recognition, but some don't — when this is true, the
+  /// UI should warn the user that recognition may silently use English.
+  final bool synthesized;
+
+  final List<String> availableForLanguage;
+  final List<String> allAvailable;
+  const LocaleResolution._(
+    this.localeId,
+    this.exactMatch,
+    this.availableForLanguage,
+    this.allAvailable, {
+    this.synthesized = false,
+  });
+}
+
 /// Production-grade speech-to-text wrapper that survives the platform's
 /// hardcoded mid-sentence cutoff.
 ///
@@ -13,32 +49,52 @@ import 'package:speech_to_text/speech_to_text.dart';
 /// after ~2s of silence regardless of the `pauseFor` parameter. Rather than
 /// fight that, this service:
 ///   1. Lets the native engine cut off naturally.
-///   2. Restarts it within [restartDelay] (50ms).
+///   2. Restarts it within [restartDelay] (150ms).
 ///   3. Accumulates text across restarts with overlap dedup ([_mergeText]).
-///   4. Detects "real" silence ourselves via the sound-level stream.
+///   4. Detects "real" silence ourselves via the partial-result stream.
 ///   5. Only stops when the user has been actually silent for
-///      [realSilenceTimeout].
+///      [_activeRealSilenceTimeout] (per prompt mode).
 class VoiceService {
   // ─── Tunables ──────────────────────────────────────────────────────────
   static const Duration restartDelay = Duration(milliseconds: 150);
-  static const Duration realSilenceTimeout = Duration(seconds: 5);
 
-  /// If a final result arrived AND the user has been silent for at least this
-  /// long, skip the restart on the next `done` status. The silence watcher
-  /// will stop the session shortly after via [realSilenceTimeout]; restarting
-  /// in this window just produces an extra native session (and an extra mic
-  /// chime pair) for no captured speech.
+  /// Post-speech silence timeout for short answers (plate, VIN, date).
+  /// Dictation gets [_dictationSilenceTimeout]; confirmation gets
+  /// [_confirmationSilenceTimeout].
+  static const Duration realSilenceTimeout = Duration(seconds: 5);
+  static const Duration _dictationSilenceTimeout = Duration(seconds: 10);
+  static const Duration _confirmationSilenceTimeout = Duration(seconds: 3);
+
+  /// Grace window before *any* speech is heard. Some locales (Latvian,
+  /// Lithuanian, Polish on Android OEM engines) take 1.5–2s before the first
+  /// partial arrives, plus the user themselves may pause to gather thoughts.
+  static const Duration initialSilenceTimeout = Duration(seconds: 10);
+
+  /// Per-language override for [initialSilenceTimeout]. Keyed by the bare
+  /// language code (e.g. `'lv'`).
+  static const Map<String, Duration> _initialSilenceByLang = {
+    'lv': Duration(seconds: 14),
+    'lt': Duration(seconds: 14),
+    'pl': Duration(seconds: 12),
+    'de': Duration(seconds: 12),
+  };
+
+  /// Languages whose Google / Apple acoustic models reliably support
+  /// auto-punctuation. For everything else, the flag is silently ignored on
+  /// iOS and disables on-device recognition on some Android OEM engines.
+  static const Set<String> _autoPunctuationLangs = {
+    'en', 'es', 'fr', 'de', 'it', 'pt', 'ja', 'ko', 'zh',
+  };
+
+  /// If a final result arrived AND the user has been silent for at least
+  /// this long, skip the restart on the next `done` status — *except* in
+  /// dictation mode, where multi-second thinking pauses are normal.
   static const Duration _postFinalSilenceSkipRestart = Duration(seconds: 2);
   static const Duration maxListenDuration = Duration(minutes: 5);
   static const Duration maxPauseDuration = Duration(seconds: 30);
   static const Duration silenceWatcherInterval = Duration(milliseconds: 500);
 
   /// Errors that do not warrant tearing down the session — restart instead.
-  /// `error_client` is the Android ERROR_CLIENT race that fires intermittently
-  /// when listen() is invoked before the previous native session has fully
-  /// released, or on OEM ASR hiccups. We restart with the same tight delay
-  /// used for the natural mid-sentence cutoff so the platform doesn't get a
-  /// chance to play the mic end/start sounds between sessions.
   static const Set<String> _transientErrors = {
     'error_no_match',
     'error_speech_timeout',
@@ -50,6 +106,12 @@ class VoiceService {
   // ─── Callbacks ─────────────────────────────────────────────────────────
   void Function(String liveText)? onTextUpdate;
   void Function(String finalText)? onFinalText;
+
+  /// Fires alongside [onFinalText] with the alternate transcripts of the
+  /// last finalResult, ordered best→worst with the primary first. Used by
+  /// the screen to pick a better candidate via plate / domain corrections.
+  void Function(List<String> alternates)? onFinalAlternates;
+
   void Function(String error)? onError;
   void Function(double level)? onSoundLevel;
   void Function(bool isActive)? onListeningChange;
@@ -59,25 +121,24 @@ class VoiceService {
   bool _initialized = false;
   bool _userWantsToListen = false;
 
-  /// Banked, merged text from completed native sessions.
   String _accumulatedText = '';
-
-  /// Live text from the in-progress native session.
   String _currentSessionText = '';
-
-  /// Longest `recognizedWords` value seen *during* the current session's
-  /// partial stream. Android sometimes returns richer text in partials than
-  /// in the final, so we keep the longer one as a fallback.
   String _segmentLongestPartial = '';
 
   String? _activeLocaleId;
   DateTime _lastSoundActivity = DateTime.now();
 
-  /// True once the engine has emitted at least one `finalResult` in the
-  /// current user-listen session. Used to decide whether a `done` status that
-  /// follows extended silence should restart the engine or just let the
-  /// silence watcher stop us.
   bool _hadFinalThisSession = false;
+
+  /// True once we have seen any non-empty partial / final from the engine in
+  /// this user-listen session. Drives the "initial grace" branch of the
+  /// silence watcher.
+  bool _firstSpeechSeen = false;
+
+  /// Alternates from the most recent `finalResult` in this session.
+  List<String> _lastFinalAlternates = const [];
+
+  VoicePromptMode _promptMode = VoicePromptMode.dictation;
 
   Timer? _restartTimer;
   Timer? _silenceWatcher;
@@ -99,23 +160,36 @@ class VoiceService {
     return _initialized;
   }
 
-  /// Picks the best STT locale available on the device for [languageCode]
-  /// (e.g. `'it'`, `'hi'`, `'en'`). Preference:
-  ///   1. exact `lang_COUNTRY` match (case-insensitive, `-` or `_` separator)
-  ///   2. device system locale if it starts with [languageCode]
-  ///   3. any available locale starting with `<lang>_` (or matching the bare
-  ///      language code)
-  /// Returns null if the engine isn't initialized or no matching locale is
-  /// available; the caller can fall back to a default in [start].
+  /// Picks the best STT locale available on the device for [languageCode].
+  /// Returns just the id; use [resolveLocale] when you need the full
+  /// resolution (pack-missing banner state).
   Future<String?> resolveLocaleFor(
     String languageCode, [
     String? countryCode,
   ]) async {
-    if (!_initialized) return null;
+    final r = await resolveLocale(languageCode, countryCode);
+    return r.localeId;
+  }
+
+  /// Like [resolveLocaleFor] but returns the full resolution so callers can
+  /// tell whether the device actually has a pack for the requested language.
+  Future<LocaleResolution> resolveLocale(
+    String languageCode, [
+    String? countryCode,
+  ]) async {
+    if (!_initialized) {
+      return const LocaleResolution._(null, false, [], []);
+    }
     final lang = languageCode.toLowerCase();
     try {
       final available = await _speech.locales();
       final ids = available.map((l) => l.localeId).toList();
+      final forLang = ids
+          .where((id) {
+            final n = id.toLowerCase().replaceAll('-', '_');
+            return n == lang || n.startsWith('${lang}_');
+          })
+          .toList();
 
       // 1) Exact lang+country, tolerating `_` vs `-` separators.
       if (countryCode != null && countryCode.isNotEmpty) {
@@ -126,7 +200,7 @@ class VoiceService {
           final n = id.replaceAll('-', '_');
           if (n.toLowerCase() == wantU.toLowerCase() ||
               id.toLowerCase() == wantD.toLowerCase()) {
-            return id;
+            return LocaleResolution._(id, true, forLang, ids);
           }
         }
       }
@@ -137,21 +211,122 @@ class VoiceService {
       if (sysId != null &&
           sysId.toLowerCase().startsWith(lang) &&
           ids.contains(sysId)) {
-        return sysId;
+        return LocaleResolution._(sysId, true, forLang, ids);
       }
 
       // 3) Any locale starting with the requested language code.
       for (final id in ids) {
         final n = id.toLowerCase().replaceAll('-', '_');
-        if (n == lang || n.startsWith('${lang}_')) return id;
+        if (n == lang || n.startsWith('${lang}_')) {
+          return LocaleResolution._(id, true, forLang, ids);
+        }
       }
+      // 4) Engine didn't list a locale for this language, but most Android
+      // engines (Google Speech Services in particular) still accept a BCP-47
+      // tag like `de_DE` passed directly to listen() — they route to online
+      // recognition. `_speech.locales()` only reports the *offline* installed
+      // packs on many OEMs, so an absent entry doesn't mean the engine can't
+      // recognize the language. Synthesize the tag from the requested code
+      // and a default country and return it as an exact match. The recogniser
+      // will either accept it (the common case) or surface an error via
+      // [_onSpeechError], at which point the caller can fall back.
+      final synthesizedCc = (countryCode != null && countryCode.isNotEmpty)
+          ? countryCode.toUpperCase()
+          : _defaultCountryFor(lang);
+      if (synthesizedCc != null) {
+        final synth = '${lang}_$synthesizedCc';
+        if (kDebugMode) {
+          debugPrint('[voice] resolveLocale: synthesizing "$synth" '
+              '(not in engine-reported locales)');
+        }
+        return LocaleResolution._(synth, true, forLang, ids,
+            synthesized: true);
+      }
+      return LocaleResolution._(null, false, forLang, ids);
     } catch (e) {
-      if (kDebugMode) debugPrint('[voice] resolveLocaleFor failed: $e');
+      if (kDebugMode) debugPrint('[voice] resolveLocale failed: $e');
+      return const LocaleResolution._(null, false, [], []);
     }
-    return null;
   }
 
-  Future<void> start({String localeId = 'en_IN'}) async {
+  /// Default ISO 3166-1 country code per language, mirroring
+  /// `AppLocales.defaultCountryFor`. Kept here so the service doesn't take a
+  /// dependency on the l10n layer — voice resolution must work even when
+  /// `AppLocales` is unavailable (e.g. in unit tests).
+  static const Map<String, String> _defaultCountry = {
+    'en': 'US',
+    'de': 'DE',
+    'it': 'IT',
+    'fr': 'FR',
+    'es': 'ES',
+    'pl': 'PL',
+    'lt': 'LT',
+    'lv': 'LV',
+    'pt': 'PT',
+    'nl': 'NL',
+  };
+  String? _defaultCountryFor(String lang) => _defaultCountry[lang];
+
+  /// Picks the best available English STT locale on the device, in
+  /// preference order: system locale (if English) → en_US → en_GB → en_AU
+  /// → en_CA → en_IE → en_IN → first available `en_*` → null.
+  Future<String?> resolveEnglishFallback() async {
+    if (!_initialized) return null;
+    try {
+      final available = await _speech.locales();
+      final ids = available.map((l) => l.localeId).toList();
+      String norm(String s) => s.toLowerCase().replaceAll('-', '_');
+      bool isEnglish(String id) {
+        final n = norm(id);
+        return n == 'en' || n.startsWith('en_');
+      }
+
+      final system = await _speech.systemLocale();
+      final sysId = system?.localeId;
+      if (sysId != null && isEnglish(sysId) && ids.contains(sysId)) {
+        return sysId;
+      }
+
+      const preferred = ['en_US', 'en_GB', 'en_AU', 'en_CA', 'en_IE', 'en_IN'];
+      for (final want in preferred) {
+        for (final id in ids) {
+          if (norm(id) == norm(want)) return id;
+        }
+      }
+      for (final id in ids) {
+        if (isEnglish(id)) return id;
+      }
+      return null;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[voice] resolveEnglishFallback failed: $e');
+      return null;
+    }
+  }
+
+  /// One-shot diagnostic dump of every STT locale the device exposes.
+  Future<void> dumpLocales() async {
+    if (!kDebugMode) return;
+    if (!_initialized) {
+      debugPrint('[voice] dumpLocales: engine not initialized');
+      return;
+    }
+    try {
+      final locales = await _speech.locales();
+      final system = await _speech.systemLocale();
+      debugPrint('[voice] system locale: ${system?.localeId} (${system?.name})');
+      debugPrint('[voice] available STT locales (${locales.length}):');
+      for (final l in locales) {
+        debugPrint('  - ${l.localeId} : ${l.name}');
+      }
+    } catch (e) {
+      debugPrint('[voice] dumpLocales failed: $e');
+    }
+  }
+
+  Future<void> start({
+    String localeId = 'en_IN',
+    VoicePromptMode mode = VoicePromptMode.dictation,
+  }) async {
     if (!_initialized) {
       final ok = await initialize();
       if (!ok) {
@@ -166,7 +341,10 @@ class VoiceService {
     _currentSessionText = '';
     _segmentLongestPartial = '';
     _hadFinalThisSession = false;
+    _firstSpeechSeen = false;
+    _lastFinalAlternates = const [];
     _activeLocaleId = localeId;
+    _promptMode = mode;
     _lastSoundActivity = DateTime.now();
 
     onListeningChange?.call(true);
@@ -193,20 +371,30 @@ class VoiceService {
     }
     final finalText = _accumulatedText.trim();
     onListeningChange?.call(false);
+    // Fire alternates *before* onFinalText so callers that synchronously
+    // act on the final transcript can read the alternates from state.
+    if (_lastFinalAlternates.isNotEmpty) {
+      onFinalAlternates?.call(List.unmodifiable(_lastFinalAlternates));
+    }
     onFinalText?.call(finalText);
   }
 
-  /// Wipe everything captured so far without stopping the session. The
-  /// silence clock is also reset so the user has the full
-  /// [realSilenceTimeout] window to start speaking again. Emits an empty
-  /// [onTextUpdate] so the UI can clear its banner.
+  /// Wipe everything captured so far without stopping the session. Restarts
+  /// the native engine if it's idle (post-final skip-restart path) so the
+  /// user's next utterance after tapping delete isn't dropped.
   void resetTranscript() {
     if (!_userWantsToListen) return;
     _accumulatedText = '';
     _currentSessionText = '';
     _segmentLongestPartial = '';
+    _lastFinalAlternates = const [];
+    _hadFinalThisSession = false;
+    _firstSpeechSeen = false;
     _lastSoundActivity = DateTime.now();
     onTextUpdate?.call('');
+    if (!_speech.isListening && _activeLocaleId != null) {
+      _scheduleRestart(_activeLocaleId!);
+    }
   }
 
   /// Stop listening and discard everything captured so far. No emission.
@@ -216,6 +404,7 @@ class VoiceService {
     _accumulatedText = '';
     _currentSessionText = '';
     _segmentLongestPartial = '';
+    _lastFinalAlternates = const [];
     if (_speech.isListening) {
       try {
         await _speech.cancel();
@@ -229,6 +418,7 @@ class VoiceService {
     _cancelTimers();
     onTextUpdate = null;
     onFinalText = null;
+    onFinalAlternates = null;
     onError = null;
     onSoundLevel = null;
     onListeningChange = null;
@@ -252,8 +442,8 @@ class VoiceService {
         listenOptions: SpeechListenOptions(
           partialResults: true,
           cancelOnError: false,
-          listenMode: ListenMode.dictation,
-          autoPunctuation: true,
+          listenMode: _listenModeFor(_promptMode),
+          autoPunctuation: _shouldUseAutoPunctuation(localeId, _promptMode),
           enableHapticFeedback: false,
         ),
       );
@@ -270,6 +460,23 @@ class VoiceService {
       if (_speech.isListening) return;
       await _startNativeListen(localeId);
     });
+  }
+
+  bool _shouldUseAutoPunctuation(String localeId, VoicePromptMode mode) {
+    if (mode == VoicePromptMode.confirmation) return false;
+    final lang = localeId.toLowerCase().split(RegExp(r'[-_]')).first;
+    return _autoPunctuationLangs.contains(lang);
+  }
+
+  ListenMode _listenModeFor(VoicePromptMode mode) {
+    switch (mode) {
+      case VoicePromptMode.dictation:
+        return ListenMode.dictation;
+      case VoicePromptMode.shortAnswer:
+        return ListenMode.search;
+      case VoicePromptMode.confirmation:
+        return ListenMode.confirmation;
+    }
   }
 
   // ─── Engine callbacks ─────────────────────────────────────────────────
@@ -301,7 +508,23 @@ class VoiceService {
       if (best.trim().isNotEmpty) {
         _accumulatedText = _mergeText(_accumulatedText, best);
         _lastSoundActivity = DateTime.now();
+        _firstSpeechSeen = true;
       }
+      // Capture alternates for this final, ordered best→worst with the
+      // primary transcript first.
+      final alts = <String>[];
+      void addAlt(String s) {
+        final t = s.trim();
+        if (t.isEmpty) return;
+        if (alts.any((e) => e.toLowerCase() == t.toLowerCase())) return;
+        alts.add(t);
+      }
+      addAlt(best);
+      addAlt(words);
+      for (final a in result.alternates) {
+        addAlt(a.recognizedWords);
+      }
+      _lastFinalAlternates = alts;
       _currentSessionText = '';
       _segmentLongestPartial = '';
       _hadFinalThisSession = true;
@@ -312,6 +535,7 @@ class VoiceService {
       _currentSessionText = best;
       if (best.trim().isNotEmpty) {
         _lastSoundActivity = DateTime.now();
+        _firstSpeechSeen = true;
       }
       onTextUpdate?.call(_mergeText(_accumulatedText, _currentSessionText));
     }
@@ -321,21 +545,24 @@ class VoiceService {
     if (kDebugMode) debugPrint('[voice] status=$status');
     if (!_userWantsToListen) return;
     if (status == 'done' || status == 'notListening') {
-      // Bank any partial that hadn't been finalized by the engine.
+      // Bank any partial that hadn't been finalized by the engine. On some
+      // Android OEM engines (Samsung, Huawei, Xiaomi) for certain locales
+      // the engine *never* emits a `finalResult` — only partials, then
+      // `done`. Treat the banked partial as an implicit final.
       if (_currentSessionText.isNotEmpty) {
         _accumulatedText = _mergeText(_accumulatedText, _currentSessionText);
         _currentSessionText = '';
         _segmentLongestPartial = '';
+        _hadFinalThisSession = true;
         onTextUpdate?.call(_accumulatedText);
       }
-      // If a final result already arrived in this session and the user has
-      // been quiet for ≥ [_postFinalSilenceSkipRestart], the user is done
-      // talking — the silence watcher will stop us shortly via
-      // [realSilenceTimeout]. Skipping the restart here avoids an extra
-      // native session that produces a second mic chime pair and re-emits
-      // tail-buffer text (the source of "GJ 01 ab GJ 0 1 ab" duplicates).
+      // In dictation mode never skip the restart. Free-form descriptions
+      // routinely have multi-second thinking pauses after an interim final.
+      final canSkip = _promptMode != VoicePromptMode.dictation;
       final silentFor = DateTime.now().difference(_lastSoundActivity);
-      if (_hadFinalThisSession && silentFor >= _postFinalSilenceSkipRestart) {
+      if (canSkip &&
+          _hadFinalThisSession &&
+          silentFor >= _postFinalSilenceSkipRestart) {
         if (kDebugMode) {
           debugPrint('[voice] skipping restart: had final, silent '
               '${silentFor.inMilliseconds}ms');
@@ -367,25 +594,42 @@ class VoiceService {
     if (!_userWantsToListen) return;
     onSoundLevel?.call(level);
     // Intentionally do NOT reset the silence clock on raw amplitude. The
-    // platform recognizer already does speech-vs-noise discrimination and
-    // only emits partial/final results when it hears actual speech, so we
-    // rely on those callbacks alone (in [_onSpeechResult]) to mark activity.
-    // Using sound level here was pinning the clock open via mic hiss /
-    // ambient noise, especially on Android where levels rarely drop below
-    // the previous -2.0 threshold even in silence.
+    // platform recognizer already does speech-vs-noise discrimination.
   }
 
   // ─── Silence + safety watchers ────────────────────────────────────────
+  Duration get _activeRealSilenceTimeout {
+    switch (_promptMode) {
+      case VoicePromptMode.dictation:
+        return _dictationSilenceTimeout;
+      case VoicePromptMode.shortAnswer:
+        return realSilenceTimeout;
+      case VoicePromptMode.confirmation:
+        return _confirmationSilenceTimeout;
+    }
+  }
+
+  Duration get _activeInitialSilenceTimeout {
+    final id = _activeLocaleId;
+    if (id == null) return initialSilenceTimeout;
+    final lang = id.toLowerCase().split(RegExp(r'[-_]')).first;
+    return _initialSilenceByLang[lang] ?? initialSilenceTimeout;
+  }
+
   void _startSilenceWatcher() {
     _silenceWatcher?.cancel();
     _silenceWatcher = Timer.periodic(silenceWatcherInterval, (_) {
       if (!_userWantsToListen) return;
       final since = DateTime.now().difference(_lastSoundActivity);
+      final timeout = _firstSpeechSeen
+          ? _activeRealSilenceTimeout
+          : _activeInitialSilenceTimeout;
       if (kDebugMode && since.inSeconds >= 2) {
         debugPrint('[voice] silence ${since.inSeconds}s / '
-            '${realSilenceTimeout.inSeconds}s');
+            '${timeout.inSeconds}s '
+            '(firstSpeech=$_firstSpeechSeen)');
       }
-      if (since >= realSilenceTimeout) {
+      if (since >= timeout) {
         if (kDebugMode) debugPrint('[voice] silence timeout → stop()');
         stop();
       }
@@ -419,17 +663,17 @@ class VoiceService {
     return a.trim().length > b.trim().length;
   }
 
-  /// Collapse a string to lowercase alphanumerics only — used to compare
-  /// suffix/slice in [_mergeText] so that tokenization or punctuation
-  /// differences across a restart boundary (e.g. `"01"` vs `"0 1"`,
-  /// `"hello"` vs `"hello,"`, `"GJ01AB"` vs `"gj 01 ab"`) still count as a
-  /// match. Only used for comparison — the original text is preserved in
-  /// the merged output.
+  /// Unicode-aware collapse to lowercase letters/digits only — used to
+  /// compare suffix/slice in [_mergeText]. ASCII-only `[A-Za-z0-9]` silently
+  /// drops every diacritic, breaking overlap detection across restart
+  /// boundaries in de/it/fr/es/pl/lt/lv.
+  static final RegExp _letterOrDigit = RegExp(r'[\p{L}\p{N}]', unicode: true);
+
   String _normalizeForMatch(String s) {
     final buf = StringBuffer();
     for (final r in s.runes) {
       final c = String.fromCharCode(r);
-      if (RegExp(r'[A-Za-z0-9]').hasMatch(c)) {
+      if (_letterOrDigit.hasMatch(c)) {
         buf.write(c.toLowerCase());
       }
     }
@@ -437,9 +681,7 @@ class VoiceService {
   }
 
   /// Merges previously-accumulated text with new session text, deduping any
-  /// trailing-suffix / leading-prefix overlap. The native engine sometimes
-  /// resends words across a restart boundary; without this, phrases like
-  /// "hit by another car" would become "hit by another car by another car".
+  /// trailing-suffix / leading-prefix overlap.
   String _mergeText(String prev, String next) {
     final p = prev.trim();
     final n = next.trim();
@@ -449,11 +691,6 @@ class VoiceService {
     final prevWords = p.split(RegExp(r'\s+'));
     final nextWords = n.split(RegExp(r'\s+'));
 
-    // Search for the longest prev-suffix that matches a slice near the start
-    // of `next`. `k` is the number of leading `next` words skipped — k=0 is
-    // the strict prefix match (handles ordinary engine re-emission); k>0
-    // tolerates a short hallucinated/noise prefix the recognizer sometimes
-    // inserts on restart (e.g. "jije" before re-emitting "01 ab 998").
     const maxNoisePrefix = 3;
     final kLimit = nextWords.length <= 1
         ? 0
@@ -468,15 +705,9 @@ class VoiceService {
       final maxCheck =
           prevWords.length < remaining ? prevWords.length : remaining;
       for (int i = maxCheck; i > 0; i--) {
-        // Single-word coincidences are too noisy once we're skipping prefix
-        // words — only the strict k=0 path accepts a one-word overlap.
         if (k > 0 && i < 2) break;
         final prevSuffix = prevWords.sublist(prevWords.length - i).join(' ');
         final nextSlice = nextWords.sublist(k, k + i).join(' ');
-        // Normalized compare so "01" matches "0 1", "hello" matches "hello,"
-        // etc. Only the *comparison* is normalized — the words appended back
-        // into the merged transcript are still the original `nextWords`
-        // slice with their original spacing and punctuation.
         if (_normalizeForMatch(prevSuffix) == _normalizeForMatch(nextSlice)) {
           if (i > bestOverlap) {
             bestOverlap = i;
