@@ -363,6 +363,12 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       );
       if (res.exactMatch && res.localeId != null) {
         _localeId = res.localeId;
+        // Synthesized = the engine did not list this locale; we're passing
+        // the BCP-47 tag and hoping online recognition handles it. Surface
+        // the banner so users on engines that silently fall back to English
+        // (Samsung Voice Input, some OEM stacks) understand why the live
+        // transcript looks like garbled English.
+        if (res.synthesized) packMissing = true;
       } else {
         packMissing = true;
         // Smart fallback: device system locale (if English) → en_US → en_GB
@@ -3372,15 +3378,48 @@ class _PackMissingCopy {
 /// message. False positives would mis-rewrite normal sentences, so the list
 /// is intentionally narrow.
 class _PlatePromptDetector {
+  // Each language's list covers the noun stems the bot has been observed to
+  // use when asking for a plate. Keep this loose enough to catch wording
+  // variants (the bot doesn't always pick the same noun across turns) but
+  // narrow enough that ordinary sentences in the same language don't trip
+  // it. Matching is substring + case-insensitive, so a stem like "fahrzeug"
+  // alone would mis-fire on unrelated vehicle questions — prefer compounds.
   static const Map<String, List<String>> _keywords = {
-    'en': ['plate', 'license plate', 'registration number', 'vehicle number'],
-    'de': ['kennzeichen', 'nummernschild', 'amtliches kennzeichen'],
-    'it': ['targa'],
-    'fr': ['immatriculation', 'plaque'],
-    'es': ['matricula', 'matrícula', 'placa'],
-    'pl': ['tablica rejestracyjna', 'numer rejestracyjny', 'rejestracyjny'],
-    'lt': ['valstybinis numeris', 'registracijos numer'],
-    'lv': ['reģistrācijas numur', 'registracijas numur', 'numura zīme'],
+    'en': [
+      'plate', 'license plate', 'registration number', 'vehicle number',
+      'vehicle registration', 'reg number',
+    ],
+    'de': [
+      'kennzeichen', 'nummernschild', 'amtliches kennzeichen',
+      // Compounds the bot uses for "vehicle registration number".
+      'fahrzeugregistrierungsnummer', 'fahrzeugkennzeichen',
+      'fahrzeugnummer', 'kfz-kennzeichen', 'kfz kennzeichen',
+      'autokennzeichen', 'registrierungsnummer',
+    ],
+    'it': [
+      'targa', 'numero di targa', 'numero della targa',
+      'numero di immatricolazione', 'immatricolazione',
+    ],
+    'fr': [
+      'immatriculation', 'plaque', 'plaque d\'immatriculation',
+      'numéro d\'immatriculation', 'numero d\'immatriculation',
+    ],
+    'es': [
+      'matricula', 'matrícula', 'placa', 'número de matrícula',
+      'numero de matricula', 'número de placa',
+    ],
+    'pl': [
+      'tablica rejestracyjna', 'numer rejestracyjny', 'rejestracyjny',
+      'numer tablicy', 'rejestracja pojazdu',
+    ],
+    'lt': [
+      'valstybinis numeris', 'registracijos numer', 'numerio',
+      'transporto priemones numer',
+    ],
+    'lv': [
+      'reģistrācijas numur', 'registracijas numur', 'numura zīme',
+      'valsts numur', 'transportlīdzekļa numur',
+    ],
   };
 
   static bool matches(String botText, String languageCode) {
