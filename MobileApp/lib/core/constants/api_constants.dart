@@ -43,7 +43,6 @@ class ApiConstants {
   static const String claimStatus = '/mobile/claims/{id}/status';
   static const String updateClaimAccidentInfo =
       '/mobile/claims/{id}/accident-info';
-  static const String updateClaimNumber = '/mobile/claims/{id}/claim-number';
   static const String claimHistory = '/mobile/claims/{id}/history';
 
   // Chat / AI

@@ -60,13 +60,6 @@ abstract class ClaimsRemoteDataSource {
     String? incidentLocation,
     String? incidentDescription,
   });
-  /// Overwrites a claim's ClaimNumber with the reference number returned by
-  /// the AI chatbot in a `payload_type == "claim_reference"` stream message.
-  Future<ClaimModel> updateClaimNumber({
-    required String id,
-    required String claimNumber,
-  });
-
   Future<ClaimSummaryModel> getDashboardSummary();
   Future<Map<String, dynamic>> createClaim(Map<String, dynamic> claimData);
   Future<Map<String, dynamic>> createClaimFromChat(Map<String, dynamic> claimData);
@@ -180,19 +173,6 @@ class ClaimsRemoteDataSourceImpl implements ClaimsRemoteDataSource {
         'incidentLocation': incidentLocation,
         'incidentDescription': incidentDescription,
       },
-    );
-    return ClaimModel.fromJson(
-        response.data['data'] as Map<String, dynamic>);
-  }
-
-  @override
-  Future<ClaimModel> updateClaimNumber({
-    required String id,
-    required String claimNumber,
-  }) async {
-    final response = await _client.put(
-      ApiConstants.updateClaimNumber.replaceFirst('{id}', id),
-      data: {'claimNumber': claimNumber},
     );
     return ClaimModel.fromJson(
         response.data['data'] as Map<String, dynamic>);
