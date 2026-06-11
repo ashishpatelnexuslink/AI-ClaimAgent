@@ -35,6 +35,7 @@ class ApiClient {
   static Future<http.Response> post(
     String path, {
     required Map<String, dynamic> body,
+    Duration? timeout,
   }) async {
     return _executeWithRetry(() async {
       final token = await AuthService.getValidToken();
@@ -44,7 +45,7 @@ class ApiClient {
             headers: await _buildHeaders(token),
             body: jsonEncode(body),
           )
-          .timeout(_timeout);
+          .timeout(timeout ?? _timeout);
     });
   }
 

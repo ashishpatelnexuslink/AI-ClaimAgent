@@ -18,10 +18,13 @@ import 'package:claim_ai/core/l10n/app_locales.dart';
 import 'package:claim_ai/core/l10n/generated/app_localizations.dart';
 import 'package:claim_ai/core/l10n/locale_cubit.dart';
 import 'package:claim_ai/core/navigation/app_routes.dart';
+import 'package:claim_ai/core/services/domain_corrector.dart';
+import 'package:claim_ai/core/services/plate_normalizer.dart';
 import 'package:claim_ai/core/services/voice_service.dart';
 import 'package:claim_ai/core/storage/chat_transcript_writer.dart';
 import 'package:claim_ai/core/utils/request_context.dart';
 import 'package:claim_ai/features/assistant/presentation/widgets/sample_images_dialog.dart';
+import 'package:claim_ai/features/auth/presentation/cubit/auth_cubit.dart';
 import 'package:claim_ai/features/claims/presentation/cubit/claims_cubit.dart';
 import 'package:claim_ai/features/claims/data/datasources/claims_remote_datasource.dart';
 import 'package:claim_ai/injection_container.dart' as di;
@@ -141,7 +144,19 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   // ─── Selected app language (drives both TTS and STT) ────────────────────
   /// BCP-47 tag for flutter_tts, e.g. `it-IT`, `hi-IN`, `en-US`.
   String _ttsLanguageTag = 'en-US';
+  /// Language code (`'lv'`, `'de'`, …) used for plate normalisation and the
+  /// pack-missing banner copy. Stays in sync with the LocaleCubit.
+  String _currentLanguageCode = 'en';
   StreamSubscription<Locale>? _localeSub;
+
+  /// True when the device doesn't ship an STT pack for the selected app
+  /// language and we had to fall back to a different language (typically
+  /// English). The mic still works in degraded mode; a banner prompts the
+  /// user to install the missing pack.
+  bool _sttPackMissing = false;
+  /// Same idea, for the TTS voice. When true, the bot speaks in English
+  /// instead of staying silent.
+  bool _ttsPackMissing = false;
 
   // ─── Speech-synced typewriter ──────────────────────────────────────────
   // Bot bubbles reveal their text progressively, in sync with TTS playback,
@@ -226,6 +241,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       // context.read<LocaleCubit>() is safe to call. TTS/STT need this to
       // speak and recognize in the user's chosen language rather than English.
       final cubit = context.read<LocaleCubit>();
+      _currentLanguageCode = cubit.state.languageCode;
       _ttsLanguageTag = _bcp47ForLocale(cubit.state);
       _initVoice(cubit.state);
       _initTts();
@@ -256,11 +272,20 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   /// produces no audio. We poll until the binder reports success.
   Future<void> _applyTtsLanguage(String tag) async {
     String target = tag;
+    bool missing = false;
     try {
       final available = await _tts.isLanguageAvailable(tag);
-      if (available != true) target = 'en-US';
+      if (available != true) {
+        target = 'en-US';
+        missing = true;
+      }
     } catch (_) {
       // Some engines don't implement isLanguageAvailable — just try the tag.
+    }
+    if (mounted && _ttsPackMissing != missing) {
+      setState(() => _ttsPackMissing = missing);
+    } else {
+      _ttsPackMissing = missing;
     }
     if (Platform.isAndroid) {
       for (int attempt = 0; attempt < 30; attempt++) {
@@ -273,18 +298,45 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     }
   }
 
+  /// Asymmetric-pack guard. If STT has fallen back to English but TTS still
+  /// speaks the user's chosen language, the user hears Italian (etc.) and
+  /// then dictates Italian into an English recognizer — accuracy collapses.
+  /// Force TTS to English in that case so the user mirrors the language the
+  /// recognizer can actually understand. The pack-missing banner already
+  /// tells them why.
+  Future<void> _alignTtsToSttIfDegraded() async {
+    if (_sttPackMissing && !_ttsLanguageTag.toLowerCase().startsWith('en')) {
+      _ttsLanguageTag = 'en-US';
+      await _applyTtsLanguage(_ttsLanguageTag);
+    }
+  }
+
   Future<void> _onLocaleChanged(Locale locale) async {
     if (!mounted) return;
+    _currentLanguageCode = locale.languageCode;
     _ttsLanguageTag = _bcp47ForLocale(locale);
     await _applyTtsLanguage(_ttsLanguageTag);
-    final resolved = await _voice.resolveLocaleFor(
+    final res = await _voice.resolveLocale(
       locale.languageCode,
       locale.countryCode,
     );
+    final newLocaleId = res.localeId ?? _localeId;
+    final wasListening = _voice.isListening;
     if (mounted) {
       setState(() {
-        _localeId = resolved ?? _localeId;
+        _localeId = newLocaleId;
+        _sttPackMissing = !res.exactMatch;
       });
+    }
+    await _alignTtsToSttIfDegraded();
+    // If the user switched language while the mic was open, the in-flight
+    // native session is still bound to the *previous* locale and will keep
+    // recognising in the wrong language until its next natural restart. Drop
+    // anything captured so far (it would be in the old language) and restart
+    // with the new locale so the next utterance is recognised correctly.
+    if (wasListening && newLocaleId != null) {
+      await _voice.cancel();
+      await _voice.start(localeId: newLocaleId);
     }
   }
 
@@ -292,21 +344,40 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     _voice
       ..onTextUpdate = _onVoiceTextUpdate
       ..onFinalText = _onVoiceFinalText
+      ..onFinalAlternates = _onVoiceFinalAlternates
       ..onError = _onVoiceError
       ..onListeningChange = _onVoiceListeningChange;
 
     final ok = await _voice.initialize();
     _voiceAvailable = ok;
+    bool packMissing = false;
     if (ok) {
       // Prefer the user's selected language; fall back to English if the
       // device doesn't have an STT pack for it, so the mic still works.
-      _localeId = await _voice.resolveLocaleFor(
-            locale.languageCode,
-            locale.countryCode,
-          ) ??
-          await _voice.resolveLocaleFor('en', 'IN');
+      // Dump locales once so we can confirm pack availability from the logs
+      // when debugging "Latvian doesn't recognise anything" reports.
+      await _voice.dumpLocales();
+      final res = await _voice.resolveLocale(
+        locale.languageCode,
+        locale.countryCode,
+      );
+      if (res.exactMatch && res.localeId != null) {
+        _localeId = res.localeId;
+      } else {
+        packMissing = true;
+        // Smart fallback: device system locale (if English) → en_US → en_GB
+        // → en_AU/en_CA/en_IE → en_IN → any en_*. Replaces the previous
+        // hard-coded en_IN, which gave Indian-English acoustic models to
+        // European users and tanked perceived accuracy.
+        _localeId = await _voice.resolveEnglishFallback();
+      }
     }
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {
+        _sttPackMissing = packMissing;
+      });
+    }
+    await _alignTtsToSttIfDegraded();
   }
 
   // ─── VoiceService callbacks ──────────────────────────────────────────────
@@ -765,6 +836,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
     try {
       final locale = Localizations.localeOf(context);
+      final contactPhone = context.read<AuthCubit>().state.user?.phone;
 
       // Single-shot context attach: when the previous bot turn streamed
       // `save_summary`, this outgoing message carries device_id / ip_address /
@@ -785,6 +857,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         deviceId: ctx?.deviceId,
         ipAddress: ctx?.ipAddress,
         appVersion: ctx?.appVersion,
+        contactPhone: contactPhone,
       )) {
         if (!mounted) return;
         setState(() {
@@ -864,10 +937,120 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     _streamBotReply(value);
   }
 
+  /// Alternates from the most recent STT finalResult, captured *before* the
+  /// finalText callback fires (see [VoiceService.stop] ordering). Consumed
+  /// once in [_handleVoiceInput] and cleared, so a subsequent typed message
+  /// doesn't accidentally inherit them.
+  List<String> _pendingAlternates = const [];
+
+  void _onVoiceFinalAlternates(List<String> alternates) {
+    _pendingAlternates = alternates;
+  }
+
   void _handleVoiceInput(String transcript) {
     if (_botTyping) return;
-    _addUserMessage(transcript);
-    _streamBotReply(transcript);
+    // Each candidate goes through the same correction pipeline; we score them
+    // and send the best. For typed input [_pendingAlternates] is empty, so
+    // the pipeline reduces to the previous single-candidate path.
+    final alts = _pendingAlternates.isEmpty ? [transcript] : _pendingAlternates;
+    _pendingAlternates = const [];
+    final userName = context.read<AuthCubit>().state.user?.fullName ?? '';
+    final extras = <String>[
+      if (userName.isNotEmpty) ...userName.split(RegExp(r'\s+')),
+    ];
+    final best = _pickBestCandidate(alts, extras);
+    _addUserMessage(best);
+    _streamBotReply(best);
+  }
+
+  /// Run every STT alternate through plate normalization + domain correction
+  /// and pick the highest-scoring result. Scoring:
+  ///   * Plate prompts: prefer the candidate whose [PlateNormalizer] match
+  ///     hits the regex / confidence gate. Top engine pick wins ties.
+  ///   * Otherwise: prefer the candidate where [DomainCorrector] rewrote the
+  ///     most tokens — that means the alternate aligned best with our
+  ///     domain vocabulary, which is the same heuristic a human reviewer
+  ///     would use ("this one mentions 'polizza', the other says 'polisia'").
+  ///   * Ties always fall back to the first (engine-confidence-best) entry.
+  String _pickBestCandidate(List<String> candidates, List<String> extras) {
+    String? best;
+    int bestRewrites = -1;
+    String? bestPlate;
+    final lastBotIdx = _lastBotIndex();
+    final isPlatePrompt = lastBotIdx >= 0 &&
+        _PlatePromptDetector.matches(
+          _messages[lastBotIdx].text,
+          _currentLanguageCode,
+        );
+
+    for (final raw in candidates) {
+      // Plate normalization runs first because it owns its own prompt-context
+      // gate and returns the transcript unchanged when the previous bot turn
+      // wasn't a plate question — so it's a no-op for non-plate turns.
+      final plateCorrected = _maybeNormalizePlate(raw);
+      final corrected = DomainCorrector.correct(
+        plateCorrected,
+        _currentLanguageCode,
+        extraPhrases: extras,
+      );
+      if (isPlatePrompt) {
+        // _maybeNormalizePlate returns the bare plate when its confidence /
+        // regex gate passed — short uppercase alphanumeric. First such hit
+        // wins (candidates are ordered by engine confidence).
+        if (RegExp(r'^[A-Z0-9]{4,12}$').hasMatch(plateCorrected) &&
+            bestPlate == null) {
+          bestPlate = corrected;
+        }
+      }
+      final rewrites = _countRewrites(raw, corrected);
+      if (rewrites > bestRewrites) {
+        bestRewrites = rewrites;
+        best ??= corrected;
+        if (rewrites > 0) best = corrected;
+      }
+    }
+    return bestPlate ?? best ?? candidates.first;
+  }
+
+  /// Cheap "how different is [corrected] from [raw]" metric, used to detect
+  /// which alternate the domain corrector engaged with most. Token-level so
+  /// punctuation / casing differences don't dominate.
+  int _countRewrites(String raw, String corrected) {
+    final a = raw.toLowerCase().split(RegExp(r'\s+'))..removeWhere((s) => s.isEmpty);
+    final b = corrected.toLowerCase().split(RegExp(r'\s+'))..removeWhere((s) => s.isEmpty);
+    int diff = (a.length - b.length).abs();
+    final n = a.length < b.length ? a.length : b.length;
+    for (int i = 0; i < n; i++) {
+      if (a[i] != b[i]) diff++;
+    }
+    return diff;
+  }
+
+  /// When the previous bot turn was asking for a vehicle registration number,
+  /// run the raw STT transcript through [PlateNormalizer]. The recogniser
+  /// returns letter/digit names in the active language ("gi i zero uno a bi
+  /// nove nove") that the AI service can't parse — we reconstruct the
+  /// canonical plate before sending. Only triggered for plate prompts so we
+  /// don't garble normal sentences.
+  String _maybeNormalizePlate(String transcript) {
+    final lastBotIdx = _lastBotIndex();
+    if (lastBotIdx < 0) return transcript;
+    final last = _messages[lastBotIdx];
+    if (!_PlatePromptDetector.matches(last.text, _currentLanguageCode)) {
+      return transcript;
+    }
+    final candidate = PlateNormalizer.normalize(
+      transcript,
+      _currentLanguageCode,
+    );
+    // Require at least 4 alphanumeric chars and ≥70% of input tokens matched
+    // before overwriting — otherwise the user probably wasn't dictating a
+    // plate (e.g. "I don't remember") and the raw text should pass through.
+    if (candidate.confidence >= 0.7 &&
+        RegExp(r'^[A-Z0-9]{4,12}$').hasMatch(candidate.plate)) {
+      return candidate.plate;
+    }
+    return transcript;
   }
 
   /// Time the TTS audio session needs to fully release after `_tts.stop()`
@@ -912,7 +1095,38 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       }
     }
 
-    await _voice.start(localeId: _localeId ?? 'en_IN');
+    await _voice.start(
+      localeId: _localeId ?? 'en_IN',
+      mode: _promptModeForLastBot(),
+    );
+  }
+
+  /// Picks the STT prompt mode from the most recent bot message: chips ⇒
+  /// confirmation; plate / VIN / numeric-id prompts ⇒ shortAnswer; everything
+  /// else ⇒ free dictation. Wrong here is recoverable — the engine still
+  /// recognises the same words, just with a slightly different language
+  /// model bias. Right here meaningfully improves accuracy on short replies
+  /// (yes/no, plates) where the dictation model over-segments.
+  VoicePromptMode _promptModeForLastBot() {
+    final idx = _lastBotIndex();
+    if (idx < 0) return VoicePromptMode.dictation;
+    final last = _messages[idx];
+    if (last.chips != null && last.chips!.isNotEmpty) {
+      return VoicePromptMode.confirmation;
+    }
+    if (_PlatePromptDetector.matches(last.text, _currentLanguageCode)) {
+      return VoicePromptMode.shortAnswer;
+    }
+    // messageType signals from the bot: claim_reference, plate, vin, date,
+    // odometer all expect a short alphanumeric / numeric token.
+    const shortAnswerTypes = {
+      'plate', 'vin', 'claim_number', 'reference', 'odometer', 'mileage',
+      'date', 'time', 'phone', 'policy_number',
+    };
+    if (shortAnswerTypes.contains(last.messageType)) {
+      return VoicePromptMode.shortAnswer;
+    }
+    return VoicePromptMode.dictation;
   }
 
   void _resetRecordingUi() {
@@ -2309,6 +2523,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                     },
                     onEndSession: _showEndSessionDialog,
                   ),
+                  if (_sttPackMissing || _ttsPackMissing)
+                    _buildLanguagePackBanner(),
                   StateAvatar(
                     isRecording: _isRecording,
                     botSpeaking: _botSpeaking,
@@ -3017,5 +3233,169 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     if (text.isEmpty || _botTyping) return;
     _textController.clear();
     _handleVoiceInput(text);
+  }
+
+  /// Yellow info banner shown above the chat when the device is missing the
+  /// STT or TTS pack for the active app language. The mic still works — STT
+  /// has fallen back to English — but the user needs to know so they can
+  /// either install the pack or expect English recognition.
+  Widget _buildLanguagePackBanner() {
+    final l = AppLocalizations.of(context);
+    final langName =
+        AppLocales.displayNames[_currentLanguageCode] ?? _currentLanguageCode;
+    final copy = _PackMissingCopy.forLanguage(_currentLanguageCode);
+    final message = _sttPackMissing && _ttsPackMissing
+        ? copy.both(langName)
+        : _sttPackMissing
+            ? copy.stt(langName)
+            : copy.tts(langName);
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF6DC),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE5C46B)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const Icon(Icons.warning_amber_rounded,
+              color: Color(0xFF8A6D1A), size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                  color: Color(0xFF5A4708), fontSize: 12, height: 1.3),
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              minimumSize: const Size(0, 28),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            onPressed: () => openAppSettings(),
+            child: Text(l.voice_settingsAction,
+                style: const TextStyle(fontSize: 12)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Localised copy for the pack-missing banner. Inlined here (rather than added
+/// to the .arb files) because the banner is diagnostic-only — touching every
+/// generated localisation file for three strings would be heavy churn for the
+/// purpose. Falls back to English for languages we don't have copy for.
+class _PackMissingCopy {
+  final String Function(String lang) stt;
+  final String Function(String lang) tts;
+  final String Function(String lang) both;
+  const _PackMissingCopy(this.stt, this.tts, this.both);
+
+  static _PackMissingCopy forLanguage(String code) {
+    final lang = code.toLowerCase().split(RegExp(r'[-_]')).first;
+    return _map[lang] ?? _map['en']!;
+  }
+
+  static final Map<String, _PackMissingCopy> _map = {
+    'en': _PackMissingCopy(
+      (l) => 'Speech recognition pack for $l is not installed — '
+          'voice input will fall back to English.',
+      (l) => 'Voice for $l is not installed — the assistant will reply '
+          'in English audio.',
+      (l) => 'Voice packs for $l are not installed — voice will use English.',
+    ),
+    'de': _PackMissingCopy(
+      (l) => 'Spracherkennungspaket für $l ist nicht installiert – '
+          'Spracheingabe wechselt auf Englisch.',
+      (l) => 'Sprachausgabe für $l ist nicht installiert – Antworten werden '
+          'auf Englisch gesprochen.',
+      (l) => 'Sprachpakete für $l fehlen – Englisch wird verwendet.',
+    ),
+    'it': _PackMissingCopy(
+      (l) => 'Il pacchetto di riconoscimento vocale per $l non è installato — '
+          'l\'input vocale userà l\'inglese.',
+      (l) => 'La voce per $l non è installata — l\'assistente parlerà in '
+          'inglese.',
+      (l) => 'I pacchetti vocali per $l non sono installati — verrà usato '
+          'l\'inglese.',
+    ),
+    'fr': _PackMissingCopy(
+      (l) => 'Le pack de reconnaissance vocale pour $l n\'est pas installé — '
+          'la saisie vocale utilisera l\'anglais.',
+      (l) => 'La voix $l n\'est pas installée — l\'assistant répondra en '
+          'anglais.',
+      (l) => 'Les packs vocaux pour $l ne sont pas installés — l\'anglais '
+          'sera utilisé.',
+    ),
+    'es': _PackMissingCopy(
+      (l) => 'El paquete de reconocimiento de voz para $l no está instalado — '
+          'la entrada por voz usará inglés.',
+      (l) => 'La voz para $l no está instalada — el asistente responderá en '
+          'inglés.',
+      (l) => 'Los paquetes de voz para $l no están instalados — se usará '
+          'inglés.',
+    ),
+    'pl': _PackMissingCopy(
+      (l) => 'Pakiet rozpoznawania mowy dla $l nie jest zainstalowany — '
+          'wejście głosowe użyje języka angielskiego.',
+      (l) => 'Głos $l nie jest zainstalowany — asystent odpowie po '
+          'angielsku.',
+      (l) => 'Brak pakietów głosowych dla $l — zostanie użyty angielski.',
+    ),
+    'lt': _PackMissingCopy(
+      (l) => '$l kalbos atpažinimo paketas neįdiegtas — balso įvestis bus '
+          'anglų kalba.',
+      (l) => '$l balsas neįdiegtas — asistentas atsakys angliškai.',
+      (l) => '$l balso paketai neįdiegti — bus naudojama anglų kalba.',
+    ),
+    'lv': _PackMissingCopy(
+      (l) => '$l runas atpazīšanas pakotne nav instalēta — balss ievade '
+          'pārslēgsies uz angļu valodu.',
+      (l) => '$l balss nav instalēta — asistents atbildēs angliski.',
+      (l) => '$l balss pakotnes nav instalētas — tiks lietota angļu valoda.',
+    ),
+  };
+}
+
+/// Keyword-based detector for "is the bot asking for a vehicle registration
+/// number right now?". The bot text is generated by an external AI service in
+/// the user's selected language; there is no structured `triggers` value for
+/// the plate prompt, so we look for the localised noun stem ("plate" / "targa"
+/// / "Kennzeichen" / "reģistrācijas numuru" / …) in the most recent bot
+/// message. False positives would mis-rewrite normal sentences, so the list
+/// is intentionally narrow.
+class _PlatePromptDetector {
+  static const Map<String, List<String>> _keywords = {
+    'en': ['plate', 'license plate', 'registration number', 'vehicle number'],
+    'de': ['kennzeichen', 'nummernschild', 'amtliches kennzeichen'],
+    'it': ['targa'],
+    'fr': ['immatriculation', 'plaque'],
+    'es': ['matricula', 'matrícula', 'placa'],
+    'pl': ['tablica rejestracyjna', 'numer rejestracyjny', 'rejestracyjny'],
+    'lt': ['valstybinis numeris', 'registracijos numer'],
+    'lv': ['reģistrācijas numur', 'registracijas numur', 'numura zīme'],
+  };
+
+  static bool matches(String botText, String languageCode) {
+    if (botText.isEmpty) return false;
+    final hay = botText.toLowerCase();
+    final lang = languageCode.toLowerCase().split(RegExp(r'[-_]')).first;
+    final list = _keywords[lang] ?? _keywords['en']!;
+    for (final kw in list) {
+      if (hay.contains(kw.toLowerCase())) return true;
+    }
+    // Always also check English keywords — the bot occasionally falls back
+    // to English snippets even when the active language is set.
+    for (final kw in _keywords['en']!) {
+      if (hay.contains(kw)) return true;
+    }
+    return false;
   }
 }

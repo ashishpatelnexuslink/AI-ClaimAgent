@@ -50,6 +50,11 @@
   "home_claimSummary": "Résumé des sinistres",
   "home_totalClaims": "Total des sinistres",
   "home_pendingClaims": "Sinistres en attente",
+
+  "notifications_title": "Notifications",
+  "notifications_empty": "Vous êtes à jour",
+  "notifications_markAsRead": "Marquer comme lu",
+
   "nav_home": "Accueil",
   "nav_claims": "Sinistres",
   "nav_profile": "Profil",

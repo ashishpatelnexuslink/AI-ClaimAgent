@@ -202,6 +202,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
     bool autoFetchLocation = false;
     try {
       final locale = Localizations.localeOf(context);
+      final contactPhone = context.read<AuthCubit>().state.user?.phone;
 
       // Single-shot context attach: when the previous bot turn streamed
       // `save_summary`, this outgoing message carries device_id / ip_address /
@@ -221,6 +222,7 @@ class _ClaimChatScreenState extends State<ClaimChatScreen> {
         deviceId: ctx?.deviceId,
         ipAddress: ctx?.ipAddress,
         appVersion: ctx?.appVersion,
+        contactPhone: contactPhone,
       )) {
         if (!mounted) return;
         _pendingBotMessages.add(

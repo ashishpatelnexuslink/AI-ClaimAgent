@@ -50,6 +50,11 @@
   "home_claimSummary": "Riepilogo sinistri",
   "home_totalClaims": "Sinistri totali",
   "home_pendingClaims": "Sinistri in sospeso",
+
+  "notifications_title": "Notifiche",
+  "notifications_empty": "Sei in pari con tutto",
+  "notifications_markAsRead": "Segna come letto",
+
   "nav_home": "Home",
   "nav_claims": "Sinistri",
   "nav_profile": "Profilo",

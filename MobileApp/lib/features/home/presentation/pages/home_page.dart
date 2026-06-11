@@ -358,9 +358,9 @@ class _NotificationsSheet extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
               child: Row(
                 children: [
-                  const Text(
-                    'Notifications',
-                    style: TextStyle(
+                  Text(
+                    AppLocalizations.of(context).notifications_title,
+                    style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                       color: Color(0xFF1A1D3B),
@@ -379,21 +379,21 @@ class _NotificationsSheet extends StatelessWidget {
               child: BlocBuilder<NotificationsCubit, NotificationsState>(
                 builder: (context, state) {
                   if (state.pendingActions.isEmpty) {
-                    return const Center(
+                    return Center(
                       child: Padding(
-                        padding: EdgeInsets.all(32),
+                        padding: const EdgeInsets.all(32),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(
+                            const Icon(
                               Icons.notifications_off_outlined,
                               size: 48,
                               color: Colors.grey,
                             ),
-                            SizedBox(height: 12),
+                            const SizedBox(height: 12),
                             Text(
-                              "You're all caught up",
-                              style: TextStyle(
+                              AppLocalizations.of(context).notifications_empty,
+                              style: const TextStyle(
                                 fontSize: 14,
                                 color: Colors.grey,
                               ),
@@ -439,7 +439,9 @@ class _NotificationsSheet extends StatelessWidget {
                             Icons.check_circle_outline,
                             color: Colors.grey,
                           ),
-                          tooltip: 'Mark as read',
+                          tooltip: AppLocalizations.of(
+                            context,
+                          ).notifications_markAsRead,
                           onPressed: () => context
                               .read<NotificationsCubit>()
                               .markAsRead(action.id),

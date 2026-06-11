@@ -50,6 +50,11 @@
   "home_claimSummary": "Podsumowanie roszczeń",
   "home_totalClaims": "Wszystkie roszczenia",
   "home_pendingClaims": "Oczekujące roszczenia",
+
+  "notifications_title": "Powiadomienia",
+  "notifications_empty": "Wszystko na bieżąco",
+  "notifications_markAsRead": "Oznacz jako przeczytane",
+
   "nav_home": "Start",
   "nav_claims": "Roszczenia",
   "nav_profile": "Profil",

@@ -319,28 +319,35 @@ class _AvatarAssistantScreenState extends State<AvatarAssistantScreen>
   // ─── Mode Cards ──────────────────────────────────────────────────────────
   Widget _buildModeCards() {
     final l = AppLocalizations.of(context);
-    return Row(
-      children: [
-        Expanded(
-          child: _ModeCard(
-            icon: Icons.mic_rounded,
-            title: l.assistant_voiceModeTitle,
-            subtitle: l.assistant_voiceModeSubtitle,
-            isSelected: _selectedMode == 'voice',
-            onTap: _onVoiceMode,
+    // IntrinsicHeight + CrossAxisAlignment.stretch makes both cards take the
+    // height of the taller one. Without it, languages where one localized
+    // title wraps to two lines (Italian "Modalità vocale" vs single-line
+    // "Modalità chat") render visibly mismatched cards.
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: _ModeCard(
+              icon: Icons.mic_rounded,
+              title: l.assistant_voiceModeTitle,
+              subtitle: l.assistant_voiceModeSubtitle,
+              isSelected: _selectedMode == 'voice',
+              onTap: _onVoiceMode,
+            ),
           ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _ModeCard(
-            icon: Icons.chat_bubble_outline_rounded,
-            title: l.assistant_chatModeTitle,
-            subtitle: l.assistant_chatModeSubtitle,
-            isSelected: _selectedMode == 'chat',
-            onTap: _onChatMode,
+          const SizedBox(width: 12),
+          Expanded(
+            child: _ModeCard(
+              icon: Icons.chat_bubble_outline_rounded,
+              title: l.assistant_chatModeTitle,
+              subtitle: l.assistant_chatModeSubtitle,
+              isSelected: _selectedMode == 'chat',
+              onTap: _onChatMode,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -446,7 +453,11 @@ class _ModeCard extends StatelessWidget {
             ),
           ],
         ),
+        // Center vertically so the icon row stays aligned across cards even
+        // when one card's text block is shorter than the other after
+        // IntrinsicHeight stretches both to the same total height.
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.start,
           children: [
             Container(
               width: 48,
@@ -458,15 +469,24 @@ class _ModeCard extends StatelessWidget {
               child: Icon(icon, color: _kBlue, size: 32),
             ),
             const SizedBox(height: 12),
+            // Reserve up to two lines for the title — short titles like
+            // English "Voice Mode" stay one line, long titles like Italian
+            // "Modalità vocale" wrap cleanly without pushing the subtitle
+            // down. Ellipsis on overflow protects very long localizations.
             Text(
               title,
               style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: _kDark),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 4),
             Text(
               subtitle,
               style: const TextStyle(fontSize: 12, color: Colors.grey),
               textAlign: TextAlign.center,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),

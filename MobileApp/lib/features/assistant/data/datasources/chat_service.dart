@@ -25,6 +25,7 @@ class ChatService {
     String? deviceId,
     String? ipAddress,
     String? appVersion,
+    String? contactPhone,
   }) async* {
     final utcOffset = AppDateUtils.currentTimezoneOffsetMinutes();
     await for (final raw in ApiClient.getStream(
@@ -37,6 +38,7 @@ class ChatService {
         'device_id': ?deviceId,
         'ip_address': ?ipAddress,
         'app_version': ?appVersion,
+        'contact_phone': ?contactPhone,
       },
     )) {
       if (kDebugMode) {
@@ -73,6 +75,7 @@ class ChatService {
         'images': images,
         'language': ?language,
       },
+      timeout: const Duration(seconds: 120),
     );
     if (kDebugMode) {
       debugPrint(

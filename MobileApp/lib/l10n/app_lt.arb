@@ -50,6 +50,11 @@
   "home_claimSummary": "Žalų suvestinė",
   "home_totalClaims": "Iš viso žalų",
   "home_pendingClaims": "Laukiančios žalos",
+
+  "notifications_title": "Pranešimai",
+  "notifications_empty": "Viskas perskaityta",
+  "notifications_markAsRead": "Pažymėti kaip skaitytą",
+
   "nav_home": "Pradžia",
   "nav_claims": "Žalos",
   "nav_profile": "Profilis",

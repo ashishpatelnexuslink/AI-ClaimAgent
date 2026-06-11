@@ -713,19 +713,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 icon: Icons.language_outlined,
                 title: l.profile_language,
                 subtitle: l.profile_languageSubtitle,
-                trailing: Opacity(
-                  opacity: 0.5,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        display,
-                        style: const TextStyle(fontSize: 13, color: Colors.grey),
-                      ),
-                      const Icon(Icons.chevron_right,
-                          color: Colors.grey, size: 20),
-                    ],
-                  ),
+                onTap: _showLanguageDialog,
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      display,
+                      style: const TextStyle(fontSize: 13, color: Colors.grey),
+                    ),
+                    const Icon(Icons.chevron_right,
+                        color: Colors.grey, size: 20),
+                  ],
                 ),
               );
             },
@@ -739,14 +737,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
             subtitle: _biometricAvailable
                 ? l.profile_biometricFaceFingerprint
                 : l.profile_biometricNotAvailable,
-            trailing: Opacity(
-              opacity: 0.5,
-              child: Switch(
-                value: _biometricEnabled,
-                onChanged: null,
-                activeThumbColor: _kBlue,
-                activeTrackColor: _kBlue.withValues(alpha: 0.3),
-              ),
+            trailing: Switch(
+              value: _biometricEnabled,
+              onChanged: _biometricAvailable ? _onBiometricToggle : null,
+              activeThumbColor: _kBlue,
+              activeTrackColor: _kBlue.withValues(alpha: 0.3),
             ),
           ),
         ],
@@ -759,8 +754,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required String title,
     required String subtitle,
     required Widget trailing,
+    VoidCallback? onTap,
   }) {
-    return Container(
+    final content = Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: _kFieldBg,
@@ -799,6 +795,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           trailing,
         ],
+      ),
+    );
+    if (onTap == null) return content;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: content,
       ),
     );
   }

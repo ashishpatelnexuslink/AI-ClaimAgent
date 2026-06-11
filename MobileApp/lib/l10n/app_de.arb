@@ -50,6 +50,11 @@
   "home_claimSummary": "Schadenübersicht",
   "home_totalClaims": "Schäden insgesamt",
   "home_pendingClaims": "Offene Schäden",
+
+  "notifications_title": "Benachrichtigungen",
+  "notifications_empty": "Sie sind auf dem neuesten Stand",
+  "notifications_markAsRead": "Als gelesen markieren",
+
   "nav_home": "Start",
   "nav_claims": "Schäden",
   "nav_profile": "Profil",
