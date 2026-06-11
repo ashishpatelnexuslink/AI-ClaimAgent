@@ -5,7 +5,7 @@ namespace ClaimAI.Application.Interfaces;
 
 public interface INotificationService
 {
-    Task<Result<List<PendingActionDto>>> GetPendingActionsAsync(string userId);
+    Task<Result<List<PendingActionDto>>> GetPendingActionsAsync(string userId, string? locale = null);
     Task<Result> MarkAsReadAsync(Guid notificationId, string userId);
 
     Task<Result> RegisterDeviceAsync(string userId, RegisterDeviceDto dto);
@@ -17,5 +17,7 @@ public interface INotificationService
         string message,
         string actionType,
         Guid? claimId = null,
-        string? actionUrl = null);
+        string? actionUrl = null,
+        string? templateKey = null,
+        IDictionary<string, string>? templateParams = null);
 }

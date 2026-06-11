@@ -221,30 +221,39 @@ public class ClaimsService : IClaimsService
         claim.Status = dto.Status;
         await _context.SaveChangesAsync();
 
-        var (title, message) = BuildStatusNotification(claim, dto);
+        var (title, message, templateKey) = BuildStatusNotification(claim, dto);
+        var noteSuffix = string.IsNullOrWhiteSpace(dto.Note) ? string.Empty : " " + dto.Note;
         await _notificationService.CreateAndPushAsync(
             userId: claim.UserId,
             title: title,
             message: message,
             actionType: "claim_status_changed",
-            claimId: claim.Id);
+            claimId: claim.Id,
+            templateKey: templateKey,
+            templateParams: templateKey is null
+                ? null
+                : new Dictionary<string, string>
+                {
+                    ["claimNumber"] = claim.ClaimNumber,
+                    ["noteSuffix"] = noteSuffix,
+                });
 
         return Result<ClaimResponseDto>.Success(MapToDto(claim));
     }
 
-    private static (string Title, string Message) BuildStatusNotification(
+    private static (string Title, string Message, string? TemplateKey) BuildStatusNotification(
         Claim claim, UpdateClaimStatusDto dto)
     {
-        var statusText = dto.Status switch
+        var (statusText, templateKey) = dto.Status switch
         {
-            ClaimStatus.InReview => "is now under review",
-            ClaimStatus.Approved => "has been approved",
-            ClaimStatus.Rejected => "has been rejected",
-            ClaimStatus.Closed => "has been closed",
-            ClaimStatus.Submitted => "has been submitted",
-            ClaimStatus.Pending => "is pending",
-            ClaimStatus.Draft => "was reverted to draft",
-            _ => $"status changed to {dto.Status}",
+            ClaimStatus.InReview => ("is now under review", "claim.status.inReview"),
+            ClaimStatus.Approved => ("has been approved", "claim.status.approved"),
+            ClaimStatus.Rejected => ("has been rejected", "claim.status.rejected"),
+            ClaimStatus.Closed => ("has been closed", (string?)null),
+            ClaimStatus.Submitted => ("has been submitted", (string?)null),
+            ClaimStatus.Pending => ("is pending", (string?)null),
+            ClaimStatus.Draft => ("was reverted to draft", (string?)null),
+            _ => ($"status changed to {dto.Status}", (string?)null),
         };
 
         var title = $"Claim {claim.ClaimNumber} updated";
@@ -252,7 +261,7 @@ public class ClaimsService : IClaimsService
             ? $"Your claim {statusText}."
             : $"Your claim {statusText}. {dto.Note}";
 
-        return (title, message);
+        return (title, message, templateKey);
     }
 
     private async Task NotifyMissingUploadsAsync(Claim claim, string userId)
@@ -275,17 +284,21 @@ public class ClaimsService : IClaimsService
         if (!missingPhotos && !missingDocs) return;
 
         string message;
+        string templateKey;
         if (missingPhotos && missingDocs)
         {
             message = $"Please upload photos and supporting documents to complete your claim {claim.ClaimNumber}.";
+            templateKey = "claim.action.uploadPhotosAndDocs";
         }
         else if (missingPhotos)
         {
             message = $"Please upload photos of the damage to complete your claim {claim.ClaimNumber}.";
+            templateKey = "claim.action.uploadPhotos";
         }
         else
         {
             message = $"Please upload supporting documents to complete your claim {claim.ClaimNumber}.";
+            templateKey = "claim.action.uploadDocs";
         }
 
         await _notificationService.CreateAndPushAsync(
@@ -294,7 +307,12 @@ public class ClaimsService : IClaimsService
             message: message,
             actionType: "upload_documents",
             claimId: claim.Id,
-            actionUrl: $"/claims/{claim.Id}/documents");
+            actionUrl: $"/claims/{claim.Id}/documents",
+            templateKey: templateKey,
+            templateParams: new Dictionary<string, string>
+            {
+                ["claimNumber"] = claim.ClaimNumber,
+            });
     }
 
     private async Task<string> GenerateClaimNumberAsync()

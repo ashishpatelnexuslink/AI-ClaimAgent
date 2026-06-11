@@ -1,3 +1,4 @@
+using System.Text.Json;
 using ClaimAI.Application.DTOs.Mobile.Notifications;
 using ClaimAI.Application.Interfaces;
 using ClaimAI.Domain.Common;
@@ -24,26 +25,105 @@ public class NotificationService : INotificationService
         _logger = logger;
     }
 
-    public async Task<Result<List<PendingActionDto>>> GetPendingActionsAsync(string userId)
+    public async Task<Result<List<PendingActionDto>>> GetPendingActionsAsync(
+        string userId, string? locale = null)
     {
-        var actions = await _context.Notifications
+        var notifications = await _context.Notifications
             .Include(n => n.Claim)
             .Where(n => n.UserId == userId && !n.IsRead)
             .OrderByDescending(n => n.CreatedAt)
-            .Select(n => new PendingActionDto
-            {
-                Id = n.Id,
-                Title = n.Title,
-                Message = n.Message,
-                ActionType = n.ActionType,
-                ActionUrl = n.ActionUrl,
-                ClaimId = n.ClaimId.HasValue ? n.ClaimId.Value.ToString() : null,
-                ClaimNumber = n.Claim != null ? n.Claim.ClaimNumber : null,
-                CreatedAt = n.CreatedAt,
-            })
             .ToListAsync();
 
+        var templateKeys = notifications
+            .Where(n => n.TemplateKey != null)
+            .Select(n => n.TemplateKey!)
+            .Distinct()
+            .ToList();
+
+        // Eager-load templates plus the relevant translations (exact tag and
+        // language part) for the requested locale in one round trip.
+        var languagePart = locale?.Split('-')[0];
+        var templates = templateKeys.Count == 0
+            ? new List<NotificationTemplate>()
+            : await _context.NotificationTemplates
+                .Where(t => templateKeys.Contains(t.Key))
+                .Select(t => new NotificationTemplate
+                {
+                    Id = t.Id,
+                    Key = t.Key,
+                    DefaultTitle = t.DefaultTitle,
+                    DefaultMessage = t.DefaultMessage,
+                    Translations = t.Translations
+                        .Where(tr => locale != null &&
+                            (tr.Locale == locale || tr.Locale == languagePart))
+                        .ToList(),
+                })
+                .ToListAsync();
+
+        var templatesByKey = templates.ToDictionary(t => t.Key);
+
+        var actions = notifications.Select(n =>
+        {
+            var (title, message) = ResolveLocalized(n, locale, languagePart, templatesByKey);
+            return new PendingActionDto
+            {
+                Id = n.Id,
+                Title = title,
+                Message = message,
+                ActionType = n.ActionType,
+                ActionUrl = n.ActionUrl,
+                ClaimId = n.ClaimId?.ToString(),
+                ClaimNumber = n.Claim?.ClaimNumber,
+                CreatedAt = n.CreatedAt,
+            };
+        }).ToList();
+
         return Result<List<PendingActionDto>>.Success(actions);
+    }
+
+    private static (string Title, string Message) ResolveLocalized(
+        Notification n,
+        string? locale,
+        string? languagePart,
+        IReadOnlyDictionary<string, NotificationTemplate> templatesByKey)
+    {
+        if (n.TemplateKey == null || !templatesByKey.TryGetValue(n.TemplateKey, out var tpl))
+            return (n.Title, n.Message);
+
+        var translation = tpl.Translations.FirstOrDefault(t => t.Locale == locale)
+                       ?? tpl.Translations.FirstOrDefault(t => t.Locale == languagePart);
+
+        var title = translation?.Title ?? tpl.DefaultTitle;
+        var message = translation?.Message ?? tpl.DefaultMessage;
+
+        var parameters = ParseParams(n.TemplateParams);
+        return (ApplyParams(title, parameters), ApplyParams(message, parameters));
+    }
+
+    private static IReadOnlyDictionary<string, string> ParseParams(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return new Dictionary<string, string>();
+
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, string>>(json)
+                   ?? new Dictionary<string, string>();
+        }
+        catch (JsonException)
+        {
+            return new Dictionary<string, string>();
+        }
+    }
+
+    private static string ApplyParams(string template, IReadOnlyDictionary<string, string> parameters)
+    {
+        if (parameters.Count == 0) return template;
+
+        var result = template;
+        foreach (var (key, value) in parameters)
+            result = result.Replace("{" + key + "}", value);
+        return result;
     }
 
     public async Task<Result> MarkAsReadAsync(Guid notificationId, string userId)
@@ -105,7 +185,9 @@ public class NotificationService : INotificationService
         string message,
         string actionType,
         Guid? claimId = null,
-        string? actionUrl = null)
+        string? actionUrl = null,
+        string? templateKey = null,
+        IDictionary<string, string>? templateParams = null)
     {
         var notification = new Domain.Entities.Notification
         {
@@ -116,6 +198,10 @@ public class NotificationService : INotificationService
             ActionUrl = actionUrl,
             ClaimId = claimId,
             IsRead = false,
+            TemplateKey = templateKey,
+            TemplateParams = templateParams is { Count: > 0 }
+                ? JsonSerializer.Serialize(templateParams)
+                : null,
         };
 
         _context.Notifications.Add(notification);

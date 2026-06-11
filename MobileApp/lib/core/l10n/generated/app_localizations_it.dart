@@ -146,6 +146,15 @@ class AppLocalizationsIt extends AppLocalizations {
   String get home_pendingClaims => 'Sinistri in sospeso';
 
   @override
+  String get notifications_title => 'Notifiche';
+
+  @override
+  String get notifications_empty => 'Sei in pari con tutto';
+
+  @override
+  String get notifications_markAsRead => 'Segna come letto';
+
+  @override
   String get nav_home => 'Home';
 
   @override

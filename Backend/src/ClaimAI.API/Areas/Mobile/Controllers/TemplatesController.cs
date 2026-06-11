@@ -1,3 +1,4 @@
+using ClaimAI.API.Extensions;
 using ClaimAI.Application.DTOs.Common;
 using ClaimAI.Application.DTOs.Templates;
 using ClaimAI.Application.Interfaces;
@@ -31,24 +32,11 @@ public class TemplatesController : ControllerBase
     [HttpGet("active")]
     public async Task<IActionResult> GetActive(CancellationToken cancellationToken)
     {
-        var language = ResolveLanguage(Request.Headers.AcceptLanguage.ToString());
+        var language = LocaleResolver.ResolveLanguage(Request.Headers.AcceptLanguage.ToString());
         var result = await _templateService.GetSingleActiveAsync(language, cancellationToken);
         if (!result.Succeeded)
             return NotFound(ApiResponse<object>.FailResponse(result.Errors, 404));
 
         return Ok(ApiResponse<TemplateDetailDto>.SuccessResponse(result.Data!));
-    }
-
-    /// <summary>
-    /// Picks the first language tag out of an <c>Accept-Language</c> header
-    /// value (e.g. <c>"de-CH,de;q=0.9,en;q=0.8"</c> → <c>"de-CH"</c>). Returns
-    /// <c>null</c> when the header is missing/blank so the service falls back
-    /// to the seed English values.
-    /// </summary>
-    private static string? ResolveLanguage(string? acceptLanguage)
-    {
-        if (string.IsNullOrWhiteSpace(acceptLanguage)) return null;
-        var first = acceptLanguage.Split(',')[0].Split(';')[0].Trim();
-        return string.IsNullOrEmpty(first) ? null : first;
     }
 }

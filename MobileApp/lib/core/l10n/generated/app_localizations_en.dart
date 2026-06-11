@@ -144,6 +144,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get home_pendingClaims => 'Pending Claims';
 
   @override
+  String get notifications_title => 'Notifications';
+
+  @override
+  String get notifications_empty => 'You\'re all caught up';
+
+  @override
+  String get notifications_markAsRead => 'Mark as read';
+
+  @override
   String get nav_home => 'Home';
 
   @override

@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using ClaimAI.API.Extensions;
 using ClaimAI.Application.DTOs.Common;
 using ClaimAI.Application.DTOs.Mobile.Notifications;
 using ClaimAI.Application.Interfaces;
@@ -26,7 +27,8 @@ public class NotificationsController : ControllerBase
         if (userId is null)
             return Unauthorized();
 
-        var result = await _notificationService.GetPendingActionsAsync(userId);
+        var locale = LocaleResolver.ResolveLanguage(Request.Headers.AcceptLanguage.ToString());
+        var result = await _notificationService.GetPendingActionsAsync(userId, locale);
         if (!result.Succeeded)
             return BadRequest(ApiResponse<object>.FailResponse(result.Errors));
 
